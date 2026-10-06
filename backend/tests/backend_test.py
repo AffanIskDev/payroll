@@ -222,7 +222,7 @@ class TestAttendance:
         wd = "2026-04-02"
         r = requests.post(f"{API}/hr/attendance", headers=_h(hrd_token), timeout=30,
                           json={"employee_id": eid, "work_date": wd,
-                                "check_in_time": "08:20", "check_out_time": "16:45",
+                                "check_in_time": "08:20", "check_out_time": "15:45",
                                 "leave_type": "present"})
         assert r.status_code == 200, r.text
         log = r.json()

@@ -32,6 +32,9 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 - Biaya jabatan dibatasi Rp 500rb × bulan kerja (Desember & 1721-A1).
 - Hapus periode draft / pending_approval (tanpa slip approved). Testing iteration_3: 53/53 pass.
 
+## Implemented (2026-10-06, iteration 4)
+- Jadwal kerja & shift (collection work_schedules, menu Jadwal, editable): KANTOR_PUSAT (Sen–Jum 08–16, Sab 08–14), UNIT_2SHIFT (S1 07–15/Sab 07–13, S2 13–21/Sab 13–19), UNIT_MINGGU (Sen–Jum 08–16, Min 08–14). Per karyawan work_schedule_code. Menit telat/pulang cepat dihitung dari jadwal (shift otomatis = jam masuk terdekat, bisa dipilih manual); hari libur jadwal = tanpa denda. Config WORK_START/END dihapus. Testing iteration_4: 67/67 pass.
+
 ## Backlog
 - P2: Notifikasi email slip & bukti potong, impor CSV absensi
 - P2: Ekspor CSV e-Bupot / Coretax

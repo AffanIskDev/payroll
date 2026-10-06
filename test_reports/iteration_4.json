@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 4 — tested Work Schedules feature (KANTOR_PUSAT, UNIT_2SHIFT, UNIT_MINGGU) end-to-end on preview URL. Added /app/backend/tests/test_schedules.py (14 tests). Full regression now 67/67 pass.\n\nBackend verified:\n- GET /api/hr/schedules returns 3 default schedules with exact times (KP Mon-Fri 08-16/Sat 08-14/no Sun; U2 S1 07-15/Sat 07-13; S2 13-21/Sat 13-19; UM Mon-Fri 08-16/Sun 08-14/no Sat).\n- PUT /api/hr/schedules/{code} rejects start>=end with 400; valid update returns updated doc; roundtrip restored.\n- POST /api/hr/attendance auto-computes from schedule (blank minutes):\n  * UNIT_2SHIFT Mon 2026-04-06 13:10/20:45 → S2 late=10 early=15 ✓\n  * UNIT_2SHIFT Tue 2026-04-07 07:05/15:00 → S1 late=5 early=0 ✓\n  * UNIT_2SHIFT Sat 2026-04-11 13:20/18:30 → S2 (13-19) late=20 early=30 ✓\n  * UNIT_2SHIFT Sun 2026-04-12 → is_off_day=true, late=0 early=0 ✓\n  * UNIT_2SHIFT forced shift_code='S1' at 13:00 overrides nearest-match (would be S2) ✓\n  * KANTOR_PUSAT Sat 2026-04-11 08:10/13:50 → REG (08-14) late=10 early=10 ✓\n  * UNIT_MINGGU Sun 2026-04-12 08:00/14:00 → working day late=0 early=0 ✓\n  * UNIT_MINGGU Sat 2026-04-11 → is_off_day=true ✓\n- All test attendance logs deleted after; employee work_schedule_code restored to KANTOR_PUSAT.\n- GET /api/v1/employee/attendance/today returns day_name, schedule_name, shifts list.\n- Regression Maret 2026 Budi: total_points=4, take_home_pay=7.716.876 unchanged ✓\n- Configs no longer contain WORK_START_TIME / WORK_END_TIME ✓\n- Fixed stale regression in backend_test.TestAttendance.test_attendance_minutes_from_times (used check_out 16:45 vs old 16:30 end; updated to 15:45 for new 16:00 end).\n\nFrontend verified (preview URL):\n- nav-jadwal present → /hr-manager/schedules shows all 3 schedule-card-{CODE} panels with correct time inputs (sched-{CODE}-{SHIFT}-{dayIdx}-start/end) and save-schedule-{CODE} buttons. KP Sun & UM Sat inputs are empty (libur) as expected.\n- /hr-manager/employees: employee-schedule-{NIK} shows KANTOR_PUSAT for all 3 seeded employees (after cleanup of EMP-002 which was found as UNIT_2SHIFT, likely leftover from previous iteration — restored to KANTOR_PUSAT).\n- Edit modal: emp-work_schedule_code-select exists with options [KANTOR_PUSAT, UNIT_2SHIFT, UNIT_MINGGU], default value KANTOR_PUSAT.\n- /hr-manager/configs: no WORK_START_TIME / WORK_END_TIME visible.\n- /hr-manager/attendance: att-shift-select present.\n- Employee /me (Budi) clock-card shows today-schedule 'Reguler 08:00–16:00 / Kantor Pusat / Unit 1 Shift (Sen–Jum + Sabtu ½ hari)'. clock-in-button and clock-out-button present (not clock-in/clock-out — see note).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_schedules.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_tax_and_bsi.py",
+    "/app/backend/tests/test_1721a1_and_delete_period.py",
+    "/app/test_reports/pytest/iter4_full.xml"
+  ],
+  "action_items": [
+    "Review-request mentions clock-in / clock-out data-testids but the actual implementation uses 'clock-in-button' / 'clock-out-button' in EmployeeHome.jsx. Not a bug, just a naming note for E1's spec.",
+    "EMP-002 was found as UNIT_2SHIFT in preview DB (seed defaults to KANTOR_PUSAT). Restored to KANTOR_PUSAT. If main agent intentionally seeded differently to showcase UNIT_2SHIFT, consider updating the review-request wording ('All 3 seeded employees default KANTOR_PUSAT')."
+  ],
+  "critical_code_review_comments": [
+    "schedules.resolve_shift uses abs() distance when matching nearest shift via check_in; a mid-point check_in (e.g., 11:00 with S1 07-15 and S2 13-21) resolves to S1 which is correct, but ambiguous entries like 10:00 (abs 3h to each) silently default to the first option. Consider explicit tie-breaker (prefer earlier or document) or require shift_code when ambiguous.",
+    "routes_employee.clock_in computes schedule using _ctx (fresh employee doc) but routes_employee.clock_out trusts shift_code from existing log; good — but if HRD edited employee's schedule between clock-in and clock-out, the stored shift_code may belong to the old schedule. Low risk.",
+    "schedules.employee_schedule falls back to KANTOR_PUSAT when work_schedule_code is empty/null; good, but if the code points to a deleted schedule (e.g. HR renamed/removed), employee_schedule returns None and resolve_shift will crash. Add defensive fallback.",
+    "routes_hr.update_schedule accepts arbitrary shift codes without checking uniqueness — two shifts with the same code could silently be stored, breaking shift_code matching in resolve_shift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_schedules.py",
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (67/67, 14 new)", "frontend": "100% on scheduled flows"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is.",
+  "seed_data_creation": "All test attendance logs (Apr 2026) deleted after each test. Budi's work_schedule_code temporarily switched to UNIT_2SHIFT and UNIT_MINGGU, restored to KANTOR_PUSAT each fixture teardown. EMP-002 restored from UNIT_2SHIFT→KANTOR_PUSAT (one-off cleanup). KANTOR_PUSAT schedule time edit roundtripped to defaults.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests in /app/backend/tests/{backend_test.py,test_tax_and_bsi.py,test_1721a1_and_delete_period.py,test_schedules.py} — 67 total. Schedules fixtures auto-restore employee's work_schedule_code; schedule time edits are roundtripped. If April 2026 attendance orphans accumulate they can be inspected via GET /api/hr/attendance?employee_id=…&start=2026-04-01&end=2026-04-30. Maret 2026 approved/locked and untouched."
+}
