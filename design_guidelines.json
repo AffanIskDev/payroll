@@ -1,0 +1,139 @@
+{
+  "app_identity": {
+    "name": "ROSY & Rumatku Payroll HRIS",
+    "description": "Automated Indonesian Payroll HRIS system featuring waterfall attendance penalty, BPJS calculation with UMK Bekasi floor, PPh21 TER (Taraf Efektif Rata-Rata), HRD review/approve/lock workbench with two-column split, sticky real-time THP bar with terbilang rupiah, and employee mobile PWA interface with password-protected PDF payslips.",
+    "persona": "E1 Executive Corporate Precision & Modern Fintech Synergy",
+    "language": "Bahasa Indonesia"
+  },
+  "color_system": {
+    "hrd_portal_rosy": {
+      "page_background": "#F8FAFC",
+      "card_background": "#FFFFFF",
+      "header_navy": "#0F172A",
+      "navigation_accent": "#1E3A8A",
+      "border": "#E2E8F0",
+      "editable_input_bg": "#FEF3C7",
+      "editable_input_border": "#F59E0B",
+      "editable_input_focus": "#D97706",
+      "thp_take_home_pay": "#059669",
+      "thp_bg_light": "#ECFDF5",
+      "penalty_deduction": "#DC2626",
+      "penalty_bg_light": "#FEF2F2"
+    },
+    "employee_portal_rumatku": {
+      "primary_teal": "#0D9488",
+      "accent_teal_light": "#14B8A6",
+      "soft_teal_bg": "#CCFBF1",
+      "hero_card_gradient": "linear-gradient(135deg, #0F766E 0%, #0D9488 50%, #14B8A6 100%)",
+      "card_white": "#FFFFFF",
+      "badge_security": "#FEF3C7",
+      "badge_security_text": "#92400E"
+    },
+    "status_colors": {
+      "draft": { "bg": "#F1F5F9", "text": "#475569", "border": "#CBD5E1" },
+      "calculated": { "bg": "#EFF6FF", "text": "#1D4ED8", "border": "#93C5FD" },
+      "reviewed": { "bg": "#FEF3C7", "text": "#B45309", "border": "#FCD34D" },
+      "approved": { "bg": "#ECFDF5", "text": "#047857", "border": "#6EE7B7" },
+      "locked": { "bg": "#F3E8FF", "text": "#6B21A8", "border": "#D8B4FE" }
+    }
+  },
+  "typography": {
+    "primary_font": "Plus Jakarta Sans, Inter, system-ui, sans-serif",
+    "tabular_numbers": "font-mono tabular-nums",
+    "hierarchy": {
+      "h1_dashboard_title": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+      "h2_section_header": "text-lg sm:text-xl font-semibold text-slate-800",
+      "h3_card_header": "text-base font-medium text-slate-700",
+      "body": "text-sm text-slate-600 leading-normal",
+      "caption_label": "text-xs font-medium text-slate-500 uppercase tracking-wider",
+      "currency_large": "text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums",
+      "currency_thp_sticky": "text-xl sm:text-2xl font-black tabular-nums text-emerald-600"
+    }
+  },
+  "layout_and_spacing": {
+    "hrd_workbench": {
+      "container": "min-h-screen bg-slate-50 text-slate-900 pb-24",
+      "header": "sticky top-0 z-40 bg-slate-900 text-white shadow-md border-b border-slate-800 px-6 py-3 flex items-center justify-between",
+      "grid_dashboard": "grid grid-cols-1 md:grid-cols-4 gap-4 p-6",
+      "two_column_workbench": "grid grid-cols-1 lg:grid-cols-2 gap-6 p-6",
+      "left_column_earnings": "bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4",
+      "right_column_deductions": "bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4",
+      "bottom_sticky_bar": "fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t-2 border-emerald-500 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4"
+    },
+    "employee_mobile": {
+      "container": "max-w-md mx-auto min-h-screen bg-slate-50 pb-20 relative shadow-xl border-x border-slate-200",
+      "hero_card": "relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-800 via-teal-600 to-teal-500 text-white p-6 shadow-lg mb-6",
+      "accordion_section": "space-y-3 px-4",
+      "floating_action_button": "fixed bottom-6 right-6 sm:right-[calc(50vw-200px)] z-50 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 px-5 rounded-full shadow-2xl flex items-center gap-2 transition-all transform hover:scale-105 active:scale-95"
+    }
+  },
+  "key_functionalities_and_ui_states": {
+    "role_switching": {
+      "description": "Toggle navigation bar at top to switch seamlessly between HRD Manager Portal (ROSY) and Employee Mobile View (Rumatku)."
+    },
+    "hrd_dashboard": {
+      "features": [
+        "Period list with status badges (Draft, Calculated, Reviewed, Approved, Locked)",
+        "Summary stats cards: Total Payroll Amount, Total Employees, Pending Reviews, Average PPh21",
+        "Quick Action: Batch Process Calculation with Progress Overlay",
+        "Payroll Configuration Panel (UMK Bekasi Floor, BPJS Ceiling Caps, Work Days standard)"
+      ]
+    },
+    "attendance_log": {
+      "description": "Waterfall attendance penalty matrix calculator (Daily check-in/out, Late arrival tiers 1-3, Alpha penalty = Basic Salary/Workdays, Early leave penalty)."
+    },
+    "workbench_detail": {
+      "description": "Two-Column Split Workbench for HRD.",
+      "left_column": [
+        "Gaji Pokok (Fixed)",
+        "Tunjangan Tetap (Jabatan/Operasional)",
+        "Editable Field (Amber 100): Lembur (Jam & Nominal)",
+        "Editable Field (Amber 100): Insentif KPI",
+        "Editable Field (Amber 100): Bonus & Kompensasi Denda"
+      ],
+      "right_column": [
+        "BPJS Kesehatan (1% Employee, UMK Bekasi floor applied)",
+        "BPJS Ketenagakerjaan (JHT 2%, JP 1% with Cap)",
+        "PPh 21 TER (Auto-calculated category A/B/C rate based on Gross)",
+        "Denda Absensi (Waterfall Attendance Penalty auto-filled)",
+        "Editable Field (Amber 100): Kasbon / Potongan Lainnya"
+      ],
+      "sticky_bar": "Displays live Total Penerimaan, Total Potongan, Net Take Home Pay (THP) in large green text, plus Terbilang (Rupiah in words, e.g. 'Delapan Juta Lapan Ratus Ribu Rupiah'), and Action Buttons (Simpan Draft, Setujui, Kunci Periode)."
+    },
+    "employee_mobile_view": {
+      "features": [
+        "Hero Card: Periode Gaji (e.g. Maret 2026), THP Large Display, Transfer Status Badge (BERHASIL DITRANSFER), Bank BSI account suffix",
+        "Accordion: Rincian Penerimaan & Potongan Breakdown with progress bars",
+        "Security Badge: 'File PDF dilindungi sandi 6 digit tanggal lahir Anda (DDMMYY)'",
+        "Floating Action Button: 'Unduh Slip Gaji (PDF)' with interactive PDF Preview modal & DDMMYY unlock simulation"
+      ]
+    }
+  },
+  "component_guidelines": {
+    "editable_amber_input": {
+      "classes": "bg-amber-100/80 border-2 border-amber-400 focus:border-amber-600 focus:bg-amber-50 text-slate-900 font-semibold px-3 py-1.5 rounded text-right tabular-nums transition-all outline-none shadow-inner",
+      "usage": "Used ONLY for editable values in HRD Workbench (Lembur, KPI, Bonus, Kompensasi Denda, Kasbon)."
+    },
+    "data_testid_convention": "All interactive elements (buttons, inputs, select, modal triggers, tables, switches) MUST include kebab-case data-testid attributes (e.g., data-testid='input-overtime-hours', data-testid='btn-approve-payroll', data-testid='download-pdf-fab')."
+  },
+  "image_urls": [
+    {
+      "category": "hrd_avatar",
+      "url": "https://images.unsplash.com/photo-1758518730264-9235a1e5416b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwzfHxpbmRvbmVzaWFuJTIwY29ycG9yYXRlJTIwb2ZmaWNlJTIwSFIlMjBwcm9mZXNzaW9uYWwlMjBmaW5hbmNpYWwlMjBkYXNoYm9hcmR8ZW58MHx8fHwxNzkxMjU1ODM2fDA&ixlib=rb-4.1.0&q=85",
+      "description": "HR Manager Profile Photo"
+    },
+    {
+      "category": "dashboard_analytics_bg",
+      "url": "https://images.pexels.com/photos/7109243/pexels-photo-7109243.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "HR Financial Analytics Hero Visual"
+    }
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Follow exact Indonesian tax & BPJS rules: PPh21 TER (Category A, B, C based on PTKP status TK/0, K/0, etc.), BPJS Kesehatan 1% employee (max cap Rp 12M, UMK Bekasi floor Rp 5.343.430), BPJS JP 1% employee (max cap Rp 10.042.300).",
+    "Waterfall attendance penalty rules: Alpha = Gaji Pokok / Total Hari Kerja; Terlambat Tier 1 (<15m) = Rp 25.000, Tier 2 (15-45m) = Rp 50.000, Tier 3 (>45m) = Rp 100.000 + Potongan Proporsional Jam.",
+    "Ensure every input element has proper data-testid attributes for E2E automated testing.",
+    "Implement real-time recalculation in the two-column HRD workbench whenever an Amber editable field (Lembur, Insentif KPI, Bonus, Kasbon) is changed.",
+    "Bottom Sticky Bar must update Net THP and 'Terbilang' string instantly on input changes.",
+    "Ensure employee mobile view is optimized for mobile screen ratios (375px - 430px) with card accordion layout and working PDF download trigger with password hint (DDMMYY)."
+  ]
+}
