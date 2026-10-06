@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from core import db, now_iso, require_hr, hash_password, DEFAULT_CONFIGS
-from schedules import employee_schedule, resolve_shift, minutes_for
+from schedules import detect_shift, minutes_for, shift_fields
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, ADJ_KEYS)
 from pdf_service import render_payslip
@@ -192,18 +192,16 @@ async def list_attendance(employee_id: str, start: str, end: str):
 async def upsert_attendance(body: AttendanceIn):
     emp = await get_employee(body.employee_id)
     data = body.model_dump()
-    shift = None
+    shift, src = None, "auto"
     if data["leave_type"] == "present":
-        shift = resolve_shift(await employee_schedule(emp), data["work_date"], data["check_in_time"],
-                              data["check_out_time"], data["shift_code"])
+        shift, src = await detect_shift(emp, data["work_date"], data["check_in_time"], data["check_out_time"],
+                                        data["shift_code"])
     late, early = minutes_for(shift, data["check_in_time"], data["check_out_time"])
     if data["minutes_late"] is None:
         data["minutes_late"] = late
     if data["minutes_early_leave"] is None:
         data["minutes_early_leave"] = early
-    data.update(shift_code=shift and shift["code"], shift_name=shift and shift["name"],
-                schedule_start=shift and shift["start"], schedule_end=shift and shift["end"],
-                is_off_day=data["leave_type"] == "present" and shift is None)
+    data.update(shift_fields(shift, src), is_off_day=data["leave_type"] == "present" and shift is None)
     data.update(source="hrd_manual", updated_at=now_iso())
     existing = await db.attendance_daily_logs.find_one({"employee_id": body.employee_id, "work_date": body.work_date})
     if existing:

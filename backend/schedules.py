@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from core import db
@@ -64,3 +64,27 @@ def minutes_for(shift: Optional[dict], check_in: Optional[str], check_out: Optio
     late = max(0, to_min(check_in) - to_min(shift["start"])) if check_in else 0
     early = max(0, to_min(shift["end"]) - to_min(check_out)) if check_out else 0
     return late, early
+
+
+def week_start(work_date: str) -> str:
+    d = date.fromisoformat(work_date)
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+
+async def detect_shift(emp: dict, work_date: str, check_in: Optional[str], check_out: Optional[str],
+                       manual: Optional[str] = None) -> tuple:
+    """Priority: manual HRD choice > weekly rotation > nearest check-in."""
+    sched = await employee_schedule(emp)
+    source, code = ("manual", manual) if manual else ("auto", None)
+    if not code:
+        rot = await db.shift_rotations.find_one({"employee_id": emp["id"], "week_start": week_start(work_date)})
+        if rot:
+            source, code = "rotation", rot["shift_code"]
+    shift = resolve_shift(sched, work_date, check_in, check_out, code)
+    return shift, (source if shift and (not code or shift["code"] == code) else "auto")
+
+
+def shift_fields(shift: Optional[dict], source: str = "auto") -> dict:
+    return {"shift_code": shift and shift["code"], "shift_name": shift and shift["name"],
+            "schedule_start": shift and shift["start"], "schedule_end": shift and shift["end"],
+            "is_off_day": shift is None, "shift_source": source if shift else None}

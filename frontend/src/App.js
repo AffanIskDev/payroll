@@ -13,6 +13,7 @@ import Configs from "@/pages/hr/Configs";
 import TaxYtd from "@/pages/hr/TaxYtd";
 import TaxForms from "@/pages/hr/TaxForms";
 import Schedules from "@/pages/hr/Schedules";
+import Rotations from "@/pages/hr/Rotations";
 import EmployeeHome from "@/pages/employee/EmployeeHome";
 import PayslipDetail from "@/pages/employee/PayslipDetail";
 
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="tax" element={<TaxYtd />} />
             <Route path="tax-forms" element={<TaxForms />} />
             <Route path="schedules" element={<Schedules />} />
+            <Route path="rotations" element={<Rotations />} />
           </Route>
           <Route path="/me" element={<Guard><EmployeeHome /></Guard>} />
           <Route path="/me/payslip/:sid" element={<Guard><PayslipDetail /></Guard>} />

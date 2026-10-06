@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, FileBadge, CalendarRange } from "lucide-react";
+import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, FileBadge, CalendarRange, Repeat } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const NAV = [
@@ -8,6 +8,7 @@ const NAV = [
   ["/hr-manager/employees", "Karyawan", Users],
   ["/hr-manager/attendance", "Absensi", CalendarClock],
   ["/hr-manager/schedules", "Jadwal", CalendarRange],
+  ["/hr-manager/rotations", "Rotasi", Repeat],
   ["/hr-manager/tax", "Pajak YTD", Calculator],
   ["/hr-manager/tax-forms", "1721-A1", FileBadge],
   ["/hr-manager/config", "Konfigurasi", Settings2],
