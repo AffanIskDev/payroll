@@ -78,6 +78,55 @@ async def save_rotations(body: RotationIn):
     return {"saved": saved}
 
 
+@router.get("/shift-recap")
+async def shift_recap(month: str):
+    try:
+        first = date.fromisoformat(f"{month}-01")
+    except ValueError:
+        raise HTTPException(400, "Format bulan harus YYYY-MM")
+    nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    days = [(first + timedelta(days=i)) for i in range((nxt - first).days)]
+    scheds = {s["code"]: s async for s in db.work_schedules.find({}, {"_id": 0})}
+    emps = await db.employees.find({}, {"_id": 0}).sort("nik", 1).to_list(5000)
+    logs = await db.attendance_daily_logs.find(
+        {"work_date": {"$gte": first.isoformat(), "$lt": nxt.isoformat()}}, {"_id": 0}).to_list(100000)
+    by_emp = {}
+    for lg in logs:
+        by_emp.setdefault(lg["employee_id"], {})[lg["work_date"]] = lg
+    codes, rows = [], []
+    for e in emps:
+        sched = scheds[e.get("work_schedule_code") or "KANTOR_PUSAT"]
+        for s in sched["shifts"]:
+            if s["code"] not in codes:
+                codes.append(s["code"])
+        r = {"employee_id": e["id"], "nik": e["nik"], "name": e["name"], "department": e.get("department"),
+             "schedule_code": sched["code"], "shifts": {}, "scheduled_off": 0, "worked_on_off_day": 0,
+             "leave": 0, "no_log": 0}
+        mine = by_emp.get(e["id"], {})
+        for d in days:
+            wd = str(d.weekday())
+            is_off = not any(s["days"].get(wd, {}).get("start") for s in sched["shifts"])
+            lg = mine.get(d.isoformat())
+            if lg and lg.get("leave_type", "present") != "present":
+                r["leave"] += 1
+            elif lg and lg.get("shift_code") and not lg.get("is_off_day"):
+                r["shifts"][lg["shift_code"]] = r["shifts"].get(lg["shift_code"], 0) + 1
+            elif lg and is_off:
+                r["worked_on_off_day"] += 1
+            elif is_off:
+                r["scheduled_off"] += 1
+            else:
+                r["no_log"] += 1
+        r["total_worked"] = sum(r["shifts"].values()) + r["worked_on_off_day"]
+        rows.append(r)
+    names = {}
+    for s in scheds.values():
+        for sh in s["shifts"]:
+            names.setdefault(sh["code"], sh["name"])
+    return {"month": month, "days_in_month": len(days), "shift_codes": codes,
+            "shift_names": {c: names[c] for c in codes}, "rows": rows}
+
+
 def _pick(row: dict, key: str):
     for a in ALIASES[key]:
         v = row.get(a)
