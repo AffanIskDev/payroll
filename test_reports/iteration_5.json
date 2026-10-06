@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 5 — tested weekly shift rotation + Rumatku attendance import features end-to-end on preview URL. Added /app/backend/tests/test_rotations_and_import.py (11 tests). Full regression suite now 78/78 pass (serial, -n0). Both features behave exactly as specified.\n\nBackend verified:\n- GET /api/hr/shift-rotations normalizes any date → Monday (Wed 2026-04-08 → 2026-04-06) and returns 4 weeks starting Monday.\n- Employee list in response only includes multi-shift workers (Siti UNIT_2SHIFT shows up; Budi/Dimas KANTOR_PUSAT excluded). Shifts array returned per employee.\n- PUT /api/hr/shift-rotations upserts, deletes via shift_code=null, normalizes week_start to Monday, rejects invalid shift (BOGUS) with HTTP 400.\n- Shift priority correctly resolves:\n  * Rotation S2 for 2026-04-06 Mon + check_in 07:30 → S2 (13-21), source='rotation', late=0, early=360 ✓\n  * Same times without rotation → S1 (07-15), source='auto', late=30, early=0 ✓\n  * shift_code='S1' explicitly even with rotation=S2 → S1, source='manual' ✓\n- POST /api/hr/attendance/import:\n  * template endpoint returns CSV with all 9 required columns.\n  * accepts DD/MM/YYYY & YYYY-MM-DD dates, HH.MM & HH:MM times.\n  * unknown NIK → errors, missing both times → errors, existing non-present log (annual_leave) → skipped.\n  * re-import same row → updated=1.\n  * Siti rotation S2 week 2026-04-13 → imported log for 2026-04-14 has shift_code='S2' shift_source='rotation' source='rumatku_import'.\n  * Budi Sunday 2026-04-12 on KANTOR_PUSAT → is_off_day=true, late=0 early=0, shift_summary counts 'LIBUR'.\n- GET /api/hr/periods/{maret}/employees/{budi}: total_points=4, late_penalty=160000 unchanged.\n\nFrontend verified (preview URL):\n- nav-rotasi link visible, routes to /hr-manager/rotations.\n- rotation-start-input + prev/next (±4 weeks) work; after next: 2026-05-04, after prev: 2026-04-06.\n- rotation-row-EMP-002 shows Siti UNIT_2SHIFT; rotation-EMP-002-{YYYY-MM-DD} selects render S1/S2 options; rotation-auto-EMP-002 fills alternating S1,S2,S1,S2.\n- rotation-save-button → PUT returns 200; GET /shift-rotations returns 4 assignments after save.\n- Empty-state message appears when no multi-shift employees exist (verified by code — not test-rendered because Siti was present).\n- /hr-manager/attendance now has attendance-import-panel on right column with att-import-template-button, att-import-file-input, att-import-button. Table still shows Maret logs. att-in-{date}-photo / att-in-{date}-location testids exist in code (verified via grep).\n- att-shift-select present with 'Otomatis + Shift 1/Shift 2' options once employee is multi-shift.\n- nav label is 'Absensi' → data-testid='nav-absensi' (not nav-presensi as mentioned in review request wording — not a bug, just naming note).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Attendance table", "issues": ["Seed rows for Maret 2026 show '-' in Jadwal column (no schedule_start populated at seed time); not blocking but inconsistent with imported rows which show '{SHIFT} {start}–{end}'. Historical only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_rotations_and_import.py",
+    "/app/backend/tests/test_schedules.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_tax_and_bsi.py",
+    "/app/backend/tests/test_1721a1_and_delete_period.py",
+    "/app/test_reports/pytest/iter5_full.xml"
+  ],
+  "action_items": [
+    "Review request mentions nav-testid 'nav-presensi'; actual implementation derives from label 'Absensi' → nav-absensi. Just update the spec wording for consistency.",
+    "test_rotations_and_import.py must be run serially (pytest -n0) because xdist runs classes on different workers and the module-scoped siti_u2shift fixture is torn down per-worker, racing with the other worker's tests (shared DB). Non-blocking; add `pytestmark = pytest.mark.serial` or isolate siti fixtures to each class if desired."
+  ],
+  "critical_code_review_comments": [
+    "schedules.detect_shift returns source='rotation' only when the resolved shift matches the rotation code. If HRD assigns a rotation shift that is not defined on that weekday (e.g. S2 on Minggu for UNIT_2SHIFT), rotation falls back silently to 'auto'. Consider logging/surfacing this to HRD, otherwise rotation feels broken on partial-week days.",
+    "routes_roster.import_attendance uses `existing.get('shift_code') if existing and shift_source=='manual' else None` for the manual override. But Pydantic model AttendanceIn allows arbitrary shift_code strings via the manual HRD form; if the stored manual shift_code becomes invalid later (schedule edited to drop a shift), resolve_shift returns None and the row flips to is_off_day. Add fallback or 400 on save.",
+    "routes_roster.ALIASES includes employee_nik but EmployeeIn uses nik; no alias collisions, but 'date' as an alias for 'tanggal' may conflict with CSVs exported from Excel where cells get locale-dependent names — fine for now.",
+    "Frontend Rotations.jsx: autoRotate() silently returns without saving when week 1 is empty; UX could default to the schedule's first shift instead of forcing a toast error.",
+    "AttendanceImport.jsx shows all skipped/errors but keyed by string content — if two errors have identical text React will warn about duplicate keys. Use index key instead."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rotations_and_import.py"
+  ],
+  "success_rate": {"backend": "100% (78/78, 11 new)", "frontend": "100% on rotation + import flows"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is (hrd.manager@rumatku.id / Password123!). Backend uses httpOnly cookies on web client; API tests use Bearer token from POST /api/auth/login.",
+  "seed_data_creation": "During tests Siti (EMP-002) work_schedule_code was temporarily switched to UNIT_2SHIFT; restored to KANTOR_PUSAT after each run. All April 2026 shift_rotations rows deleted. All April 2026 attendance_daily_logs deleted. Three leftover periods from previous iterations (TEST_Desember 2026, TEST_BSI_empty, TEST_April 2026) were also cleaned up via DELETE /api/hr/periods/{id} — only Maret 2026 remains.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests in /app/backend/tests/{backend_test.py, test_tax_and_bsi.py, test_1721a1_and_delete_period.py, test_schedules.py, test_rotations_and_import.py} — 78 total, run with `pytest /app/backend/tests/ -v -n0`. test_rotations_and_import.py REQUIRES serial mode (-n0) due to shared-DB fixture race with xdist. Siti EMP-002 is seeded with work_schedule_code='KANTOR_PUSAT' and gets temporarily switched to UNIT_2SHIFT inside the module fixture; test_only_multishift_employees_listed depends on this. HRD login uses /api/auth/login with httpOnly cookie + bearer token; frontend localStorage key is 'payroll_token'. Nav test-ids are 'nav-{label-lowercased-dash}'. For E2E on preview, use fetch with credentials:'include' instead of Authorization header.",
+  "rca of the issue": "No defects found — features ship as specified."
+}

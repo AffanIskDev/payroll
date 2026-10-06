@@ -35,6 +35,10 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 ## Implemented (2026-10-06, iteration 4)
 - Jadwal kerja & shift (collection work_schedules, menu Jadwal, editable): KANTOR_PUSAT (Sen–Jum 08–16, Sab 08–14), UNIT_2SHIFT (S1 07–15/Sab 07–13, S2 13–21/Sab 13–19), UNIT_MINGGU (Sen–Jum 08–16, Min 08–14). Per karyawan work_schedule_code. Menit telat/pulang cepat dihitung dari jadwal (shift otomatis = jam masuk terdekat, bisa dipilih manual); hari libur jadwal = tanpa denda. Config WORK_START/END dihapus. Testing iteration_4: 67/67 pass.
 
+## Implemented (2026-10-06, iteration 5)
+- Rotasi shift mingguan (collection shift_rotations, menu Rotasi, grid 4 minggu, tombol Selang-seling). Prioritas shift: manual HRD > rotasi > jam masuk terdekat.
+- Impor rekap absensi Rumatku (CSV/XLSX: nik, tanggal, jam_masuk, jam_pulang, foto_masuk/pulang URL, lokasi_masuk/pulang) dengan deteksi shift otomatis; foto & lokasi tampil sebagai link di tabel absensi. Testing iteration_5: 78/78 pass.
+
 ## Backlog
 - P2: Notifikasi email slip & bukti potong, impor CSV absensi
 - P2: Ekspor CSV e-Bupot / Coretax
