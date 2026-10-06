@@ -17,13 +17,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const demoLogin = async (account) => {
+    const { data } = await api.post("/auth/demo-login", { account });
+    localStorage.setItem("payroll_token", data.token);
+    setUser(data.user);
+    return data.user;
+  };
+
   const logout = async () => {
     await api.post("/auth/logout").catch(() => {});
     localStorage.removeItem("payroll_token");
     setUser(false);
   };
 
-  return <AuthCtx.Provider value={{ user, login, logout }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, login, demoLogin, logout }}>{children}</AuthCtx.Provider>;
 }
 
 export const useAuth = () => useContext(AuthCtx);

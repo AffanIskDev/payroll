@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
+import os  # noqa: E402
 import logging  # noqa: E402
 from datetime import datetime, timezone, timedelta  # noqa: E402
 
@@ -39,9 +40,36 @@ async def login(body: LoginIn, request: Request, response: Response):
             "$inc": {"count": 1}, "$set": {"locked_until": (now + timedelta(minutes=15)).isoformat()}}, upsert=True)
         raise HTTPException(401, "Email/NIK atau password salah")
     await db.login_attempts.delete_one({"identifier": key})
+    return _issue(user, response)
+
+
+DEMO_ACCOUNTS = {"hrd": "hrd.manager@rumatku.id", "budi": "budi@rumatku.id", "siti": "siti@rumatku.id",
+                 "dimas": "dimas@rumatku.id"}
+
+
+class DemoIn(BaseModel):
+    account: str
+
+
+def _issue(user: dict, response: Response) -> dict:
     token = create_access_token(user["id"], user["role"])
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none", max_age=43200, path="/")
     return {"token": token, "user": {k: user.get(k) for k in ("id", "email", "name", "role", "nik", "employee_id")}}
+
+
+@auth.get("/demo-enabled")
+async def demo_enabled():
+    return {"enabled": os.environ.get("DEMO_LOGIN_ENABLED") == "true"}
+
+
+@auth.post("/demo-login")
+async def demo_login(body: DemoIn, response: Response):
+    if os.environ.get("DEMO_LOGIN_ENABLED") != "true" or body.account not in DEMO_ACCOUNTS:
+        raise HTTPException(403, "Login tester tidak aktif")
+    user = await db.users.find_one({"email": DEMO_ACCOUNTS[body.account]})
+    if not user:
+        raise HTTPException(404, "Akun tester tidak ditemukan")
+    return _issue(user, response)
 
 
 @auth.post("/logout")
