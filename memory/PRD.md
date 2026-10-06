@@ -27,9 +27,14 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 - Impor saldo awal YTD (CSV , / ; atau .xlsx) di halaman Pajak YTD + template.
 - Rekonsiliasi PPh 21 Desember Pasal 17 otomatis untuk periode yang berakhir di Desember (saldo YTD + slip sistem setelah cutoff + Desember). Testing iteration_2: 38/38 pass.
 
+## Implemented (2026-10-06, iteration 3)
+- Bukti Potong 1721-A1 tahunan (HRD: /hr-manager/tax-forms + PDF; Karyawan: daftar di /me + PDF terenkripsi DDMMYY). Hanya slip approved + saldo awal YTD. Config COMPANY_NAME / COMPANY_NPWP (placeholder), field NPWP karyawan.
+- Biaya jabatan dibatasi Rp 500rb × bulan kerja (Desember & 1721-A1).
+- Hapus periode draft / pending_approval (tanpa slip approved). Testing iteration_3: 53/53 pass.
+
 ## Backlog
-- P1: Bukti Potong 1721-A1 (Sprint 5)
-- P2: Hapus periode draft (kebersihan data)
+- P2: Notifikasi email slip & bukti potong, impor CSV absensi
+- P2: Ekspor CSV e-Bupot / Coretax
 - P2: Impor CSV absensi, notifikasi email slip, queue background PDF
 
 ## Next tasks

@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 3 — tested two new features: Bukti Potong 1721-A1 (HRD + Employee self-service) and Hapus Periode Draft. Added /app/backend/tests/test_1721a1_and_delete_period.py (14 tests). Full regression 53/53 pass. Frontend validated on preview URL.\n\nHRD /hr-manager/tax-forms (nav-1721-a1): a1-year-select present, a1-table shows 3 rows for 2026. Budi (EMP-001) row = 1.1-03.26-0000001 / 03–03 / K/1 / Bruto Rp 8.312.400 / Neto Rp 7.716.780 / PPh dipotong Rp 83.124 / Selisih Rp -83.124 / Sementara — exactly as specified. a1-download-EMP-001 button present. GET /api/hr/tax-forms/1721a1/{eid}/pdf?year=2026 returns application/pdf, %PDF header, NOT encrypted (no /Encrypt). Year without approved slips (2020) → 404.\n\nYTD import for EMP-001 2026 (cutoff 2): list_1721a1 now returns i7a saldo awal, i8 = Σ(i1..i7a), i11 = i9+i10, i12 = i8-i11, i16 rounded down to thousands, i17 Pasal 17 — all arithmetic verified. masa_start = 1 and has_initial_balance = true when YTD present.\n\nEmployee /me: Rumatku home shows section 'BUKTI POTONG PAJAK 1721-A1' (a1-list) with 'Tahun Pajak 2026 — Sementara — PPh 21 dipotong Rp 83.124' and footer tooltip 'PDF dilindungi sandi 6 digit tanggal lahir Anda (DDMMYY)'. a1-employee-download-2026 button present. GET /api/v1/employee/tax-forms/1721a1/2026/download returns encrypted PDF (pypdf reader.is_encrypted = True) that opens with Budi's birth password 150895. Year 2020 → 404. Employee calling HR endpoint → 403 (unauthorized role).\n\nDelete period: /hr-manager/payroll shows trash icon ONLY on TEST_Desember 2026 (menunggu_approval), TEST_BSI_empty (draft), TEST_April 2026 (menunggu_approval) — 3 trash buttons. Maret 2026 (approved&locked) has NO trash icon. Clicking trash opens delete-period-dialog AlertDialog. Backend DELETE /api/hr/periods/{Maret_pid} → 400 'Hanya periode yang belum memiliki slip approved yang dapat dihapus'. Deleting a draft period via API returns {ok:true, deleted_payslips:n} and GET /api/hr/periods/{pid} after → 404.\n\nEmployee NPWP: edit modal on Karyawan page contains emp-npwp-input (initially empty). PUT /api/hr/employees/{id} with npwp persists; a1 listing & PDF (extracted via pypdf) include the new NPWP. Restored to empty after test.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_1721a1_and_delete_period.py",
+    "/app/backend/tests/test_tax_and_bsi.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter3_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "tax_forms.build_1721a1 excludes slips whose end-month <= cutoff (good for YTD) but if an admin re-imports YTD with a different cutoff after approving slips in that range, those slips will silently drop from the form. Consider surfacing a warning in UI when there is overlap.",
+    "routes_hr.delete_period cascade-deletes payslips but does not touch related documents (e.g. generated PDF files on disk under /app/backend/payslips/, period_history/audit). Low priority since drafts don't produce encrypted PDFs, but worth confirming.",
+    "tax_forms.render_1721a1: when gender is None (not 'L'/'P') it renders 'Perempuan' as default — minor, but misleading for records without gender set. Prefer '-' when unknown.",
+    "tax_forms seq numbering is based on `employees.find({}).sort(nik)` — if a new employee is added mid-year the seq of existing employees shifts. Store a stable sequence per (year, employee) instead.",
+    "routes_employee.my_1721a1_pdf reads emp.birth_date without a null check — a legacy employee lacking birth_date will 500. Add fallback or 400 with a clear message.",
+    "Employee /me 1721-A1 section does not show a 'Final/Complete' badge for complete years (is_complete=true) — only 'Sementara' badge is rendered."
+  ],
+  "updated_files": ["/app/backend/tests/test_1721a1_and_delete_period.py"],
+  "success_rate": {"backend": "100% (53/53, 14 new)", "frontend": "100% on new flows"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is.",
+  "seed_data_creation": "YTD row for EMP-001 2026 created+deleted inside fixture. One short-lived TEST_DeleteMe_* period created in 2027-01 and deleted in the same test. Budi NPWP temporarily set then restored to empty. Maret 2026 untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression lives in /app/backend/tests/{backend_test.py,test_tax_and_bsi.py,test_1721a1_and_delete_period.py}. test_1721a1_and_delete_period cleans up its own YTD rows and temporary period. If TEST_* periods accumulate in preview DB they can now be removed via the new DELETE /api/hr/periods/{pid} endpoint (draft/pending_approval only). pypdf is available via /root/.venv — used for encrypted-PDF assertions.",
+  "rca of the issue": "n/a — no bugs found."
+}
