@@ -22,9 +22,14 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 - Tester quick-login buttons (env DEMO_LOGIN_ENABLED="true"; set false before production).
 - Testing agent iteration_1: 26/26 backend pass, frontend flows pass.
 
+## Implemented (2026-10-06, iteration 2)
+- Ekspor CSV transfer massal BSI (POST /api/hr/periods/{pid}/export-bsi, hanya slip approved; THP 0 / tanpa rekening dilewati). Rekening debet dari config BSI_COMPANY_DEBIT_ACCOUNT (placeholder).
+- Impor saldo awal YTD (CSV , / ; atau .xlsx) di halaman Pajak YTD + template.
+- Rekonsiliasi PPh 21 Desember Pasal 17 otomatis untuk periode yang berakhir di Desember (saldo YTD + slip sistem setelah cutoff + Desember). Testing iteration_2: 38/38 pass.
+
 ## Backlog
-- P1: Rekonsiliasi Desember Pasal 17 + impor YTD (Sprint 4)
-- P1: Export CSV BSI bulk payment, Bukti Potong 1721-A1 (Sprint 5)
+- P1: Bukti Potong 1721-A1 (Sprint 5)
+- P2: Hapus periode draft (kebersihan data)
 - P2: Impor CSV absensi, notifikasi email slip, queue background PDF
 
 ## Next tasks

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2: tested the two new features — BSI CSV export + Pajak YTD / December Pasal-17 reconciliation. Added /app/backend/tests/test_tax_and_bsi.py (13 tests, all green). Full regression suite = 38/38 pass. Frontend verified end-to-end on preview URL: nav-pajak-ytd works, template CSV/import CSV with ,/; delimiter + xlsx all succeed, unknown-NIK row surfaces in ytd-import-errors, delete row works. On PeriodDetail /hr-manager/payroll/{pid}, export-bsi-button is enabled for Maret 2026 (approved) and disabled for TEST_BSI_empty; download produces BSI_Payroll_Maret_2026.csv with correct 6-column header (Rekening Debet,Rekening Kredit,Nama Penerima,Nominal,Berita Acara,Email) and rows Budi=7716876 / Siti=5517934; EMP-003 (THP 0, no account) is skipped (reported via X-Skipped-Niks and toast). Workbench on TEST_Desember 2026 for EMP-001 with YTD cutoff 11 shows the Pasal 17 panel exactly as specified: Bruto setahun 99.908.800, Biaya jabatan 4.995.440, JHT+JP 2.160.000, Neto 92.753.360, PTKP K/1 63.000.000, PKP 29.753.000, annual_tax 1.487.650, PPh 21 Desember 573.286; ded-pph21 row label is 'PPh 21 Masa Desember (Pasal 17)'; pph21_method=pasal17. Non-December periods still use TER. Regression on login (tester buttons), workbench live recalc (+250000 for 5h OT), employee /me, approve+encrypted-PDF all still pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/hr-manager/payroll", "issues": ["Multiple TEST_Desember 2026 / TEST_BSI_empty / TEST_April 2026 rows accumulate across test runs because POST /api/hr/periods does not dedupe by name and there is no DELETE /api/hr/periods/{pid} endpoint. Not a bug per se, but hygiene is poor."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_tax_and_bsi.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter2_full.xml"
+  ],
+  "action_items": [
+    "Consider adding DELETE /api/hr/periods/{pid} (or a soft-delete / unique period_name constraint) so stale TEST_* periods created by regression don't accumulate in the preview DB.",
+    "Stored, already-approved Maret 2026 slips were persisted before pph21_method was added to compute_payslip output, so they lack that field. New slips (and all re-computed previews) have it. Backfill or re-save on read is optional."
+  ],
+  "critical_code_review_comments": [
+    "routes_tax._rows_from_upload: delimiter heuristic uses only the first line — if the first line has an unusual quoted header it could pick the wrong delimiter. Low risk, consider csv.Sniffer.",
+    "routes_tax.import_balances: cutoff_month range is 1-11, but ptkp_status / tax_year are not validated against allowlists (e.g. empty string accepted, year could be absurd). ptkp_amount() will crash later if ptkp_status is malformed when the row is picked up by December reconciliation. Validate on import.",
+    "pipeline.december_context: if cutoff_month is missing/0 the query becomes end_date >= '{year}-01-01' which includes all in-system slips including the current December period's sibling drafts; harmless now because current period is excluded via $ne but worth a comment.",
+    "routes_tax.export_bsi: Berita Acara slice is 50 chars; for long period names (e.g. 'Gaji Desember 2026 EMP-xxx') this still fits, but BSI corporate banking spec often caps at 40 — verify with the bank. Also the CSV uses the system's default line terminator (\\r\\n on Windows via csv module); some bank portals require specific encoding/BOM — currently sends plain UTF-8 without BOM.",
+    "BSI_COMPANY_DEBIT_ACCOUNT defaults to placeholder '[ISI_REKENING_DEBET_PERUSAHAAN]' — exported CSV will fail on bank side if user forgets to fill. Consider warning in UI or blocking export when value is unchanged.",
+    "Workbench PPh21 line renders two <Row/> variants with the same testId 'ded-pph21' (one for Pasal17, one for TER). Only one is mounted at a time so it works, but duplicate testids across branches is fragile.",
+    "TaxYtd.jsx: errors list uses `key={e}` where `e` is the error string — if two identical error strings appear, React key collision. Prefer index-based key."
+  ],
+  "updated_files": ["/app/backend/tests/test_tax_and_bsi.py"],
+  "success_rate": {"backend": "100% (38/38, 13 new)", "frontend": "100% on new flows + regression"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is (hrd.manager@rumatku.id / Password123!).",
+  "seed_data_creation": "Created test periods: TEST_BSI_empty (2026-05), TEST_Desember 2026 (2026-12). Created and then DELETEd Budi/Siti YTD rows for tax_year 2026 via /api/hr/tax-balances. Maret 2026 slips untouched. Note: TEST_Desember 2026 accumulates one new period per full-regression run — see action_items.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression lives in /app/backend/tests/{backend_test.py,test_tax_and_bsi.py}. test_tax_and_bsi.py is self-contained — TestDecemberReconciliation seeds its own Budi YTD row (test_a_setup_ytd) so it is safe under xdist loadscope even if TestTaxBalances runs on a different worker. Cleanup deletes YTD rows at end. The Maret 2026 export produces exactly 2 rows (Budi+Siti), Dimas is skipped and reported via X-Skipped-Niks + toast. Multiple TEST_Desember/TEST_BSI_empty/TEST_April periods will exist in preview DB from prior runs — ignore or delete via Mongo if desired.",
+  "rca of the issue": "n/a — no bugs found."
+}
