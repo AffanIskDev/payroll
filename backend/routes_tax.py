@@ -5,6 +5,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
 
+from tax_forms import list_1721a1, render_1721a1
+
 from core import db, now_iso, require_hr, get_configs
 from pipeline import get_period
 
@@ -97,6 +99,21 @@ async def delete_balance(bid: str):
     if not res.deleted_count:
         raise HTTPException(404, "Data tidak ditemukan")
     return {"ok": True}
+
+
+@router.get("/tax-forms/1721a1")
+async def forms_1721a1(year: int):
+    return await list_1721a1(year)
+
+
+@router.get("/tax-forms/1721a1/{eid}/pdf")
+async def form_1721a1_pdf(eid: str, year: int):
+    forms = await list_1721a1(year, eid)
+    if not forms:
+        raise HTTPException(404, "Belum ada data pajak karyawan pada tahun ini")
+    f = forms[0]
+    return Response(await render_1721a1(f), media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="1721-A1_{f["nik"]}_{year}.pdf"'})
 
 
 @router.post("/periods/{pid}/export-bsi")

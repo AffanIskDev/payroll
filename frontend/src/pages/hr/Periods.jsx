@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { PERIOD_STATUS } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const Field = ({ label, testId, ...p }) => (
   <label className="block space-y-1">
@@ -18,6 +19,7 @@ export default function Periods() {
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ period_name: "", start_date: "", end_date: "", payment_date: "" });
+  const [del, setDel] = useState(null);
   const load = () => api.get("/hr/periods").then((r) => setList(r.data));
   useEffect(() => { load(); }, []);
 
@@ -29,6 +31,14 @@ export default function Periods() {
       setOpen(false);
       load();
     } catch (err) { toast.error(errMsg(err)); }
+  };
+
+  const remove = async () => {
+    try {
+      await api.delete(`/hr/periods/${del.id}`);
+      toast.success(`Periode ${del.period_name} dihapus`);
+      load();
+    } catch (err) { toast.error(errMsg(err)); } finally { setDel(null); }
   };
 
   return (
@@ -48,7 +58,12 @@ export default function Periods() {
                 <td className="px-5 py-3 num text-slate-600">{p.start_date} → {p.end_date}</td>
                 <td className="px-5 py-3 num text-slate-600">{p.payment_date || "-"}</td>
                 <td className="px-5 py-3"><StatusBadge map={PERIOD_STATUS} status={p.status} testId={`period-status-${p.id}`} /></td>
-                <td className="px-5 py-3 text-right"><Link data-testid={`open-period-${p.id}`} to={`/hr-manager/payroll/${p.id}`} className="text-blue-900 font-semibold hover:underline">Buka</Link></td>
+                <td className="px-5 py-3 text-right whitespace-nowrap">
+                  <Link data-testid={`open-period-${p.id}`} to={`/hr-manager/payroll/${p.id}`} className="text-blue-900 font-semibold hover:underline">Buka</Link>
+                  {["draft", "pending_approval"].includes(p.status) && (
+                    <button data-testid={`delete-period-${p.id}`} onClick={() => setDel(p)} className="ml-3 p-1 rounded text-rose-600 hover:bg-rose-50 align-middle" title="Hapus periode"><Trash2 className="h-4 w-4" /></button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -68,6 +83,18 @@ export default function Periods() {
           </form>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>
+        <AlertDialogContent data-testid="delete-period-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus periode {del?.period_name}?</AlertDialogTitle>
+            <AlertDialogDescription>Periode beserta seluruh slip draft-nya akan dihapus permanen. Log absensi tidak terhapus.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="delete-period-cancel">Batal</AlertDialogCancel>
+            <AlertDialogAction data-testid="delete-period-confirm" onClick={remove} className="bg-rose-600 hover:bg-rose-700">Hapus</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -148,15 +148,23 @@ def pasal17_tax(pkp: float) -> int:
     return math.floor(tax)
 
 
-def december_reconciliation(ctx: dict, dec_taxable: float, dec_jht_jp: float, ptkp: str) -> dict:
-    """Rekonsiliasi PPh 21 masa Desember (Pasal 17 UU HPP)."""
-    gross_year = ctx["initial_gross"] + ctx["system_gross"] + dec_taxable
-    biaya_jabatan = min(round(gross_year * 0.05), 6000000)
-    jht_jp_year = ctx["initial_jht_jp"] + ctx["system_jht_jp"] + dec_jht_jp
+def annual_tax_summary(gross_year: float, jht_jp_year: float, months: int, ptkp: str) -> dict:
+    biaya_jabatan = min(round(gross_year * 0.05), 500000 * max(1, min(int(months), 12)))
     neto = gross_year - biaya_jabatan - jht_jp_year
     ptkp_val = ptkp_amount(ptkp)
     pkp = math.floor(max(0, neto - ptkp_val) / 1000) * 1000
-    annual_tax = pasal17_tax(pkp)
+    return {"biaya_jabatan": biaya_jabatan, "neto_year": neto, "ptkp_amount": ptkp_val, "pkp": pkp,
+            "annual_tax": pasal17_tax(pkp)}
+
+
+def december_reconciliation(ctx: dict, dec_taxable: float, dec_jht_jp: float, ptkp: str) -> dict:
+    """Rekonsiliasi PPh 21 masa Desember (Pasal 17 UU HPP)."""
+    gross_year = ctx["initial_gross"] + ctx["system_gross"] + dec_taxable
+    jht_jp_year = ctx["initial_jht_jp"] + ctx["system_jht_jp"] + dec_jht_jp
+    months = ctx.get("initial_months", 0) + ctx["system_months"] + 1
+    t = annual_tax_summary(gross_year, jht_jp_year, months, ptkp)
+    biaya_jabatan, neto, ptkp_val, pkp, annual_tax = (t["biaya_jabatan"], t["neto_year"], t["ptkp_amount"],
+                                                      t["pkp"], t["annual_tax"])
     paid = ctx["initial_pph21"] + ctx["system_pph21"]
     return {
         "tax_year": ctx["tax_year"], "initial_gross": ctx["initial_gross"], "system_gross": ctx["system_gross"],

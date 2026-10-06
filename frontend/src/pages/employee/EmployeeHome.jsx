@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, ChevronRight, LogIn, Clock, CheckCircle2, Landmark } from "lucide-react";
+import { LogOut, ChevronRight, LogIn, Clock, CheckCircle2, Landmark, FileBadge, Download } from "lucide-react";
 import { toast } from "sonner";
-import { api, errMsg } from "@/lib/api";
+import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 
@@ -13,11 +13,13 @@ export default function EmployeeHome() {
   const [slips, setSlips] = useState(null);
   const [profile, setProfile] = useState(null);
   const [today, setToday] = useState(null);
+  const [forms, setForms] = useState([]);
 
   const loadToday = () => api.get("/v1/employee/attendance/today").then((r) => setToday(r.data));
   useEffect(() => {
     api.get("/v1/employee/payslips").then((r) => setSlips(r.data));
     api.get("/v1/employee/profile").then((r) => setProfile(r.data));
+    api.get("/v1/employee/tax-forms/1721a1").then((r) => setForms(r.data));
     loadToday();
   }, []);
 
@@ -28,6 +30,10 @@ export default function EmployeeHome() {
       loadToday();
     } catch (e) { toast.error(errMsg(e)); }
   };
+
+  const downloadA1 = (y) => saveFile("get", `/v1/employee/tax-forms/1721a1/${y}/download`, `1721-A1_${y}.pdf`)
+    .then(() => toast.success("Bukti potong diunduh. Buka dengan sandi DDMMYY."))
+    .catch(async (e) => toast.error(await blobErrMsg(e)));
 
   const latest = slips?.[0];
   const log = today?.log;
@@ -86,6 +92,26 @@ export default function EmployeeHome() {
           ))}
         </div>
       </div>
+      {!!forms.length && (
+        <div className="px-4 mt-6">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2 px-1">Bukti Potong Pajak 1721-A1</div>
+          <div className="space-y-2" data-testid="a1-list">
+            {forms.map((f) => (
+              <button key={f.tax_year} data-testid={`a1-employee-download-${f.tax_year}`} onClick={() => downloadA1(f.tax_year)} className="w-full flex items-center justify-between bg-white rounded-xl border border-slate-200 px-4 py-3 hover:border-teal-400 transition-colors text-left">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-teal-50 grid place-items-center"><FileBadge className="h-4 w-4 text-teal-700" /></div>
+                  <div>
+                    <div className="text-sm font-semibold">Tahun Pajak {f.tax_year}{!f.is_complete && <span className="ml-2 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Sementara</span>}</div>
+                    <div className="text-[11px] text-slate-500 num">PPh 21 dipotong {rp(f.items.i20)}</div>
+                  </div>
+                </div>
+                <Download className="h-4 w-4 text-teal-700" />
+              </button>
+            ))}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-2 px-1">PDF dilindungi sandi 6 digit tanggal lahir Anda (DDMMYY)</div>
+        </div>
+      )}
     </div>
   );
 }

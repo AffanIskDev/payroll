@@ -10,7 +10,7 @@ const EMPTY = {
   nik: "", name: "", email: "", department: "", birth_date: "", gender: "L", marital_status: "TK", dependents_count: 0,
   has_husband_certificate: false, payroll_status: "active", prolonged_illness_month_count: 0, basic_salary: 0,
   position_allowance: 0, monthly_attendance_allowance: 0, overtime_hourly_rate: 0, has_bpjs_kes: true, has_bpjs_tk: true,
-  jkk_rate: 0.0024, bank_name: "BSI", bank_account_number: "", password: "",
+  jkk_rate: 0.0024, bank_name: "BSI", bank_account_number: "", npwp: "", password: "",
 };
 const NUM = ["dependents_count", "prolonged_illness_month_count", "basic_salary", "position_allowance", "monthly_attendance_allowance", "overtime_hourly_rate", "jkk_rate"];
 
@@ -106,6 +106,7 @@ export default function Employees() {
                 <Sel label="BPJS TK" k="has_bpjs_tk" f={f} setF={setF} opts={[["true", "Ya"], ["false", "Tidak"]]} />
                 <In label="Bank" k="bank_name" f={f} setF={setF} />
                 <In label="No. Rekening" k="bank_account_number" f={f} setF={setF} />
+                <In label="NPWP / NIK KTP" k="npwp" f={f} setF={setF} />
               </div>
               <Btn data-testid="employee-submit-button" className="w-full justify-center">Simpan Profil</Btn>
             </form>

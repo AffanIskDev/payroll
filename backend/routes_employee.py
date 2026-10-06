@@ -3,11 +3,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from core import db, now_iso, require_employee, get_configs
 from pipeline import get_period
-from pdf_service import save_encrypted
+from pdf_service import save_encrypted, encrypt_pdf, birth_password
+from tax_forms import list_1721a1, render_1721a1
 
 router = APIRouter(prefix="/api/v1/employee")
 WIB = timezone(timedelta(hours=7))
@@ -53,6 +54,32 @@ async def download(sid: str, user: dict = Depends(require_employee)):
     period = await get_period(p)
     name = f"Slip-Gaji-{slip['employee']['nik']}-{period['period_name'].replace(' ', '-')}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=name)
+
+
+async def _approved_years(eid: str) -> list:
+    pids = [s["payroll_period_id"] async for s in db.payslips.find(
+        {"employee_id": eid, "status": "approved"}, {"_id": 0, "payroll_period_id": 1})]
+    years = {int(p["end_date"][:4]) async for p in db.payroll_periods.find({"id": {"$in": pids}}, {"_id": 0})}
+    return sorted(years, reverse=True)
+
+
+@router.get("/tax-forms/1721a1")
+async def my_1721a1(user: dict = Depends(require_employee)):
+    out = []
+    for y in await _approved_years(user["employee_id"]):
+        out += await list_1721a1(y, user["employee_id"])
+    return out
+
+
+@router.get("/tax-forms/1721a1/{year}/download")
+async def my_1721a1_pdf(year: int, user: dict = Depends(require_employee)):
+    if year not in await _approved_years(user["employee_id"]):
+        raise HTTPException(404, "Bukti potong belum tersedia")
+    f = (await list_1721a1(year, user["employee_id"]))[0]
+    emp = await db.employees.find_one({"id": user["employee_id"]}, {"_id": 0, "birth_date": 1})
+    data = encrypt_pdf(await render_1721a1(f), birth_password(emp["birth_date"]))
+    return Response(data, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="1721-A1_{f["nik"]}_{year}.pdf"'})
 
 
 @router.get("/profile")

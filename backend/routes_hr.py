@@ -40,6 +40,7 @@ class EmployeeIn(BaseModel):
     jkk_rate: float = 0.0024
     bank_name: str = "BSI"
     bank_account_number: str = ""
+    npwp: str = ""
     password: Optional[str] = None
 
 
@@ -204,6 +205,17 @@ async def period_detail(pid: str):
     slips = await db.payslips.find({"payroll_period_id": pid}, {"_id": 0, "discipline": 0, "bpjs": 0}) \
         .sort("employee.nik", 1).to_list(2000)
     return {"period": period, "payslips": slips}
+
+
+@router.delete("/periods/{pid}")
+async def delete_period(pid: str):
+    period = await get_period(pid)
+    if period["status"] not in ("draft", "pending_approval") or \
+            await db.payslips.count_documents({"payroll_period_id": pid, "status": "approved"}):
+        raise HTTPException(400, "Hanya periode yang belum memiliki slip approved yang dapat dihapus")
+    res = await db.payslips.delete_many({"payroll_period_id": pid})
+    await db.payroll_periods.delete_one({"id": pid})
+    return {"ok": True, "deleted_payslips": res.deleted_count}
 
 
 @router.post("/periods/{pid}/process")
