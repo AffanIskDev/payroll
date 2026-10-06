@@ -29,3 +29,24 @@ export async function downloadBlob(url, filename, open = false) {
   a.click();
   URL.revokeObjectURL(href);
 }
+
+export async function saveFile(method, url, fallbackName) {
+  const res = await api.request({ method, url, responseType: "blob" });
+  const cd = res.headers["content-disposition"] || "";
+  const name = (cd.match(/filename="?([^"]+)"?/) || [])[1] || fallbackName;
+  const href = URL.createObjectURL(res.data);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(href);
+  return res.headers;
+}
+
+export async function blobErrMsg(e) {
+  const d = e?.response?.data;
+  if (d instanceof Blob) {
+    try { return JSON.parse(await d.text()).detail || "Terjadi kesalahan"; } catch { return "Terjadi kesalahan"; }
+  }
+  return errMsg(e);
+}

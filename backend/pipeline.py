@@ -30,10 +30,32 @@ async def get_employee(eid: str) -> dict:
     return e
 
 
+async def december_context(period: dict, emp: dict) -> Optional[dict]:
+    if period["end_date"][5:7] != "12":
+        return None
+    year = int(period["end_date"][:4])
+    init = await db.employee_tax_initial_balances.find_one({"employee_id": emp["id"], "tax_year": year}, {"_id": 0})
+    cutoff = int((init or {}).get("cutoff_month") or 0)
+    pids = {p["id"] async for p in db.payroll_periods.find(
+        {"id": {"$ne": period["id"]}, "end_date": {"$gte": f"{year}-{cutoff + 1:02d}-01", "$lt": f"{year}-12-01"}},
+        {"_id": 0, "id": 1})}
+    slips = await db.payslips.find({"employee_id": emp["id"], "payroll_period_id": {"$in": list(pids)}},
+                                   {"_id": 0, "taxable_gross": 1, "pph21_amount": 1, "bpjs": 1}).to_list(12)
+    return {
+        "tax_year": year, "has_initial_balance": bool(init),
+        "initial_gross": float((init or {}).get("gross_income_ytd") or 0),
+        "initial_jht_jp": float((init or {}).get("employee_jht_jp_ytd") or 0),
+        "initial_pph21": float((init or {}).get("pph21_paid_ytd") or 0),
+        "system_gross": sum(s["taxable_gross"] for s in slips),
+        "system_jht_jp": sum(s["bpjs"]["jht_employee"] + s["bpjs"]["jp_employee"] for s in slips),
+        "system_pph21": sum(s["pph21_amount"] for s in slips), "system_months": len(slips),
+    }
+
+
 async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = None) -> dict:
     cfg = cfg or await get_configs()
     logs = await period_logs(emp["id"], period)
-    calc = compute_payslip(emp, logs, cfg, adj)
+    calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     return calc
 

@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Play, LockKeyhole, ChevronLeft } from "lucide-react";
+import { Play, LockKeyhole, ChevronLeft, Landmark } from "lucide-react";
 import { toast } from "sonner";
-import { api, errMsg } from "@/lib/api";
+import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp, PERIOD_STATUS, SLIP_STATUS, PAYROLL_STATUS_LABELS } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 
@@ -22,9 +22,18 @@ export default function PeriodDetail() {
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
 
+  const exportBsi = async () => {
+    try {
+      const h = await saveFile("post", `/hr/periods/${pid}/export-bsi`, "BSI_Payroll.csv");
+      const skipped = h["x-skipped-niks"];
+      toast.success(`CSV BSI diunduh: ${h["x-exported-count"]} transfer${skipped ? ` · dilewati (THP 0 / tanpa rekening): ${skipped}` : ""}`);
+    } catch (e) { toast.error(await blobErrMsg(e)); }
+  };
+
   if (!d) return <div className="text-sm text-slate-500">Memuat...</div>;
   const { period, payslips } = d;
   const locked = ["approved", "closed"].includes(period.status);
+  const approvedCount = payslips.filter((s) => s.status === "approved").length;
   const sum = (k) => payslips.reduce((a, s) => a + (s[k] || 0), 0);
 
   return (
@@ -34,6 +43,7 @@ export default function PeriodDetail() {
         <StatusBadge map={PERIOD_STATUS} status={period.status} testId="period-status-badge" />
         <Btn variant="outline" data-testid="process-payroll-button" disabled={busy || locked} onClick={() => act("process", "Batch payroll selesai dihitung")}><Play className="h-4 w-4" /> Proses Payroll</Btn>
         <Btn variant="success" data-testid="approve-all-button" disabled={busy || locked || !payslips.length} onClick={() => act("approve-all", "Semua slip di-approve & dikunci")}><LockKeyhole className="h-4 w-4" /> Approve & Lock Semua</Btn>
+        <Btn variant="primary" data-testid="export-bsi-button" disabled={!approvedCount} onClick={exportBsi} title="Hanya slip approved"><Landmark className="h-4 w-4" /> Ekspor BSI (CSV)</Btn>
       </PageTitle>
       <Panel>
         <div className="overflow-x-auto">

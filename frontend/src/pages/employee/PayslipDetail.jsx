@@ -63,7 +63,7 @@ export default function PayslipDetail() {
           <AccordionContent>
             <Line k="Iuran BPJS Kesehatan" v={s.iuran_bpjs_kes_total} neg />
             <Line k="Iuran BPJS Ketenagakerjaan" v={s.iuran_bpjs_tk_total} neg />
-            <Line k={`PPh 21 (TER ${s.ter_category} ${s.ter_rate}%)`} v={s.pph21_amount} neg testId="detail-pph21" />
+            <Line k={s.pph21_method === "pasal17" ? "PPh 21 Desember (Pasal 17)" : `PPh 21 (TER ${s.ter_category} ${s.ter_rate}%)`} v={s.pph21_amount} neg testId="detail-pph21" />
             <Line k="Kasbon / Lainnya" v={s.other_deductions} neg />
           </AccordionContent>
         </AccordionItem>

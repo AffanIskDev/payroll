@@ -15,6 +15,7 @@ from core import db, client, verify_password, create_access_token, get_current_u
 from seed import seed  # noqa: E402
 import routes_hr  # noqa: E402
 import routes_employee  # noqa: E402
+import routes_tax  # noqa: E402
 
 app = FastAPI(title="Payroll ROSY & Rumatku")
 auth = APIRouter(prefix="/api/auth")
@@ -86,9 +87,11 @@ async def me(user: dict = Depends(get_current_user)):
 app.include_router(auth)
 app.include_router(routes_hr.router)
 app.include_router(routes_employee.router)
+app.include_router(routes_tax.router)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origin_regex=".*",
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_methods=["*"], allow_headers=["*"],
+                   expose_headers=["Content-Disposition", "X-Exported-Count", "X-Skipped-Niks"])
 
 
 @app.on_event("startup")

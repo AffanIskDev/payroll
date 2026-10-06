@@ -60,7 +60,8 @@ def render_payslip(slip: dict, period: dict) -> bytes:
             ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"]), ("TOTAL PENERIMAAN", slip["gross_earnings"])]
     ded = [("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"]),
            ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"]),
-           (f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)", slip["pph21_amount"]),
+           (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
+             else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"]),
            ("Kasbon / Potongan Lain", slip["other_deductions"]), ("TOTAL POTONGAN", slip["total_deductions"])]
     two = Table([[_col(earn, "PENERIMAAN"), _col(ded, "POTONGAN")]], colWidths=[90 * mm, 90 * mm])
     two.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))

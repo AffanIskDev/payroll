@@ -83,6 +83,7 @@ DEFAULT_CONFIGS = {
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
     "WORK_START_TIME": ("08:00", "Jam masuk jadwal kerja"),
     "WORK_END_TIME": ("17:00", "Jam pulang jadwal kerja"),
+    "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),
 }
 
 

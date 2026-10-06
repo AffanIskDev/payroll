@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut } from "lucide-react";
+import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const NAV = [
@@ -7,6 +7,7 @@ const NAV = [
   ["/hr-manager/payroll", "Payroll", Wallet],
   ["/hr-manager/employees", "Karyawan", Users],
   ["/hr-manager/attendance", "Absensi", CalendarClock],
+  ["/hr-manager/tax", "Pajak YTD", Calculator],
   ["/hr-manager/config", "Konfigurasi", Settings2],
 ];
 
@@ -22,7 +23,7 @@ export default function HrLayout() {
           </div>
           <nav className="flex items-center gap-1 overflow-x-auto">
             {NAV.map(([to, label, Icon, end]) => (
-              <NavLink key={to} to={to} end={end} data-testid={`nav-${label.toLowerCase()}`}
+              <NavLink key={to} to={to} end={end} data-testid={`nav-${label.toLowerCase().replace(/\s/g, "-")}`}
                 className={({ isActive }) => `flex items-center gap-1.5 px-3 py-1.5 rounded text-sm whitespace-nowrap transition-colors ${isActive ? "bg-blue-900 text-white" : "text-slate-300 hover:bg-slate-800"}`}>
                 <Icon className="h-4 w-4" /> <span className="hidden md:inline">{label}</span>
               </NavLink>

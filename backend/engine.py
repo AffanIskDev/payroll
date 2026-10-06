@@ -130,7 +130,44 @@ def calc_bpjs(emp: dict, cfg: dict) -> dict:
     return r
 
 
-def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict) -> dict:
+PASAL17_BRACKETS = [(60000000, 5), (250000000, 15), (500000000, 25), (5000000000, 30), (float("inf"), 35)]
+
+
+def ptkp_amount(ptkp: str) -> int:
+    status, dep = ptkp.split("/")
+    return 54000000 + (4500000 if status == "K" else 0) + 4500000 * int(dep)
+
+
+def pasal17_tax(pkp: float) -> int:
+    tax, lower = 0.0, 0
+    for upper, rate in PASAL17_BRACKETS:
+        if pkp <= lower:
+            break
+        tax += (min(pkp, upper) - lower) * rate / 100
+        lower = upper
+    return math.floor(tax)
+
+
+def december_reconciliation(ctx: dict, dec_taxable: float, dec_jht_jp: float, ptkp: str) -> dict:
+    """Rekonsiliasi PPh 21 masa Desember (Pasal 17 UU HPP)."""
+    gross_year = ctx["initial_gross"] + ctx["system_gross"] + dec_taxable
+    biaya_jabatan = min(round(gross_year * 0.05), 6000000)
+    jht_jp_year = ctx["initial_jht_jp"] + ctx["system_jht_jp"] + dec_jht_jp
+    neto = gross_year - biaya_jabatan - jht_jp_year
+    ptkp_val = ptkp_amount(ptkp)
+    pkp = math.floor(max(0, neto - ptkp_val) / 1000) * 1000
+    annual_tax = pasal17_tax(pkp)
+    paid = ctx["initial_pph21"] + ctx["system_pph21"]
+    return {
+        "tax_year": ctx["tax_year"], "initial_gross": ctx["initial_gross"], "system_gross": ctx["system_gross"],
+        "system_months": ctx["system_months"], "december_gross": dec_taxable, "gross_year": gross_year,
+        "biaya_jabatan": biaya_jabatan, "jht_jp_year": jht_jp_year, "neto_year": neto, "ptkp_amount": ptkp_val,
+        "pkp": pkp, "annual_tax": annual_tax, "pph21_paid_jan_nov": paid, "pph21_december": annual_tax - paid,
+        "has_initial_balance": ctx["has_initial_balance"],
+    }
+
+
+def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict = None) -> dict:
     wd = int(cfg.get("DEFAULT_WORK_DAYS", 25))
     status = emp.get("payroll_status", "active")
     mult = wage_multiplier(status, emp.get("prolonged_illness_month_count"))
@@ -175,6 +212,10 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict) -> dict:
     cat = ter_category(ptkp)
     rate = ter_rate(cat, taxable)
     pph21 = math.floor(taxable * rate / 100)
+    recon = None
+    if dec_ctx is not None:
+        recon = december_reconciliation(dec_ctx, taxable, bp["jht_employee"] + bp["jp_employee"], ptkp)
+        pph21 = recon["pph21_december"]
 
     iuran_kes = bp["kes_company"] + bp["kes_employee"]
     iuran_tk = bp["jkk"] + bp["jkm"] + bp["jht_company"] + bp["jht_employee"] + bp["jp_company"] + bp["jp_employee"]
@@ -194,7 +235,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict) -> dict:
         "late_penalty_amount": penalty_amount, "late_penalty_compensation": compensation,
         "absent_days": disc["basic_cut_days"], "absent_deduction_amount": absent_deduction,
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
-        "pph21_amount": pph21, "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
+        "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
+        "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
         "other_deductions": kasbon, "total_deductions": total_ded, "take_home_pay": thp,
         "bpjs_company_advance": bpjs_advance,
         "discipline": disc, "bpjs": bp, "terbilang": terbilang(thp),

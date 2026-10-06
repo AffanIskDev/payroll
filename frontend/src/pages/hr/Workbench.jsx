@@ -128,10 +128,15 @@ export default function Workbench() {
             <div className="px-5 py-2">
               <Row label="Iuran BPJS Kesehatan (5%)" hint={`Perusahaan ${rp(bp.kes_company)} + Karyawan ${rp(bp.kes_employee)}`} value={rp(calc.iuran_bpjs_kes_total)} testId="ded-bpjs-kes" />
               <Row label="Iuran BPJS Ketenagakerjaan" hint={`JKK+JKM ${rp(bp.jkk + bp.jkm)} · JHT ${rp(bp.jht_company + bp.jht_employee)} · JP ${rp(bp.jp_company + bp.jp_employee)}`} value={rp(calc.iuran_bpjs_tk_total)} testId="ded-bpjs-tk" />
-              <Row label={`PPh 21 TER ${calc.ter_category}`} hint={`${calc.ter_rate}% × ${rp(calc.taxable_gross)}`} value={rp(calc.pph21_amount)} testId="ded-pph21" />
+              {calc.tax_reconciliation ? (
+                <Row label="PPh 21 Masa Desember (Pasal 17)" hint={calc.pph21_amount < 0 ? "Lebih bayar — dikembalikan ke karyawan" : "Terutang setahun − dipotong Jan–Nov"} value={rp(calc.pph21_amount)} tone={calc.pph21_amount < 0 ? "text-emerald-600" : ""} testId="ded-pph21" />
+              ) : (
+                <Row label={`PPh 21 TER ${calc.ter_category}`} hint={`${calc.ter_rate}% × ${rp(calc.taxable_gross)}`} value={rp(calc.pph21_amount)} testId="ded-pph21" />
+              )}
               <Edit label="Kasbon / Potongan Lain" value={adj.other_deductions} onChange={set("other_deductions")} disabled={locked} testId="input-other-deductions" />
             </div>
           </Panel>
+          {calc.tax_reconciliation && <Recon r={calc.tax_reconciliation} ptkp={calc.ptkp_status} />}
           <Panel title="Waterfall Denda Disiplin">
             <div className="grid grid-cols-4 divide-x divide-slate-200 text-center" data-testid="waterfall-summary">
               {[["Rule 1", dc.rule1_points, "Lupa tap"], ["Rule 2", dc.rule2_points, "≥ 60 m"], ["Rule 3", dc.rule3_points, `${dc.rule3_events} × 15–59 m`], ["Rule 4", dc.rule4_points, `${dc.rule4_minutes} m akumulasi`]].map(([k, v, h]) => (
@@ -175,4 +180,23 @@ export default function Workbench() {
 
 const Info = ({ k, v, testId }) => (
   <div><div className="text-[11px] uppercase tracking-wider text-slate-500">{k}</div><div className="text-sm font-semibold" data-testid={testId}>{v}</div></div>
+);
+
+const Recon = ({ r, ptkp }) => (
+  <Panel title={`Rekonsiliasi Pasal 17 · ${r.tax_year}`} right={!r.has_initial_balance && <span className="text-[11px] text-amber-700" data-testid="recon-no-ytd">Tanpa saldo awal YTD</span>}>
+    <div className="px-5 py-2" data-testid="tax-reconciliation-panel">
+      <Row label="Saldo awal YTD (impor)" value={rp(r.initial_gross)} />
+      <Row label={`Bruto sistem (${r.system_months} bulan)`} value={rp(r.system_gross)} />
+      <Row label="Bruto Desember" value={rp(r.december_gross)} />
+      <Row label="Bruto setahun" value={rp(r.gross_year)} tone="font-semibold" testId="recon-gross-year" />
+      <Row label="Biaya jabatan (5%, maks 6 jt)" value={`- ${rp(r.biaya_jabatan)}`} />
+      <Row label="JHT + JP pekerja setahun" value={`- ${rp(r.jht_jp_year)}`} />
+      <Row label="Neto setahun" value={rp(r.neto_year)} />
+      <Row label={`PTKP ${ptkp}`} value={`- ${rp(r.ptkp_amount)}`} />
+      <Row label="PKP (dibulatkan ribuan)" value={rp(r.pkp)} testId="recon-pkp" />
+      <Row label="PPh 21 terutang setahun" value={rp(r.annual_tax)} testId="recon-annual-tax" />
+      <Row label="Sudah dipotong Jan–Nov" value={`- ${rp(r.pph21_paid_jan_nov)}`} />
+      <Row label="PPh 21 Desember" value={rp(r.pph21_december)} tone="font-bold" testId="recon-december" />
+    </div>
+  </Panel>
 );
