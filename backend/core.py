@@ -81,8 +81,6 @@ DEFAULT_CONFIGS = {
     "BPJS_JP_MAX_WAGE": ("10042300", "Plafon upah maksimal Jaminan Pensiun"),
     "BPJS_KES_MAX_WAGE": ("12000000", "Plafon upah maksimal BPJS Kesehatan"),
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
-    "WORK_START_TIME": ("08:00", "Jam masuk jadwal kerja"),
-    "WORK_END_TIME": ("17:00", "Jam pulang jadwal kerja"),
     "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Nama pemotong pajak (1721-A1)"),
     "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "NPWP pemotong pajak (1721-A1)"),
     "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),

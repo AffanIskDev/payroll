@@ -5,7 +5,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
-from core import db, now_iso, require_employee, get_configs
+from core import db, now_iso, require_employee
+from schedules import employee_schedule, resolve_shift, minutes_for, DAY_NAMES
 from pipeline import get_period
 from pdf_service import save_encrypted, encrypt_pdf, birth_password
 from tax_forms import list_1721a1, render_1721a1
@@ -94,28 +95,37 @@ def _today():
     return n.strftime("%Y-%m-%d"), n.strftime("%H:%M"), n.hour * 60 + n.minute
 
 
-def _mins(t: str) -> int:
-    h, m = t.split(":")[:2]
-    return int(h) * 60 + int(m)
+async def _ctx(user: dict):
+    emp = await db.employees.find_one({"id": user["employee_id"]}, {"_id": 0})
+    return await employee_schedule(emp)
+
+
+def _shift_fields(shift):
+    return {"shift_code": shift and shift["code"], "shift_name": shift and shift["name"],
+            "schedule_start": shift and shift["start"], "schedule_end": shift and shift["end"],
+            "is_off_day": shift is None}
 
 
 @router.get("/attendance/today")
 async def today(user: dict = Depends(require_employee)):
     d, _, _ = _today()
     log = await db.attendance_daily_logs.find_one({"employee_id": user["employee_id"], "work_date": d}, {"_id": 0})
-    return {"date": d, "log": log}
+    sched = await _ctx(user)
+    wd = str(datetime.fromisoformat(d).weekday())
+    shifts = [{"code": s["code"], "name": s["name"], **s["days"][wd]} for s in sched["shifts"] if wd in s["days"]]
+    return {"date": d, "day_name": DAY_NAMES[int(wd)], "schedule_name": sched["name"], "shifts": shifts, "log": log}
 
 
 @router.post("/attendance/clock-in")
 async def clock_in(user: dict = Depends(require_employee)):
-    d, hhmm, mins = _today()
-    cfg = await get_configs()
+    d, hhmm, _ = _today()
     eid = user["employee_id"]
     if await db.attendance_daily_logs.find_one({"employee_id": eid, "work_date": d, "check_in_time": {"$ne": None}}):
         raise HTTPException(400, "Anda sudah absen masuk hari ini")
-    late = max(0, mins - _mins(cfg["WORK_START_TIME"]))
+    shift = resolve_shift(await _ctx(user), d, hhmm, None)
+    late, _ = minutes_for(shift, hhmm, None)
     data = {"check_in_time": hhmm, "minutes_late": late, "is_missing_check_in": False, "leave_type": "present",
-            "source": "rumatku", "updated_at": now_iso()}
+            "source": "rumatku", "updated_at": now_iso(), **_shift_fields(shift)}
     res = await db.attendance_daily_logs.update_one(
         {"employee_id": eid, "work_date": d}, {"$set": data,
                                                "$setOnInsert": {"id": str(uuid.uuid4()), "check_out_time": None,
@@ -126,15 +136,15 @@ async def clock_in(user: dict = Depends(require_employee)):
 
 @router.post("/attendance/clock-out")
 async def clock_out(user: dict = Depends(require_employee)):
-    d, hhmm, mins = _today()
-    cfg = await get_configs()
+    d, hhmm, _ = _today()
     eid = user["employee_id"]
     log = await db.attendance_daily_logs.find_one({"employee_id": eid, "work_date": d})
     if log and log.get("check_out_time"):
         raise HTTPException(400, "Anda sudah absen pulang hari ini")
-    early = max(0, _mins(cfg["WORK_END_TIME"]) - mins)
+    shift = resolve_shift(await _ctx(user), d, (log or {}).get("check_in_time"), hhmm, (log or {}).get("shift_code"))
+    _, early = minutes_for(shift, None, hhmm)
     data = {"check_out_time": hhmm, "minutes_early_leave": early, "is_missing_check_out": False,
-            "source": "rumatku", "updated_at": now_iso()}
+            "source": "rumatku", "updated_at": now_iso(), **_shift_fields(shift)}
     await db.attendance_daily_logs.update_one(
         {"employee_id": eid, "work_date": d},
         {"$set": data, "$setOnInsert": {"id": str(uuid.uuid4()), "check_in_time": None, "minutes_late": 0,

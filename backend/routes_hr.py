@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from core import db, now_iso, require_hr, get_configs, hash_password, DEFAULT_CONFIGS
+from core import db, now_iso, require_hr, hash_password, DEFAULT_CONFIGS
+from schedules import employee_schedule, resolve_shift, minutes_for
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, ADJ_KEYS)
 from pdf_service import render_payslip
@@ -41,6 +42,7 @@ class EmployeeIn(BaseModel):
     bank_name: str = "BSI"
     bank_account_number: str = ""
     npwp: str = ""
+    work_schedule_code: str = "KANTOR_PUSAT"
     password: Optional[str] = None
 
 
@@ -54,6 +56,7 @@ class AttendanceIn(BaseModel):
     is_missing_check_in: bool = False
     is_missing_check_out: bool = False
     leave_type: LeaveType = "present"
+    shift_code: Optional[str] = None
     notes: str = ""
 
 
@@ -71,11 +74,6 @@ class AdjustIn(BaseModel):
     late_penalty_compensation: float = 0
     other_deductions: float = 0
     adjustment_notes: str = ""
-
-
-def _mins(t: str) -> int:
-    h, m = t.split(":")[:2]
-    return int(h) * 60 + int(m)
 
 
 @router.get("/dashboard")
@@ -104,6 +102,41 @@ async def update_configs(body: dict):
             raise HTTPException(400, f"Config tidak dikenal: {k}")
         await db.payroll_configs.update_one({"config_key": k}, {"$set": {"config_value": str(v)}})
     return await list_configs()
+
+
+class ShiftIn(BaseModel):
+    code: str
+    name: str
+    days: dict
+
+
+class ScheduleIn(BaseModel):
+    name: str
+    shifts: list[ShiftIn]
+
+
+@router.get("/schedules")
+async def list_schedules():
+    return await db.work_schedules.find({}, {"_id": 0}).sort("code", 1).to_list(100)
+
+
+@router.put("/schedules/{code}")
+async def update_schedule(code: str, body: ScheduleIn):
+    if not await db.work_schedules.find_one({"code": code}):
+        raise HTTPException(404, "Jadwal tidak ditemukan")
+    shifts = []
+    for s in body.shifts:
+        days = {}
+        for k, v in s.days.items():
+            if k not in [str(i) for i in range(7)]:
+                raise HTTPException(400, f"Hari tidak valid: {k}")
+            if v and v.get("start") and v.get("end"):
+                if v["start"] >= v["end"]:
+                    raise HTTPException(400, f"{s.name}: jam masuk harus sebelum jam pulang")
+                days[k] = {"start": v["start"][:5], "end": v["end"][:5]}
+        shifts.append({"code": s.code, "name": s.name, "days": days})
+    await db.work_schedules.update_one({"code": code}, {"$set": {"name": body.name, "shifts": shifts}})
+    return await db.work_schedules.find_one({"code": code}, {"_id": 0})
 
 
 @router.get("/employees")
@@ -157,15 +190,20 @@ async def list_attendance(employee_id: str, start: str, end: str):
 
 @router.post("/attendance")
 async def upsert_attendance(body: AttendanceIn):
-    await get_employee(body.employee_id)
+    emp = await get_employee(body.employee_id)
     data = body.model_dump()
-    cfg = await get_configs()
+    shift = None
+    if data["leave_type"] == "present":
+        shift = resolve_shift(await employee_schedule(emp), data["work_date"], data["check_in_time"],
+                              data["check_out_time"], data["shift_code"])
+    late, early = minutes_for(shift, data["check_in_time"], data["check_out_time"])
     if data["minutes_late"] is None:
-        data["minutes_late"] = max(0, _mins(data["check_in_time"]) - _mins(cfg["WORK_START_TIME"])) \
-            if data["check_in_time"] else 0
+        data["minutes_late"] = late
     if data["minutes_early_leave"] is None:
-        data["minutes_early_leave"] = max(0, _mins(cfg["WORK_END_TIME"]) - _mins(data["check_out_time"])) \
-            if data["check_out_time"] else 0
+        data["minutes_early_leave"] = early
+    data.update(shift_code=shift and shift["code"], shift_name=shift and shift["name"],
+                schedule_start=shift and shift["start"], schedule_end=shift and shift["end"],
+                is_off_day=data["leave_type"] == "present" and shift is None)
     data.update(source="hrd_manual", updated_at=now_iso())
     existing = await db.attendance_daily_logs.find_one({"employee_id": body.employee_id, "work_date": body.work_date})
     if existing:

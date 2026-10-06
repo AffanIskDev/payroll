@@ -10,7 +10,7 @@ const EMPTY = {
   nik: "", name: "", email: "", department: "", birth_date: "", gender: "L", marital_status: "TK", dependents_count: 0,
   has_husband_certificate: false, payroll_status: "active", prolonged_illness_month_count: 0, basic_salary: 0,
   position_allowance: 0, monthly_attendance_allowance: 0, overtime_hourly_rate: 0, has_bpjs_kes: true, has_bpjs_tk: true,
-  jkk_rate: 0.0024, bank_name: "BSI", bank_account_number: "", npwp: "", password: "",
+  jkk_rate: 0.0024, bank_name: "BSI", bank_account_number: "", npwp: "", work_schedule_code: "KANTOR_PUSAT", password: "",
 };
 const NUM = ["dependents_count", "prolonged_illness_month_count", "basic_salary", "position_allowance", "monthly_attendance_allowance", "overtime_hourly_rate", "jkk_rate"];
 
@@ -32,8 +32,9 @@ const Sel = ({ label, k, f, setF, opts }) => (
 export default function Employees() {
   const [list, setList] = useState([]);
   const [f, setF] = useState(null);
+  const [schedules, setSchedules] = useState([]);
   const load = () => api.get("/hr/employees").then((r) => setList(r.data));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get("/hr/schedules").then((r) => setSchedules(r.data)); }, []);
 
   const save = async (e) => {
     e.preventDefault();
@@ -57,7 +58,7 @@ export default function Employees() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="employees-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
-              <tr>{["NIK", "Nama", "Dept", "L/P", "Status Nikah", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rekening", ""].map((h) => <th key={h} className="text-left px-4 py-3">{h}</th>)}</tr>
+              <tr>{["NIK", "Nama", "Dept", "Jadwal", "L/P", "Status Nikah", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rekening", ""].map((h) => <th key={h} className="text-left px-4 py-3">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {list.map((e) => (
@@ -65,6 +66,7 @@ export default function Employees() {
                   <td className="px-4 py-3 num">{e.nik}</td>
                   <td className="px-4 py-3 font-semibold">{e.name}<div className="text-xs font-normal text-slate-500">{e.email}</div></td>
                   <td className="px-4 py-3 text-slate-600">{e.department}</td>
+                  <td className="px-4 py-3 num text-xs" data-testid={`employee-schedule-${e.nik}`}>{e.work_schedule_code || "KANTOR_PUSAT"}</td>
                   <td className="px-4 py-3">{e.gender}</td>
                   <td className="px-4 py-3 num">{e.marital_status}/{e.dependents_count}{e.has_husband_certificate ? " ✓SK" : ""}</td>
                   <td className="px-4 py-3 text-xs">{PAYROLL_STATUS_LABELS[e.payroll_status]}</td>
@@ -107,6 +109,7 @@ export default function Employees() {
                 <In label="Bank" k="bank_name" f={f} setF={setF} />
                 <In label="No. Rekening" k="bank_account_number" f={f} setF={setF} />
                 <In label="NPWP / NIK KTP" k="npwp" f={f} setF={setF} />
+                <Sel label="Jadwal Kerja" k="work_schedule_code" f={f} setF={setF} opts={schedules.map((s) => [s.code, s.name])} />
               </div>
               <Btn data-testid="employee-submit-button" className="w-full justify-center">Simpan Profil</Btn>
             </form>

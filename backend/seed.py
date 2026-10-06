@@ -3,6 +3,7 @@ import uuid
 
 from core import db, now_iso, hash_password, verify_password, DEFAULT_CONFIGS
 from pipeline import process_period
+from schedules import seed_schedules
 
 DEMO_PASSWORD = "Password123!"
 
@@ -54,6 +55,10 @@ async def seed():
     for k, (v, desc) in DEFAULT_CONFIGS.items():
         await db.payroll_configs.update_one({"config_key": k}, {"$setOnInsert": {
             "config_key": k, "config_value": v, "description": desc}}, upsert=True)
+    await db.payroll_configs.delete_many({"config_key": {"$nin": list(DEFAULT_CONFIGS)}})
+    await seed_schedules()
+    await db.employees.update_many({"work_schedule_code": {"$exists": False}},
+                                   {"$set": {"work_schedule_code": "KANTOR_PUSAT"}})
 
     await ensure_user("hrd.manager@rumatku.id", DEMO_PASSWORD, "Manager HRD", "manager_hrd")
     await ensure_user(os.environ["ADMIN_EMAIL"], os.environ["ADMIN_PASSWORD"], "Admin Payroll", "admin_payroll")
@@ -62,7 +67,7 @@ async def seed():
         emp = await db.employees.find_one({"nik": e["nik"]})
         if not emp:
             emp = {**e, "id": str(uuid.uuid4()), "prolonged_illness_month_count": 0, "unpaid_leave_start": None,
-                   "unpaid_leave_end": None, "has_bpjs_kes": True, "has_bpjs_tk": True, "jkk_rate": 0.0024,
+                   "unpaid_leave_end": None, "has_bpjs_kes": True, "has_bpjs_tk": True, "jkk_rate": 0.0024, "work_schedule_code": "KANTOR_PUSAT",
                    "created_at": now_iso()}
             if e["payroll_status"] == "unpaid_leave":
                 emp.update(unpaid_leave_start="2026-03-01", unpaid_leave_end="2026-05-31")
@@ -75,7 +80,7 @@ async def seed():
             await db.attendance_daily_logs.update_one(
                 {"employee_id": budi["id"], "work_date": f"2026-03-{day:02d}"},
                 {"$setOnInsert": {"id": str(uuid.uuid4()), "check_in_time": _hhmm(480, late),
-                                  "check_out_time": _hhmm(1020, -early), "minutes_late": late,
+                                  "check_out_time": _hhmm(960, -early), "minutes_late": late,
                                   "minutes_early_leave": early, "is_missing_check_in": False,
                                   "is_missing_check_out": False, "leave_type": "present", "notes": "",
                                   "source": "seed"}}, upsert=True)

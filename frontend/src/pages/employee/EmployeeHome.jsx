@@ -69,7 +69,13 @@ export default function EmployeeHome() {
         <div className="bg-white rounded-2xl border border-slate-200 p-4" data-testid="clock-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold"><Clock className="h-4 w-4 text-teal-600" /> Presensi Hari Ini</div>
-            <span className="num text-xs text-slate-500">{today?.date}</span>
+            <span className="num text-xs text-slate-500">{today?.day_name}, {today?.date}</span>
+          </div>
+          <div className="mt-2 text-xs text-slate-600" data-testid="today-schedule">
+            {today && (today.shifts.length
+              ? today.shifts.map((s) => `${s.name} ${s.start}–${s.end}`).join(" · ")
+              : "Hari libur sesuai jadwal")}
+            <div className="text-[11px] text-slate-400">{today?.schedule_name}</div>
           </div>
           <div className="grid grid-cols-2 gap-3 mt-3">
             <button data-testid="clock-in-button" disabled={!!log?.check_in_time} onClick={() => clock("in")} className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white py-3 text-sm font-semibold disabled:bg-slate-200 disabled:text-slate-500 flex items-center justify-center gap-1.5"><LogIn className="h-4 w-4" /> {log?.check_in_time ? `Masuk ${log.check_in_time}` : "Absen Masuk"}</button>
