@@ -166,15 +166,24 @@ class TestWorkbench:
         assert with_ot["overtime_pay"] - base["overtime_pay"] == 250000
         assert with_ot["gross_earnings"] - base["gross_earnings"] == 250000
 
-    def test_save_draft(self, hrd_token, period_id, employees):
+    def test_save_draft(self, hrd_token, employees):
+        # Maret 2026 is locked (already approved). Create a TEST period to test save-draft.
         eid = employees["EMP-001"]["id"]
-        r = requests.put(f"{API}/hr/periods/{period_id}/employees/{eid}",
+        pr = requests.post(f"{API}/hr/periods", headers=_h(hrd_token), timeout=30,
+                           json={"period_name": "TEST_April 2026", "start_date": "2026-04-01",
+                                 "end_date": "2026-04-30", "payment_date": "2026-05-05"})
+        assert pr.status_code == 200, pr.text
+        pid = pr.json()["id"]
+        proc = requests.post(f"{API}/hr/periods/{pid}/process", headers=_h(hrd_token), timeout=60)
+        assert proc.status_code == 200, proc.text
+        r = requests.put(f"{API}/hr/periods/{pid}/employees/{eid}",
                          headers=_h(hrd_token), timeout=30,
-                         json={"overtime_hours": 0, "kpi_incentive": 0, "additional_bonus": 0,
+                         json={"overtime_hours": 5, "kpi_incentive": 0, "additional_bonus": 0,
                                "late_penalty_compensation": 0, "other_deductions": 0,
                                "adjustment_notes": "TEST draft"})
         assert r.status_code == 200, r.text
         assert r.json()["adjustment_notes"] == "TEST draft"
+        assert r.json()["overtime_pay"] == 250000
 
     def test_preview_pdf(self, hrd_token, period_id, employees):
         eid = employees["EMP-001"]["id"]

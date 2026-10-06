@@ -1,0 +1,27 @@
+{
+  "summary": "First iteration. Ran comprehensive backend regression (26 tests) + frontend smoke on Payroll ROSY & Rumatku. All 26 backend tests pass after updating test_save_draft to create its own period (Maret 2026 is already locked as per request context). Frontend: tester quick-login buttons on /login work for all 4 accounts (hrd/budi/siti/dimas); HRD redirects to /hr-manager and loads Dashboard+Payroll pages; employee login redirects to /me (hero THP card, clock card, history, clock-in/out buttons render on 390px mobile). Normal login validation + 401 error toast on wrong password confirmed. Seeded engine calculations verified exactly: Budi points=4 late_penalty=160000 taxable=8312400 PPh21=83124 THP=7716876; Siti TK/0 TER A BPJS Kes base 5219263 (UMK floor) THP=5517934; Dimas unpaid_leave THP=0. Live recalc preview +250000 for 5h overtime. Approve-all locks slips; encrypted PDF opens only with DDMMYY birth date 150895 (correct) and fails with 000000 (wrong). Role guards (HR 403 on employee API, employee 403 on HR API, 401 unauth) all enforced.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "HR dashboard initial load", "issues": ["Harmless 401 on /auth/me logged to console on first paint before token hydrates (cosmetic only, dashboard still loads once auth resolves)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "No DELETE endpoint for payroll_periods/employees — test records (e.g. TEST_April 2026) cannot be cleaned up through API. Consider adding soft-delete for test hygiene.",
+    "data-testid naming in review request diverges from code: employee home exposes hero-thp-card / payslip-history / history-{id} (not hero-card / history-card / payslip-item-*). Not a bug but keep docs/testids in sync.",
+    "login endpoint stores locked_until as ISO string and compares via string comparison — works but fragile; prefer datetime objects / TTL index on login_attempts collection.",
+    "CORS uses allow_origin_regex='.*' together with allow_credentials=True — browsers accept because regex is reflected but this is permissive; tighten to explicit origins for production.",
+    "Encrypted PDF is cached at slip['pdf_path'] on disk; if an employee's birth_date is changed after approval, cached PDF retains old password. Minor."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "100% smoke flows"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is (HRD, admin_payroll, EMP-001/002/003 Password123!). Avoided wrong-password lockout by using throw-away identifier EMP-999 for negative test.",
+  "seed_data_creation": "Created payroll period 'TEST_April 2026' (2026-04-01..2026-04-30) + 3 draft payslips via POST /api/hr/periods and /process to test workbench save-draft without touching the already-locked Maret 2026 seed. No employees/users created. No period DELETE endpoint exists — safe to leave or clear via Mongo if needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression lives at /app/backend/tests/backend_test.py and is pytest-xdist parallel-safe (TestWorkbench::test_save_draft creates its own period; TestZApprove* uses z-prefix to run last and locks Maret 2026 again — idempotent). Maret 2026 remains locked. A TEST_April 2026 period will accumulate if test is rerun with same name because POST /api/hr/periods does not dedupe — safe to ignore; name is unique each iteration via timestamp if needed. Demo-login endpoint is enabled via DEMO_LOGIN_ENABLED=true in backend/.env."
+}
