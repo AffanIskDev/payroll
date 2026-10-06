@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 6 — tested the new 'Rekap Shift Bulanan' feature end-to-end. Backend: 7 new tests in /app/backend/tests/test_shift_recap.py covering auth/validation, March 2026 seed verification (Budi EMP-001 KANTOR_PUSAT: REG=15, worked_on_off_day=3, total_worked=18, scheduled_off=2, leave=0, no_log=11, sum==31), category sum invariant for all employees, and multi-shift April 2026 scenario (temporarily switch Siti EMP-002 to UNIT_2SHIFT, insert S1/S2/leave/Sunday-work logs via POST /api/hr/attendance, verify recap shows S1>=2, S2>=1, worked_on_off_day>=1, leave==1, shift_codes includes REG+S1+S2, then full cleanup). All 7 pass. Full regression now 85/85 pass (pytest -n0, 58.5s).\n\nFrontend verified at preview URL:\n- Login as hrd.manager@rumatku.id OK.\n- Nav 'Rekap Shift' (data-testid nav-rekap-shift) visible → routes to /hr-manager/shift-recap.\n- recap-month-input (type=month) default = current month; setting to 2026-03 triggers API refetch and label updates to '2026-03 · 31 hari'.\n- recap-table renders rows recap-row-EMP-001, recap-row-EMP-002, recap-row-EMP-003 with cells recap-{NIK}-{key} for keys: REG, worked_on_off_day, total_worked, scheduled_off, leave, no_log.\n- Budi row cells = 15 / 3 / 18 / 2 / 0 / 11 (exact match with spec).\n- recap-export-button triggers download of 'Rekap_Shift_2026-03.csv' with headers NIK,Nama,Departemen,Jadwal,Reguler,Masuk Hari Libur,Total Masuk,Libur Jadwal,Cuti / Izin,Tanpa Log.\n- Multi-shift columns (S1,S2) only render when at least one employee is on a multi-shift schedule (verified by backend test).\n\nCleanup: Siti restored to KANTOR_PUSAT; all 5 April 2026 attendance_daily_logs created during the test were deleted via GET /api/hr/attendance list → DELETE /api/hr/attendance/{id}. No test data remains. Maret 2026 seed untouched.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Rekap Shift page", "issues": ["recap-month-input renders as a native browser month picker (same pattern as other screens). Not a shadcn component; consistent with the app so acceptable."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_shift_recap.py",
+    "/app/test_reports/pytest/iter6_shift_recap.xml",
+    "/app/test_reports/pytest/iter6_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "shift_recap endpoint iterates each employee × each day of month in O(E*D) python; with 5000 employees × 31 days this is fine, but logs lookup is already keyed by employee_id → day (good). No index needed beyond work_date range query.",
+    "scheds dict is keyed by code but employee's work_schedule_code may be invalid/renamed → KeyError on `scheds[e.get('work_schedule_code') or 'KANTOR_PUSAT']`. Should fallback to KANTOR_PUSAT if code not in scheds (defensive).",
+    "Classification order in shift_recap: `lg and lg.get('shift_code') and not lg.get('is_off_day')` is checked BEFORE `lg and is_off`. If a present log exists on a scheduled off-day without is_off_day being set (e.g. historical rows), it would be counted into shifts[code] instead of worked_on_off_day. Current seed sets is_off_day correctly via detect_shift, but future imports relying on manual shift_code may skip this. Consider using `is_off` (from schedule) as source of truth for off-day classification rather than the stored lg.is_off_day flag.",
+    "ShiftRecap.jsx uses `d.rows.length` without guard — handled by `d?.rows.length` on button but table footer colSpan calc `cols.length + 2` is correct. No bugs.",
+    "ShiftRecap.jsx CSV export does not include UTF-8 BOM; Indonesian names with non-ASCII would open mojibake in Excel-ID. Low priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_shift_recap.py"
+  ],
+  "success_rate": {"backend": "100% (85/85, 7 new)", "frontend": "100% on shift-recap flow"},
+  "test_credentials": "Used /app/memory/test_credentials.md as-is.",
+  "seed_data_creation": "During test_shift_recap_april_multishift Siti (EMP-002) was temporarily switched to UNIT_2SHIFT and 5 attendance_daily_logs inserted for 2026-04-05..09. All cleaned up at module teardown. Maret 2026 seed not modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests in /app/backend/tests/{backend_test.py, test_tax_and_bsi.py, test_1721a1_and_delete_period.py, test_schedules.py, test_rotations_and_import.py, test_shift_recap.py} — 85 total. Run `pytest /app/backend/tests/ -v -n0` (serial required due to shared-DB module fixtures). Frontend month inputs (type=month) do NOT update React state when set via page.evaluate+dispatchEvent — must use `page.locator('[data-testid=...]').fill('YYYY-MM')` then `press('Tab')` to trigger React onChange. All seed data in Maret 2026 is sacrosanct; Siti EMP-002 default schedule = KANTOR_PUSAT.",
+  "rca of the issue": "No defects. Feature matches spec exactly: Budi March counts verified both via API and UI (15/3/18/2/0/11), category sum invariant holds, multi-shift scenario produces expected shift breakdowns, HR auth guard rejects employee token with 403, bad month returns 400, missing month returns 422 (FastAPI query param required)."
+}

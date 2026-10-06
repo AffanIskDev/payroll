@@ -39,6 +39,9 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 - Rotasi shift mingguan (collection shift_rotations, menu Rotasi, grid 4 minggu, tombol Selang-seling). Prioritas shift: manual HRD > rotasi > jam masuk terdekat.
 - Impor rekap absensi Rumatku (CSV/XLSX: nik, tanggal, jam_masuk, jam_pulang, foto_masuk/pulang URL, lokasi_masuk/pulang) dengan deteksi shift otomatis; foto & lokasi tampil sebagai link di tabel absensi. Testing iteration_5: 78/78 pass.
 
+## Implemented (2026-10-06, iteration 6)
+- Rekap Shift Bulanan (GET /api/hr/shift-recap?month=YYYY-MM, menu Rekap Shift, ekspor CSV): hari per shift, masuk hari libur, total masuk, libur jadwal, cuti/izin, tanpa log per petugas. Galeri foto absen tidak dibuat (sudah ada di Rumatku).
+
 ## Backlog
 - P2: Notifikasi email slip & bukti potong, impor CSV absensi
 - P2: Ekspor CSV e-Bupot / Coretax
