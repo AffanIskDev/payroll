@@ -42,6 +42,12 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 ## Implemented (2026-10-06, iteration 6)
 - Rekap Shift Bulanan (GET /api/hr/shift-recap?month=YYYY-MM, menu Rekap Shift, ekspor CSV): hari per shift, masuk hari libur, total masuk, libur jadwal, cuti/izin, tanpa log per petugas. Galeri foto absen tidak dibuat (sudah ada di Rumatku).
 
+## Implemented (2026-10-06, iteration 7)
+- Dashboard: total setoran BPJS Kesehatan & BPJS TK (periode terbaru).
+- Config: COMPANY_ADDRESS, PAYSLIP_SIGNATORY_NAME/TITLE (kop & tanda tangan slip PDF, alamat di 1721-A1), CSV_DELIMITER (, ; | tab) untuk semua ekspor/template CSV.
+- Menu digabung: Pajak (tab Saldo Awal YTD + Bukti Potong 1721-A1), Jadwal-Shift (tab Jadwal Kerja + Rotasi Shift).
+- Workflow approval: Staff HR (admin_payroll) proses & ajukan → Manager HRD approve atau tolak dengan alasan → status revisi kembali ke staff; riwayat review. Akun demo staff.hr@rumatku.id. Testing iteration_7: 103/103 pass.
+
 ## Backlog
 - P2: Notifikasi email slip & bukti potong, impor CSV absensi
 - P2: Ekspor CSV e-Bupot / Coretax

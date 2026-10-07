@@ -174,16 +174,19 @@ class TestWorkbench:
                                  "end_date": "2026-04-30", "payment_date": "2026-05-05"})
         assert pr.status_code == 200, pr.text
         pid = pr.json()["id"]
-        proc = requests.post(f"{API}/hr/periods/{pid}/process", headers=_h(hrd_token), timeout=60)
-        assert proc.status_code == 200, proc.text
-        r = requests.put(f"{API}/hr/periods/{pid}/employees/{eid}",
-                         headers=_h(hrd_token), timeout=30,
-                         json={"overtime_hours": 5, "kpi_incentive": 0, "additional_bonus": 0,
-                               "late_penalty_compensation": 0, "other_deductions": 0,
-                               "adjustment_notes": "TEST draft"})
-        assert r.status_code == 200, r.text
-        assert r.json()["adjustment_notes"] == "TEST draft"
-        assert r.json()["overtime_pay"] == 250000
+        try:
+            proc = requests.post(f"{API}/hr/periods/{pid}/process", headers=_h(hrd_token), timeout=60)
+            assert proc.status_code == 200, proc.text
+            r = requests.put(f"{API}/hr/periods/{pid}/employees/{eid}",
+                             headers=_h(hrd_token), timeout=30,
+                             json={"overtime_hours": 5, "kpi_incentive": 0, "additional_bonus": 0,
+                                   "late_penalty_compensation": 0, "other_deductions": 0,
+                                   "adjustment_notes": "TEST draft"})
+            assert r.status_code == 200, r.text
+            assert r.json()["adjustment_notes"] == "TEST draft"
+            assert r.json()["overtime_pay"] == 250000
+        finally:
+            requests.delete(f"{API}/hr/periods/{pid}", headers=_h(hrd_token), timeout=30)
 
     def test_preview_pdf(self, hrd_token, period_id, employees):
         eid = employees["EMP-001"]["id"]
@@ -259,11 +262,20 @@ class TestEmployeeAPI:
 # Run LAST (prefix z) because approval permanently locks slips.
 class TestZApproveAndDownload:
     def test_z1_approve_all(self, hrd_token, period_id):
-        r = requests.post(f"{API}/hr/periods/{period_id}/approve-all",
-                          headers=_h(hrd_token), timeout=120)
-        assert r.status_code == 200, r.text
+        # Maret 2026 is pre-approved in seed. If already approved, calling
+        # approve-all now returns 400 (status != pending_approval) — this is correct.
         detail = requests.get(f"{API}/hr/periods/{period_id}",
                               headers=_h(hrd_token), timeout=30).json()
+        if detail["period"]["status"] != "approved":
+            # Need to submit first then approve
+            s = requests.post(f"{API}/hr/periods/{period_id}/submit",
+                              headers=_h(hrd_token), timeout=30)
+            assert s.status_code == 200, s.text
+            r = requests.post(f"{API}/hr/periods/{period_id}/approve-all",
+                              headers=_h(hrd_token), timeout=120)
+            assert r.status_code == 200, r.text
+            detail = requests.get(f"{API}/hr/periods/{period_id}",
+                                  headers=_h(hrd_token), timeout=30).json()
         assert detail["period"]["status"] == "approved"
         for s in detail["payslips"]:
             assert s["status"] == "approved"
