@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { DownloadCloud, LockKeyhole, ChevronLeft, Landmark, Send, XCircle, AlertTriangle, History, Users, CalendarCheck } from "lucide-react";
+import { DownloadCloud, LockKeyhole, ChevronLeft, Landmark, Send, XCircle, AlertTriangle, History, Users, CalendarCheck, RotateCw, Smartphone } from "lucide-react";
 import { IntegrationBadge } from "@/components/IntegrationBadge";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
-import { rp, PERIOD_STATUS, SLIP_STATUS, PAYROLL_STATUS_LABELS } from "@/lib/format";
+import { rp, PERIOD_STATUS, SLIP_STATUS, DELIVERY_STATUS, PAYROLL_STATUS_LABELS } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -21,6 +21,12 @@ export default function PeriodDetail() {
   const isManager = user?.role === "manager_hrd";
   const load = useCallback(() => api.get(`/hr/periods/${pid}`).then((r) => setD(r.data)), [pid]);
   useEffect(() => { load(); }, [load]);
+  const sending = d?.payslips.some((s) => s.delivery_status === "queued");
+  useEffect(() => {
+    if (!sending) return undefined;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [sending, load]);
 
   const act = async (path, msg, body) => {
     setBusy(true);
@@ -51,6 +57,8 @@ export default function PeriodDetail() {
   const editable = ["draft", "revision"].includes(period.status);
   const pending = period.status === "pending_approval";
   const approvedCount = payslips.filter((s) => s.status === "approved").length;
+  const failed = payslips.filter((s) => s.delivery_status === "failed").length;
+  const sentCount = payslips.filter((s) => s.delivery_status === "sent").length;
   const sum = (k) => payslips.reduce((a, s) => a + (s[k] || 0), 0);
 
   return (
@@ -69,6 +77,13 @@ export default function PeriodDetail() {
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-4 py-2.5"><Users className="h-4 w-4 text-blue-900" /> Karyawan dari ROSY: <b className="num" data-testid="sync-employee-count">{period.employee_count ?? payslips.length}</b><span className="text-xs text-slate-500 num ml-auto">{period.employees_synced_at ? new Date(period.employees_synced_at).toLocaleString("id-ID") : "-"}</span></div>
         <div className={`flex items-center gap-2 border rounded-md px-4 py-2.5 ${period.attendance_synced_at ? "bg-white border-slate-200" : "bg-amber-50 border-amber-200 text-amber-900"}`}><CalendarCheck className="h-4 w-4 text-teal-700" /> {period.attendance_synced_at ? <>Absensi RUMATKU: <b className="num" data-testid="sync-attendance-count">{period.attendance_count} log</b><span className="text-xs text-slate-500 num ml-auto">{new Date(period.attendance_synced_at).toLocaleString("id-ID")}</span></> : <span data-testid="sync-attendance-pending">Absensi belum diambil — klik "Ambil Data Absensi"</span>}</div>
       </div>
+      {period.status === "approved" && (
+        <div className={`mb-4 flex flex-wrap items-center gap-3 border rounded-md px-4 py-2.5 text-sm ${failed ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-white border-slate-200"}`} data-testid="delivery-banner">
+          <Smartphone className="h-4 w-4 text-teal-700" />
+          <span>Slip PDF ke aplikasi Rumatku: <b className="num" data-testid="delivery-sent-count">{sentCount}/{payslips.length}</b> terkirim{sending && " · sedang mengirim..."}{failed > 0 && <> · <b data-testid="delivery-failed-count">{failed}</b> gagal setelah 3x percobaan otomatis</>}</span>
+          {failed > 0 && <Btn variant="outline" data-testid="resend-failed-button" disabled={busy || sending} onClick={() => act("resend-failed", "Slip gagal dikirim ulang ke Rumatku")} className="ml-auto"><RotateCw className="h-4 w-4" /> Kirim Ulang Semua yang Gagal</Btn>}
+        </div>
+      )}
       {period.status === "revision" && (
         <div className="mb-4 flex gap-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-4 py-3" data-testid="rejection-banner">
           <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -88,7 +103,7 @@ export default function PeriodDetail() {
           <table className="w-full text-sm" data-testid="payslips-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
-                {["NIK", "Nama", "Status", "PTKP / TER", "Poin Denda", "Bruto Komersial", "Bruto Pajak", "PPh 21", "Potongan", "THP", "Slip", ""].map((h, i) => (
+                {["NIK", "Nama", "Status", "PTKP / TER", "Poin Denda", "Bruto Komersial", "Bruto Pajak", "PPh 21", "Potongan", "THP", "Slip", "Rumatku", ""].map((h, i) => (
                   <th key={h + i} className={`px-4 py-3 ${i > 3 && i < 10 ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -107,10 +122,14 @@ export default function PeriodDetail() {
                   <td className="px-4 py-3 num text-right text-rose-600">{rp(s.total_deductions)}</td>
                   <td className="px-4 py-3 num text-right font-bold text-emerald-600" data-testid={`thp-${s.employee.nik}`}>{rp(s.take_home_pay)}</td>
                   <td className="px-4 py-3"><StatusBadge map={SLIP_STATUS} status={s.status} /></td>
+                  <td className="px-4 py-3 whitespace-nowrap" title={s.delivery_error || ""}>
+                    {s.delivery_status ? <StatusBadge map={DELIVERY_STATUS} status={s.delivery_status} testId={`delivery-status-${s.employee.nik}`} /> : <span className="text-slate-400">-</span>}
+                    {s.delivery_status === "failed" && <button data-testid={`resend-${s.employee.nik}`} disabled={busy || sending} onClick={() => act(`employees/${s.employee_id}/resend`, `Slip ${s.employee.name} dikirim ulang`)} className="ml-2 text-xs text-blue-900 font-semibold hover:underline disabled:opacity-50">Kirim Ulang</button>}
+                  </td>
                   <td className="px-4 py-3 text-right"><Link to={`/hr-manager/payroll/${pid}/employee/${s.employee_id}`} data-testid={`review-${s.employee.nik}`} className="text-blue-900 font-semibold hover:underline whitespace-nowrap">Review</Link></td>
                 </tr>
               ))}
-              {!payslips.length && <tr><td colSpan={12} className="px-4 py-8 text-center text-slate-500">Belum ada slip. Klik "Ambil Data Absensi".</td></tr>}
+              {!payslips.length && <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-500">Belum ada slip. Klik "Ambil Data Absensi".</td></tr>}
             </tbody>
             {!!payslips.length && (
               <tfoot className="bg-slate-50 font-semibold">
@@ -121,7 +140,7 @@ export default function PeriodDetail() {
                   <td className="px-4 py-3 num text-right">{rp(sum("pph21_amount"))}</td>
                   <td className="px-4 py-3 num text-right text-rose-600">{rp(sum("total_deductions"))}</td>
                   <td className="px-4 py-3 num text-right text-emerald-600" data-testid="total-thp">{rp(sum("take_home_pay"))}</td>
-                  <td colSpan={2} />
+                  <td colSpan={3} />
                 </tr>
               </tfoot>
             )}

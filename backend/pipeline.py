@@ -1,4 +1,6 @@
+import asyncio
 import uuid
+from pathlib import Path
 from typing import Optional
 from fastapi import HTTPException
 
@@ -102,4 +104,47 @@ async def approve_slip(slip: dict, period: dict, user: dict) -> dict:
     if remaining == 0:
         await db.payroll_periods.update_one({"id": period["id"]}, {"$set": {
             "status": "approved", "approved_by": user["email"], "approved_at": now_iso()}})
+        await queue_delivery(period["id"])
     return {**slip, **upd}
+
+
+async def deliver_slip(slip: dict, period: dict, attempts: int = 3) -> str:
+    path = slip.get("pdf_path")
+    if not path or not Path(path).exists():
+        path = save_encrypted(slip, period, await get_configs())
+    import integrations
+    upd, err, n = {}, "", 0
+    for n in range(1, attempts + 1):
+        try:
+            res = await integrations.push_payslip(slip, period, path)
+            upd = {"delivery_status": "sent", "delivered_at": now_iso(), "delivery_ref": res.get("ref"),
+                   "delivery_error": None}
+            break
+        except Exception as e:  # noqa: BLE001
+            err = str(e) or e.__class__.__name__
+            if n < attempts:
+                await asyncio.sleep(n)
+    if not upd:
+        upd = {"delivery_status": "failed", "delivery_error": err}
+    upd.update(pdf_path=path, delivery_attempts=int(slip.get("delivery_attempts") or 0) + n,
+               delivery_last_attempt_at=now_iso())
+    await db.payslips.update_one({"id": slip["id"]}, {"$set": upd})
+    return upd["delivery_status"]
+
+
+async def _deliver_period(pid: str, attempts: int):
+    period = await get_period(pid)
+    async for s in db.payslips.find({"payroll_period_id": pid, "delivery_status": "queued"}, {"_id": 0}):
+        await deliver_slip(s, period, attempts)
+    sent = await db.payslips.count_documents({"payroll_period_id": pid, "delivery_status": "sent"})
+    failed = await db.payslips.count_documents({"payroll_period_id": pid, "delivery_status": "failed"})
+    await db.payroll_periods.update_one({"id": pid}, {"$set": {
+        "delivery_sent": sent, "delivery_failed": failed, "delivery_finished_at": now_iso()}})
+
+
+async def queue_delivery(pid: str, query: Optional[dict] = None, attempts: int = 3) -> int:
+    q = {"payroll_period_id": pid, "status": "approved", "delivery_status": {"$ne": "sent"}, **(query or {})}
+    res = await db.payslips.update_many(q, {"$set": {"delivery_status": "queued"}})
+    await db.payroll_periods.update_one({"id": pid}, {"$set": {"delivery_started_at": now_iso()}})
+    asyncio.create_task(_deliver_period(pid, attempts))
+    return res.modified_count

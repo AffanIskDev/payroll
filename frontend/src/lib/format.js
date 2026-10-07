@@ -27,6 +27,12 @@ export const PERIOD_STATUS = {
   closed: { label: "Closed", cls: "bg-purple-50 text-purple-700 border-purple-300" },
 };
 
+export const DELIVERY_STATUS = {
+  queued: { label: "Mengirim...", cls: "bg-blue-50 text-blue-700 border-blue-300" },
+  sent: { label: "Terkirim", cls: "bg-emerald-50 text-emerald-700 border-emerald-300" },
+  failed: { label: "Gagal", cls: "bg-rose-50 text-rose-700 border-rose-300" },
+};
+
 export const SLIP_STATUS = {
   draft: { label: "Draft", cls: "bg-slate-100 text-slate-600 border-slate-300" },
   approved: { label: "Locked", cls: "bg-emerald-50 text-emerald-700 border-emerald-300" },

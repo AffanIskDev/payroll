@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronLeft, Download, ShieldCheck } from "lucide-react";
+import { ChevronLeft, Smartphone, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { api, errMsg, downloadBlob } from "@/lib/api";
+import { api, errMsg } from "@/lib/api";
 import { rp } from "@/lib/format";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
@@ -16,16 +16,7 @@ const Line = ({ k, v, neg, testId }) => (
 export default function PayslipDetail() {
   const { sid } = useParams();
   const [s, setS] = useState(null);
-  const [busy, setBusy] = useState(false);
   useEffect(() => { api.get(`/v1/employee/payslips/${sid}`).then((r) => setS(r.data)).catch((e) => toast.error(errMsg(e))); }, [sid]);
-
-  const download = async () => {
-    setBusy(true);
-    try {
-      await downloadBlob(`/v1/employee/payslips/${sid}/download`, `Slip-Gaji-${s.period.period_name.replace(/\s/g, "-")}.pdf`);
-      toast.success("Slip diunduh. Buka dengan sandi DDMMYY.");
-    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
-  };
 
   if (!s) return <div className="max-w-md mx-auto p-6 text-sm text-slate-500">Memuat...</div>;
   return (
@@ -78,9 +69,9 @@ export default function PayslipDetail() {
       </Accordion>
       <div className="fixed bottom-0 inset-x-0 z-40">
         <div className="max-w-md mx-auto px-4 pb-5 pt-3 bg-gradient-to-t from-slate-50 via-slate-50 to-transparent space-y-2">
-          <button data-testid="download-pdf-fab" onClick={download} disabled={busy} className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3.5 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-60">
-            <Download className="h-4 w-4" /> {busy ? "Mengunduh..." : "Unduh Slip Gaji (PDF)"}
-          </button>
+          <div data-testid="rumatku-delivery-info" className="w-full bg-teal-600 text-white text-sm font-semibold py-3.5 px-4 rounded-full shadow-2xl flex items-center justify-center gap-2">
+            <Smartphone className="h-4 w-4 shrink-0" /> {s.delivery_status === "sent" ? "Slip PDF sudah dikirim ke aplikasi Rumatku" : "Slip PDF akan dikirim ke aplikasi Rumatku"}
+          </div>
           <div data-testid="pdf-security-badge" className="flex items-center gap-2 bg-amber-100 text-amber-900 text-xs rounded-lg px-3 py-2">
             <ShieldCheck className="h-4 w-4 shrink-0" /> File PDF dilindungi sandi 6 digit tanggal lahir Anda (DDMMYY)
           </div>

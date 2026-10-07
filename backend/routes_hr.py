@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from core import db, now_iso, require_hr, require_manager, hash_password, get_configs, DEFAULT_CONFIGS
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
-                      approve_slip, ADJ_KEYS)
+                      approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
 import integrations
 
@@ -288,6 +288,33 @@ async def approve_one(pid: str, eid: str, user: dict = Depends(require_manager))
     if slip["status"] == "approved":
         raise HTTPException(400, "Slip sudah di-approve")
     return await approve_slip(slip, period, user)
+
+
+async def _locked(pid: str) -> dict:
+    period = await get_period(pid)
+    if period["status"] != "approved":
+        raise HTTPException(400, "Slip dikirim ke Rumatku setelah seluruh periode di-approve & dikunci")
+    return period
+
+
+@router.post("/periods/{pid}/resend-failed")
+async def resend_failed(pid: str):
+    await _locked(pid)
+    n = await queue_delivery(pid, {"delivery_status": "failed"}, attempts=1)
+    if not n:
+        raise HTTPException(400, "Tidak ada slip gagal kirim")
+    return {"queued": n}
+
+
+@router.post("/periods/{pid}/employees/{eid}/resend")
+async def resend_one(pid: str, eid: str):
+    await _locked(pid)
+    slip = await _slip(pid, eid)
+    if slip.get("delivery_status") == "sent":
+        raise HTTPException(400, "Slip sudah terkirim ke Rumatku")
+    if slip.get("delivery_status") == "queued":
+        raise HTTPException(400, "Slip sedang dikirim")
+    return {"queued": await queue_delivery(pid, {"employee_id": eid}, attempts=1)}
 
 
 @router.get("/periods/{pid}/employees/{eid}/pdf")

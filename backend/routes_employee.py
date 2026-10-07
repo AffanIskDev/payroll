@@ -1,11 +1,8 @@
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 
-from core import db, require_employee, get_configs
-from pipeline import get_period
-from pdf_service import save_encrypted, encrypt_pdf, birth_password
+from core import db, require_employee
+from pdf_service import encrypt_pdf, birth_password
 from tax_forms import list_1721a1, render_1721a1
 
 router = APIRouter(prefix="/api/v1/employee")
@@ -38,19 +35,6 @@ async def _own_slip(sid: str, user: dict, projection=None) -> dict:
 async def my_payslip(sid: str, user: dict = Depends(require_employee)):
     slip = await _own_slip(sid, user, {"_id": 0, "pdf_path": 0, "pdf_password_hash": 0})
     return await _with_period(slip)
-
-
-@router.get("/payslips/{sid}/download")
-async def download(sid: str, user: dict = Depends(require_employee)):
-    slip = await _own_slip(sid, user)
-    path = slip.get("pdf_path")
-    if not path or not Path(path).exists():
-        path = save_encrypted(slip, await get_period(slip["payroll_period_id"]), await get_configs())
-        await db.payslips.update_one({"id": sid}, {"$set": {"pdf_path": path}})
-    p = slip.get("payroll_period_id")
-    period = await get_period(p)
-    name = f"Slip-Gaji-{slip['employee']['nik']}-{period['period_name'].replace(' ', '-')}.pdf"
-    return FileResponse(path, media_type="application/pdf", filename=name)
 
 
 async def _approved_years(eid: str) -> list:

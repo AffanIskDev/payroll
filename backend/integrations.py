@@ -114,6 +114,24 @@ def normalize_attendance(r: dict) -> dict:
     }
 
 
+async def push_payslip(slip: dict, period: dict, pdf_path: str) -> dict:
+    nik = slip["employee"]["nik"]
+    if mode("RUMATKU") == "mock":
+        if nik in os.environ.get("RUMATKU_MOCK_FAIL_NIKS", "").split(","):
+            raise RuntimeError("Simulasi: RUMATKU tidak merespons")
+        return {"ref": f"MOCK-{slip['id'][:8]}"}
+    url = os.environ["RUMATKU_API_URL"].rstrip("/") + "/payslips"
+    headers = {"Authorization": f"Bearer {os.environ.get('RUMATKU_API_KEY', '')}", "Accept": "application/json"}
+    meta = {"nik": nik, "period_name": period["period_name"], "start_date": period["start_date"],
+            "end_date": period["end_date"], "take_home_pay": str(slip["take_home_pay"])}
+    async with httpx.AsyncClient(timeout=60) as c:
+        with open(pdf_path, "rb") as f:
+            r = await c.post(url, headers=headers, data=meta, files={"file": (f"Slip-{nik}.pdf", f, "application/pdf")})
+        r.raise_for_status()
+        body = r.json() if r.content else {}
+    return {"ref": (body.get("data") or body).get("id") if isinstance(body, dict) else None}
+
+
 async def fetch_attendance(start: str, end: str, employees: list) -> list:
     if mode("RUMATKU") == "live":
         raw = await _get("RUMATKU", "/attendance", {"start": start, "end": end})
