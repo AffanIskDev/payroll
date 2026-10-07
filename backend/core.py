@@ -60,6 +60,17 @@ async def require_hr(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+async def require_manager(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] != "manager_hrd":
+        raise HTTPException(403, "Hanya Manager HRD yang dapat melakukan aksi ini")
+    return user
+
+
+def csv_delimiter(cfg: dict) -> str:
+    d = cfg.get("CSV_DELIMITER", ",")
+    return "\t" if d.lower() == "tab" else d
+
+
 _rate_buckets = defaultdict(deque)
 
 
@@ -82,6 +93,10 @@ DEFAULT_CONFIGS = {
     "BPJS_KES_MAX_WAGE": ("12000000", "Plafon upah maksimal BPJS Kesehatan"),
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
     "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Nama pemotong pajak (1721-A1)"),
+    "COMPANY_ADDRESS": ("[ALAMAT_PERUSAHAAN]", "Alamat perusahaan (kop slip gaji & 1721-A1)"),
+    "PAYSLIP_SIGNATORY_NAME": ("[NAMA_PENANDATANGAN]", "Nama pejabat penandatangan slip gaji"),
+    "PAYSLIP_SIGNATORY_TITLE": ("Manager HRD", "Jabatan pejabat penandatangan slip gaji"),
+    "CSV_DELIMITER": (",", "Pemisah kolom ekspor CSV: , atau ; atau | atau tab"),
     "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "NPWP pemotong pajak (1721-A1)"),
     "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),
 }

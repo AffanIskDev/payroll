@@ -45,8 +45,8 @@ async def login(body: LoginIn, request: Request, response: Response):
     return _issue(user, response)
 
 
-DEMO_ACCOUNTS = {"hrd": "hrd.manager@rumatku.id", "budi": "budi@rumatku.id", "siti": "siti@rumatku.id",
-                 "dimas": "dimas@rumatku.id"}
+DEMO_ACCOUNTS = {"hrd": "hrd.manager@rumatku.id", "staff": "staff.hr@rumatku.id", "budi": "budi@rumatku.id",
+                 "siti": "siti@rumatku.id", "dimas": "dimas@rumatku.id"}
 
 
 class DemoIn(BaseModel):

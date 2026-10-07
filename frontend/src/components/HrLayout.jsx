@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, FileBadge, CalendarRange, Repeat, BarChart3 } from "lucide-react";
+import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, CalendarRange, BarChart3 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const NAV = [
@@ -7,11 +7,9 @@ const NAV = [
   ["/hr-manager/payroll", "Payroll", Wallet],
   ["/hr-manager/employees", "Karyawan", Users],
   ["/hr-manager/attendance", "Absensi", CalendarClock],
-  ["/hr-manager/schedules", "Jadwal", CalendarRange],
-  ["/hr-manager/rotations", "Rotasi", Repeat],
+  ["/hr-manager/schedules", "Jadwal-Shift", CalendarRange],
   ["/hr-manager/shift-recap", "Rekap Shift", BarChart3],
-  ["/hr-manager/tax", "Pajak YTD", Calculator],
-  ["/hr-manager/tax-forms", "1721-A1", FileBadge],
+  ["/hr-manager/tax", "Pajak", Calculator],
   ["/hr-manager/config", "Konfigurasi", Settings2],
 ];
 
@@ -36,7 +34,7 @@ export default function HrLayout() {
           <div className="ml-auto flex items-center gap-3">
             <div className="text-right hidden sm:block">
               <div className="text-sm font-medium" data-testid="current-user-name">{user?.name}</div>
-              <div className="text-[11px] text-slate-400 uppercase tracking-wider">{user?.role?.replace("_", " ")}</div>
+              <div className="text-[11px] text-slate-400 uppercase tracking-wider">{user?.role === "manager_hrd" ? "Manager HRD" : "Staff HR / Admin Payroll"}</div>
             </div>
             <button data-testid="logout-button" onClick={logout} className="p-2 rounded hover:bg-slate-800" title="Keluar"><LogOut className="h-4 w-4" /></button>
           </div>

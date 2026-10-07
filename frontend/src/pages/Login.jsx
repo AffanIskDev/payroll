@@ -6,7 +6,8 @@ import { useAuth, isHr } from "@/context/AuthContext";
 import { api, errMsg } from "@/lib/api";
 
 const TESTERS = [
-  ["hrd", "Manager HRD", "Portal ROSY"],
+  ["hrd", "Manager HRD", "Review, tolak & approve"],
+  ["staff", "Staff HR", "Proses & ajukan payroll"],
   ["budi", "Budi (EMP-001)", "Karyawan · sandi PDF 150895"],
   ["siti", "Siti (EMP-002)", "Karyawati · sandi PDF 220498"],
   ["dimas", "Dimas (EMP-003)", "Unpaid leave · sandi PDF 100192"],
@@ -95,7 +96,7 @@ export default function Login() {
               <div className="grid grid-cols-2 gap-2">
                 {TESTERS.map(([k, label, hint]) => (
                   <button type="button" key={k} disabled={busy} onClick={() => tester(k)} data-testid={`tester-login-${k}`}
-                    className={`text-left border rounded-md px-3 py-2 transition-colors disabled:opacity-60 ${k === "hrd" ? "border-blue-900 bg-blue-50 hover:bg-blue-100" : "border-teal-300 bg-teal-50 hover:bg-teal-100"}`}>
+                    className={`text-left border rounded-md px-3 py-2 transition-colors disabled:opacity-60 ${["hrd", "staff"].includes(k) ? "border-blue-900 bg-blue-50 hover:bg-blue-100" : "border-teal-300 bg-teal-50 hover:bg-teal-100"}`}>
                     <div className="text-sm font-semibold text-slate-800">{label}</div>
                     <div className="text-[11px] text-slate-500">{hint}</div>
                   </button>

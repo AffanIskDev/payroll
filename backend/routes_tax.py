@@ -7,7 +7,7 @@ from fastapi.responses import Response
 
 from tax_forms import list_1721a1, render_1721a1
 
-from core import db, now_iso, require_hr, get_configs
+from core import db, now_iso, require_hr, get_configs, csv_delimiter
 from pipeline import get_period
 
 router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_hr)])
@@ -26,7 +26,8 @@ def _rows_from_upload(name: str, raw: bytes) -> list:
         header = [str(h or "").strip().lower() for h in rows[0]]
         return [dict(zip(header, r)) for r in rows[1:] if any(c is not None for c in r)]
     text = raw.decode("utf-8-sig")
-    delim = ";" if text.splitlines()[0].count(";") > text.splitlines()[0].count(",") else ","
+    first = text.splitlines()[0]
+    delim = max([",", ";", "\t", "|"], key=first.count)
     return [{k.strip().lower(): v for k, v in r.items()} for r in csv.DictReader(io.StringIO(text), delimiter=delim)]
 
 
@@ -56,7 +57,7 @@ async def list_balances(year: int):
 @router.get("/tax-balances/template")
 async def template():
     buf = io.StringIO()
-    w = csv.writer(buf)
+    w = csv.writer(buf, delimiter=csv_delimiter(await get_configs()))
     w.writerow(YTD_COLUMNS)
     w.writerow(["EMP-001", 2026, 6, "K/1", 49874400, 1080000, 2493720, 498744, "contoh: saldo Jan-Jun dari sistem lama"])
     return Response(buf.getvalue(), media_type="text/csv",
@@ -119,13 +120,14 @@ async def form_1721a1_pdf(eid: str, year: int):
 @router.post("/periods/{pid}/export-bsi")
 async def export_bsi(pid: str):
     period = await get_period(pid)
-    debit = (await get_configs()).get("BSI_COMPANY_DEBIT_ACCOUNT", "")
+    cfg = await get_configs()
+    debit = cfg.get("BSI_COMPANY_DEBIT_ACCOUNT", "")
     slips = await db.payslips.find({"payroll_period_id": pid, "status": "approved"}, {"_id": 0}) \
         .sort("employee.nik", 1).to_list(5000)
     if not slips:
         raise HTTPException(400, "Belum ada slip berstatus approved pada periode ini")
     buf = io.StringIO()
-    w = csv.writer(buf)
+    w = csv.writer(buf, delimiter=csv_delimiter(cfg))
     w.writerow(BSI_COLUMNS)
     skipped = []
     for s in slips:

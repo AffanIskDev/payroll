@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from core import db, now_iso, require_hr
+from core import db, now_iso, require_hr, get_configs, csv_delimiter
 from routes_tax import _rows_from_upload
 from schedules import detect_shift, minutes_for, shift_fields, week_start
 
@@ -166,7 +166,7 @@ def _time(v) -> Optional[str]:
 @router.get("/attendance/import-template")
 async def import_template():
     buf = io.StringIO()
-    w = csv.writer(buf)
+    w = csv.writer(buf, delimiter=csv_delimiter(await get_configs()))
     w.writerow(TEMPLATE_COLUMNS)
     w.writerow(["EMP-001", "2026-04-06", "08:05", "16:00", "https://contoh.rumatku.id/foto/in.jpg",
                 "https://contoh.rumatku.id/foto/out.jpg", "-6.2615,107.1520", "-6.2615,107.1521", ""])

@@ -102,7 +102,8 @@ async def render_1721a1(f: dict) -> bytes:
     head.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     els = [head, Spacer(1, 6),
-           _kv([["NPWP Pemotong", cfg.get("COMPANY_NPWP", "-"), "Nama Pemotong", cfg.get("COMPANY_NAME", "-")]],
+           _kv([["NPWP Pemotong", cfg.get("COMPANY_NPWP", "-"), "Nama Pemotong", cfg.get("COMPANY_NAME", "-")],
+                ["Alamat", cfg.get("COMPANY_ADDRESS", "-"), "", ""]],
                [28 * mm, 63 * mm, 28 * mm, 63 * mm]), Spacer(1, 6),
            Paragraph("<b>A. IDENTITAS PENERIMA PENGHASILAN YANG DIPOTONG</b>", small), Spacer(1, 2),
            _kv([["NPWP", f["npwp"] or "-", "NIK Karyawan", f["nik"]],

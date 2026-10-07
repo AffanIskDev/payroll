@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, Wallet, Clock, Receipt, ArrowRight } from "lucide-react";
+import { Users, Wallet, Clock, Receipt, ArrowRight, HeartPulse, HardHat } from "lucide-react";
 import { api } from "@/lib/api";
 import { rp, PERIOD_STATUS } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge } from "@/components/common";
@@ -27,11 +27,13 @@ export default function Dashboard() {
   return (
     <div data-testid="hr-dashboard">
       <PageTitle title="Dashboard Payroll" subtitle={lp ? `Periode terbaru: ${lp.period_name}` : "Belum ada periode"} />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         <Stat icon={Users} label="Karyawan" value={d.employees} testId="stat-employees" />
         <Stat icon={Wallet} label="Total THP" value={rp(d.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />
         <Stat icon={Receipt} label="Total PPh 21" value={rp(d.total_pph21)} testId="stat-total-pph21" />
         <Stat icon={Clock} label="Menunggu Review" value={`${d.pending ?? 0} slip`} tone="text-amber-600" testId="stat-pending" />
+        <Stat icon={HeartPulse} label="Setoran BPJS Kesehatan" value={rp(d.total_bpjs_kes)} testId="stat-total-bpjs-kes" />
+        <Stat icon={HardHat} label="Setoran BPJS TK" value={rp(d.total_bpjs_tk)} testId="stat-total-bpjs-tk" />
       </div>
       <Panel title="Periode Penggajian" right={<Link to="/hr-manager/payroll" className="text-xs font-semibold text-blue-900 hover:underline" data-testid="dashboard-all-periods-link">Kelola</Link>}>
         <div className="divide-y divide-slate-100">

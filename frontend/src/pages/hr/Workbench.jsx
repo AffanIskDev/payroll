@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, errMsg, downloadBlob } from "@/lib/api";
 import { rp, SLIP_STATUS, PAYROLL_STATUS_LABELS, LEAVE_LABELS } from "@/lib/format";
 import { Panel, StatusBadge, Btn } from "@/components/common";
+import { useAuth } from "@/context/AuthContext";
 
 const ADJ = ["overtime_hours", "kpi_incentive", "additional_bonus", "late_penalty_compensation", "other_deductions"];
 
@@ -39,6 +40,8 @@ export default function Workbench() {
   const [calc, setCalc] = useState(null);
   const [busy, setBusy] = useState(false);
   const first = useRef(true);
+  const { user } = useAuth();
+  const isManager = user?.role === "manager_hrd";
 
   const load = () => api.get(`/hr/periods/${pid}/employees/${eid}`).then((r) => {
     setD(r.data);
@@ -82,7 +85,8 @@ export default function Workbench() {
 
   if (!d || !calc) return <div className="text-sm text-slate-500">Memuat...</div>;
   const { employee: emp, period, payslip, attendance } = d;
-  const locked = payslip.status === "approved";
+  const pending = period.status === "pending_approval";
+  const locked = payslip.status === "approved" || (!isManager && !(["draft", "revision"].includes(period.status)));
   const dc = calc.discipline || payslip.discipline;
   const bp = calc.bpjs || payslip.bpjs;
 
@@ -170,7 +174,7 @@ export default function Workbench() {
           <div className="flex gap-2 flex-wrap">
             <Btn variant="outline" onClick={pdf} data-testid="preview-pdf-button"><FileText className="h-4 w-4" /> Preview PDF Slip</Btn>
             <Btn variant="primary" onClick={save} disabled={busy || locked} data-testid="save-draft-button"><Save className="h-4 w-4" /> Simpan Draft</Btn>
-            <Btn variant="success" onClick={approve} disabled={busy || locked} data-testid="approve-lock-button"><LockKeyhole className="h-4 w-4" /> Approve & Lock</Btn>
+            {isManager && <Btn variant="success" onClick={approve} disabled={busy || payslip.status === "approved" || !pending} title={!pending ? "Periode harus diajukan ke Manager dulu" : ""} data-testid="approve-lock-button"><LockKeyhole className="h-4 w-4" /> Approve & Lock</Btn>}
           </div>
         </div>
       </div>

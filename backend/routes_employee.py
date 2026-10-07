@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
-from core import db, now_iso, require_employee
+from core import db, now_iso, require_employee, get_configs
 from schedules import employee_schedule, detect_shift, minutes_for, shift_fields, DAY_NAMES
 from pipeline import get_period
 from pdf_service import save_encrypted, encrypt_pdf, birth_password
@@ -49,7 +49,7 @@ async def download(sid: str, user: dict = Depends(require_employee)):
     slip = await _own_slip(sid, user)
     path = slip.get("pdf_path")
     if not path or not Path(path).exists():
-        path = save_encrypted(slip, await get_period(slip["payroll_period_id"]))
+        path = save_encrypted(slip, await get_period(slip["payroll_period_id"]), await get_configs())
         await db.payslips.update_one({"id": sid}, {"$set": {"pdf_path": path}})
     p = slip.get("payroll_period_id")
     period = await get_period(p)

@@ -10,10 +10,7 @@ import Workbench from "@/pages/hr/Workbench";
 import Employees from "@/pages/hr/Employees";
 import Attendance from "@/pages/hr/Attendance";
 import Configs from "@/pages/hr/Configs";
-import TaxYtd from "@/pages/hr/TaxYtd";
-import TaxForms from "@/pages/hr/TaxForms";
-import Schedules from "@/pages/hr/Schedules";
-import Rotations from "@/pages/hr/Rotations";
+import { TaxPage, ScheduleShiftPage } from "@/pages/hr/MergedPages";
 import ShiftRecap from "@/pages/hr/ShiftRecap";
 import EmployeeHome from "@/pages/employee/EmployeeHome";
 import PayslipDetail from "@/pages/employee/PayslipDetail";
@@ -49,10 +46,10 @@ export default function App() {
             <Route path="employees" element={<Employees />} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="config" element={<Configs />} />
-            <Route path="tax" element={<TaxYtd />} />
-            <Route path="tax-forms" element={<TaxForms />} />
-            <Route path="schedules" element={<Schedules />} />
-            <Route path="rotations" element={<Rotations />} />
+            <Route path="tax" element={<TaxPage />} />
+            <Route path="tax-forms" element={<Navigate to="/hr-manager/tax?tab=a1" replace />} />
+            <Route path="schedules" element={<ScheduleShiftPage />} />
+            <Route path="rotations" element={<Navigate to="/hr-manager/schedules?tab=rotations" replace />} />
             <Route path="shift-recap" element={<ShiftRecap />} />
           </Route>
           <Route path="/me" element={<Guard><EmployeeHome /></Guard>} />

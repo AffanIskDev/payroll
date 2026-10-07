@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from core import db, now_iso, require_hr, hash_password, DEFAULT_CONFIGS
+from core import db, now_iso, require_hr, require_manager, hash_password, get_configs, DEFAULT_CONFIGS
 from schedules import detect_shift, minutes_for, shift_fields
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, ADJ_KEYS)
@@ -85,6 +85,8 @@ async def dashboard():
         slips = await db.payslips.find({"payroll_period_id": latest["id"]}, {"_id": 0}).to_list(2000)
         stats.update(total_thp=sum(s["take_home_pay"] for s in slips), total_pph21=sum(s["pph21_amount"] for s in slips),
                      total_gross=sum(s["gross_earnings"] for s in slips),
+                     total_bpjs_kes=sum(s["iuran_bpjs_kes_total"] for s in slips),
+                     total_bpjs_tk=sum(s["iuran_bpjs_tk_total"] for s in slips),
                      pending=sum(1 for s in slips if s["status"] != "approved"),
                      approved=sum(1 for s in slips if s["status"] == "approved"))
     return stats
@@ -100,6 +102,8 @@ async def update_configs(body: dict):
     for k, v in body.items():
         if k not in DEFAULT_CONFIGS:
             raise HTTPException(400, f"Config tidak dikenal: {k}")
+        if k == "CSV_DELIMITER" and str(v) not in (",", ";", "|", "tab"):
+            raise HTTPException(400, "Pemisah CSV harus , ; | atau tab")
         await db.payroll_configs.update_one({"config_key": k}, {"$set": {"config_value": str(v)}})
     return await list_configs()
 
@@ -246,7 +250,7 @@ async def period_detail(pid: str):
 @router.delete("/periods/{pid}")
 async def delete_period(pid: str):
     period = await get_period(pid)
-    if period["status"] not in ("draft", "pending_approval") or \
+    if period["status"] not in EDITABLE_STATUSES + ("pending_approval",) or \
             await db.payslips.count_documents({"payroll_period_id": pid, "status": "approved"}):
         raise HTTPException(400, "Hanya periode yang belum memiliki slip approved yang dapat dihapus")
     res = await db.payslips.delete_many({"payroll_period_id": pid})
@@ -254,23 +258,65 @@ async def delete_period(pid: str):
     return {"ok": True, "deleted_payslips": res.deleted_count}
 
 
+EDITABLE_STATUSES = ("draft", "revision")
+
+
+async def _log(pid: str, action: str, user: dict, reason: str = "", extra: Optional[dict] = None):
+    entry = {"action": action, "by": user["email"], "by_name": user.get("name"), "at": now_iso(), "reason": reason}
+    await db.payroll_periods.update_one({"id": pid}, {"$set": extra or {}, "$push": {"review_history": entry}})
+
+
+class RejectIn(BaseModel):
+    reason: str
+
+
 @router.post("/periods/{pid}/process")
 async def run_process(pid: str):
     period = await get_period(pid)
-    if period["status"] in ("approved", "closed"):
-        raise HTTPException(400, "Periode sudah dikunci")
+    if period["status"] not in EDITABLE_STATUSES:
+        raise HTTPException(400, "Periode sedang direview Manager atau sudah dikunci")
     count = await process_period(period)
     return {"processed": count}
 
 
-@router.post("/periods/{pid}/approve-all")
-async def approve_all(pid: str, user: dict = Depends(require_hr)):
+@router.post("/periods/{pid}/submit")
+async def submit_period(pid: str, user: dict = Depends(require_hr)):
     period = await get_period(pid)
+    if period["status"] not in EDITABLE_STATUSES:
+        raise HTTPException(400, "Hanya periode draft / revisi yang dapat diajukan")
+    if not await db.payslips.count_documents({"payroll_period_id": pid}):
+        raise HTTPException(400, "Belum ada slip. Jalankan proses payroll terlebih dahulu")
+    await _log(pid, "submitted", user, extra={"status": "pending_approval", "submitted_by": user["email"],
+                                              "submitted_at": now_iso()})
+    return await get_period(pid)
+
+
+@router.post("/periods/{pid}/reject")
+async def reject_period(pid: str, body: RejectIn, user: dict = Depends(require_manager)):
+    period = await get_period(pid)
+    reason = body.reason.strip()
+    if len(reason) < 5:
+        raise HTTPException(400, "Alasan penolakan wajib diisi (min. 5 karakter)")
+    if period["status"] != "pending_approval":
+        raise HTTPException(400, "Hanya periode yang menunggu approval yang dapat ditolak")
+    if await db.payslips.count_documents({"payroll_period_id": pid, "status": "approved"}):
+        raise HTTPException(400, "Sebagian slip sudah di-approve; tidak dapat ditolak")
+    await _log(pid, "rejected", user, reason, {"status": "revision", "rejection_reason": reason,
+                                               "rejected_by": user["email"], "rejected_at": now_iso()})
+    return await get_period(pid)
+
+
+@router.post("/periods/{pid}/approve-all")
+async def approve_all(pid: str, user: dict = Depends(require_manager)):
+    period = await get_period(pid)
+    if period["status"] != "pending_approval":
+        raise HTTPException(400, "Periode harus diajukan ke Manager terlebih dahulu")
     slips = await db.payslips.find({"payroll_period_id": pid, "status": {"$ne": "approved"}}, {"_id": 0}).to_list(2000)
     if not slips and not await db.payslips.count_documents({"payroll_period_id": pid}):
         raise HTTPException(400, "Belum ada slip. Jalankan proses payroll terlebih dahulu")
     for s in slips:
         await approve_slip(s, period, user)
+    await _log(pid, "approved", user)
     return {"approved": len(slips)}
 
 
@@ -297,19 +343,23 @@ async def preview(pid: str, eid: str, body: AdjustIn):
 
 
 @router.put("/periods/{pid}/employees/{eid}")
-async def save_draft(pid: str, eid: str, body: AdjustIn):
+async def save_draft(pid: str, eid: str, body: AdjustIn, user: dict = Depends(require_hr)):
     period = await get_period(pid)
     emp = await get_employee(eid)
     slip = await _slip(pid, eid)
     if slip["status"] == "approved":
         raise HTTPException(400, "Slip sudah di-approve & dikunci")
+    if period["status"] not in EDITABLE_STATUSES and user["role"] != "manager_hrd":
+        raise HTTPException(400, "Periode sedang direview Manager; tidak dapat diubah")
     adj = {k: getattr(body, k) for k in ADJ_KEYS}
     return await recalc_and_save(period, emp, adj, notes=body.adjustment_notes, manual=True)
 
 
 @router.post("/periods/{pid}/employees/{eid}/approve")
-async def approve_one(pid: str, eid: str, user: dict = Depends(require_hr)):
+async def approve_one(pid: str, eid: str, user: dict = Depends(require_manager)):
     period = await get_period(pid)
+    if period["status"] != "pending_approval":
+        raise HTTPException(400, "Periode harus diajukan ke Manager terlebih dahulu")
     slip = await _slip(pid, eid)
     if slip["status"] == "approved":
         raise HTTPException(400, "Slip sudah di-approve")
@@ -320,5 +370,5 @@ async def approve_one(pid: str, eid: str, user: dict = Depends(require_hr)):
 async def preview_pdf(pid: str, eid: str):
     period = await get_period(pid)
     slip = await _slip(pid, eid)
-    return Response(render_payslip(slip, period), media_type="application/pdf",
+    return Response(render_payslip(slip, period, await get_configs()), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="preview-{slip["employee"]["nik"]}.pdf"'})

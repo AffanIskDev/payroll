@@ -36,13 +36,15 @@ def _col(rows, title):
     return t
 
 
-def render_payslip(slip: dict, period: dict) -> bytes:
+def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=15 * mm)
     ss = getSampleStyleSheet()
     small = ParagraphStyle("s", parent=ss["Normal"], fontSize=8, leading=10)
     emp = slip["employee"]
-    els = [Paragraph("<b>SLIP GAJI KARYAWAN — HRIS ROSY / RUMATKU</b>", ss["Title"]),
+    head = ParagraphStyle("co", parent=ss["Normal"], fontSize=9, leading=11, textColor=NAVY)
+    els = [Paragraph(f"<b>{cfg.get('COMPANY_NAME', '')}</b><br/>{cfg.get('COMPANY_ADDRESS', '')}", head),
+           Spacer(1, 4), Paragraph("<b>SLIP GAJI KARYAWAN</b>", ss["Title"]),
            Paragraph(f"Periode: <b>{period['period_name']}</b> ({period['start_date']} s/d {period['end_date']}) "
                      f"— Tanggal Bayar: {period.get('payment_date') or '-'}", small), Spacer(1, 6)]
     info = [["NIK", emp["nik"], "Status PTKP Efektif", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
@@ -78,8 +80,15 @@ def render_payslip(slip: dict, period: dict) -> bytes:
         f"Denda disiplin: Rule1 {d['rule1_points']} + Rule2 {d['rule2_points']} + Rule3 {d['rule3_points']} + "
         f"Rule4 {d['rule4_points']} = {d['total_points']} poin; hari potong kehadiran {slip['late_penalty_days']}/25; "
         f"potongan {rp(slip['late_penalty_amount'])}, kompensasi {rp(slip['late_penalty_compensation'])}.", small),
-        Spacer(1, 10), Paragraph("<b>CONFIDENTIAL</b> — Dokumen ini bersifat rahasia dan hanya untuk karyawan "
-                                 "yang bersangkutan. Dilarang menyebarluaskan tanpa izin HRD.", small)]
+        Spacer(1, 14)]
+    sign = Table([["", "Disetujui oleh,"], ["", ""], ["", cfg.get("PAYSLIP_SIGNATORY_NAME", "")],
+                  ["", cfg.get("PAYSLIP_SIGNATORY_TITLE", "")]], colWidths=[120 * mm, 60 * mm],
+                 rowHeights=[5 * mm, 14 * mm, 5 * mm, 5 * mm])
+    sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 0), (1, -1), "CENTER"),
+                              ("FONTNAME", (1, 2), (1, 2), "Helvetica-Bold"),
+                              ("LINEBELOW", (1, 2), (1, 2), 0.5, NAVY)]))
+    els += [sign, Spacer(1, 10), Paragraph("<b>CONFIDENTIAL</b> — Dokumen ini bersifat rahasia dan hanya untuk karyawan "
+                                           "yang bersangkutan. Dilarang menyebarluaskan tanpa izin HRD.", small)]
     doc.build(els)
     return buf.getvalue()
 
@@ -94,8 +103,8 @@ def encrypt_pdf(pdf: bytes, password: str) -> bytes:
     return out.getvalue()
 
 
-def save_encrypted(slip: dict, period: dict) -> str:
-    data = encrypt_pdf(render_payslip(slip, period), birth_password(slip["employee"]["birth_date"]))
+def save_encrypted(slip: dict, period: dict, cfg: dict) -> str:
+    data = encrypt_pdf(render_payslip(slip, period, cfg), birth_password(slip["employee"]["birth_date"]))
     path = STORAGE / f"{slip['id']}.pdf"
     path.write_bytes(data)
     return str(path)

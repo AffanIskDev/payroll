@@ -89,13 +89,11 @@ async def process_period(period: dict) -> int:
         adj = {k: (existing or {}).get(k, 0) for k in ADJ_KEYS}
         await recalc_and_save(period, emp, adj, cfg=cfg)
         count += 1
-    if period["status"] == "draft":
-        await db.payroll_periods.update_one({"id": period["id"]}, {"$set": {"status": "pending_approval"}})
     return count
 
 
 async def approve_slip(slip: dict, period: dict, user: dict) -> dict:
-    path = save_encrypted(slip, period)
+    path = save_encrypted(slip, period, await get_configs())
     upd = {"status": "approved", "pdf_path": path, "approved_by": user["email"], "approved_at": now_iso()}
     await db.payslips.update_one({"id": slip["id"]}, {"$set": upd})
     remaining = await db.payslips.count_documents({"payroll_period_id": period["id"], "status": {"$ne": "approved"}})

@@ -62,6 +62,7 @@ async def seed():
 
     await ensure_user("hrd.manager@rumatku.id", DEMO_PASSWORD, "Manager HRD", "manager_hrd")
     await ensure_user(os.environ["ADMIN_EMAIL"], os.environ["ADMIN_PASSWORD"], "Admin Payroll", "admin_payroll")
+    await ensure_user("staff.hr@rumatku.id", DEMO_PASSWORD, "Staff HR", "admin_payroll")
 
     for e in EMPLOYEES:
         emp = await db.employees.find_one({"nik": e["nik"]})

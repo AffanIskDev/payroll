@@ -8,6 +8,8 @@ const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${Str
 export default function ShiftRecap() {
   const [month, setMonth] = useState(thisMonth());
   const [d, setD] = useState(null);
+  const [delim, setDelim] = useState(",");
+  useEffect(() => { api.get("/hr/configs").then((r) => { const v = r.data.find((c) => c.config_key === "CSV_DELIMITER")?.config_value || ","; setDelim(v === "tab" ? "\t" : v); }); }, []);
   useEffect(() => { if (month) api.get("/hr/shift-recap", { params: { month } }).then((r) => setD(r.data)); }, [month]);
 
   const cols = d ? [...d.shift_codes.map((c) => [c, d.shift_names[c]]), ["worked_on_off_day", "Masuk Hari Libur"], ["total_worked", "Total Masuk"], ["scheduled_off", "Libur Jadwal"], ["leave", "Cuti / Izin"], ["no_log", "Tanpa Log"]] : [];
@@ -16,7 +18,7 @@ export default function ShiftRecap() {
   const exportCsv = () => {
     const head = ["NIK", "Nama", "Departemen", "Jadwal", ...cols.map((c) => c[1])];
     const lines = d.rows.map((r) => [r.nik, r.name, r.department || "", r.schedule_code, ...cols.map(([k]) => val(r, k))]);
-    const csv = [head, ...lines].map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = [head, ...lines].map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(delim)).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     a.download = `Rekap_Shift_${month}.csv`;
