@@ -58,7 +58,7 @@ export default function Employees() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="employees-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
-              <tr>{["NIK", "Nama", "Dept", "Jadwal", "L/P", "Status Nikah", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rekening", ""].map((h) => <th key={h} className="text-left px-4 py-3">{h}</th>)}</tr>
+              <tr>{["NIK", "Nama", "Dept", "Jadwal", "L/P", "Status Nikah", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rate Lembur/Jam", "Rekening", ""].map((h) => <th key={h} className="text-left px-4 py-3">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {list.map((e) => (
@@ -73,6 +73,7 @@ export default function Employees() {
                   <td className="px-4 py-3 num">{rp(e.basic_salary)}</td>
                   <td className="px-4 py-3 num">{rp(e.position_allowance)}</td>
                   <td className="px-4 py-3 num">{rp(e.monthly_attendance_allowance)}</td>
+                  <td className="px-4 py-3 num" data-testid={`employee-ot-rate-${e.nik}`}>{rp(e.overtime_hourly_rate)}</td>
                   <td className="px-4 py-3 num text-xs">{e.bank_name} {e.bank_account_number}</td>
                   <td className="px-4 py-3"><button data-testid={`edit-employee-${e.nik}`} onClick={() => setF({ ...EMPTY, ...e, password: "" })} className="p-1.5 rounded hover:bg-slate-100"><Pencil className="h-4 w-4" /></button></td>
                 </tr>
@@ -102,7 +103,7 @@ export default function Employees() {
                 <In label="Gaji Pokok" k="basic_salary" type="number" f={f} setF={setF} required />
                 <In label="Tunjangan Jabatan" k="position_allowance" type="number" f={f} setF={setF} />
                 <In label="Tunjangan Kehadiran" k="monthly_attendance_allowance" type="number" f={f} setF={setF} />
-                <In label="Tarif Lembur / Jam" k="overtime_hourly_rate" type="number" f={f} setF={setF} />
+                <In label="Rate Lembur (Rp / jam)" k="overtime_hourly_rate" type="number" min="0" f={f} setF={setF} />
                 <In label="Tarif JKK" k="jkk_rate" type="number" step="0.0001" f={f} setF={setF} />
                 <Sel label="BPJS Kesehatan" k="has_bpjs_kes" f={f} setF={setF} opts={[["true", "Ya"], ["false", "Tidak"]]} />
                 <Sel label="BPJS TK" k="has_bpjs_tk" f={f} setF={setF} opts={[["true", "Ya"], ["false", "Tidak"]]} />

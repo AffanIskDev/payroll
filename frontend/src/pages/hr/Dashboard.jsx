@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, Wallet, Clock, Receipt, ArrowRight, HeartPulse, HardHat } from "lucide-react";
+import { Users, Wallet, Clock, Receipt, ArrowRight, HeartPulse, HardHat, BellRing, XCircle } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { rp, PERIOD_STATUS } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge } from "@/components/common";
@@ -15,18 +16,40 @@ const Stat = ({ icon: Icon, label, value, tone = "text-slate-900", testId }) => 
   </div>
 );
 
+const Notice = ({ n }) => {
+  const rejected = n.kind === "rejected";
+  return (
+    <Link to={`/hr-manager/payroll/${n.period_id}`} data-testid={`notification-${n.period_id}`} className={`flex items-start gap-3 rounded-lg border px-4 py-3 transition-colors fade-up ${rejected ? "bg-rose-50 border-rose-200 hover:bg-rose-100" : "bg-amber-50 border-amber-200 hover:bg-amber-100"}`}>
+      {rejected ? <XCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" /> : <BellRing className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />}
+      <div className="text-sm flex-1">
+        <div className={`font-semibold ${rejected ? "text-rose-800" : "text-amber-900"}`}>{rejected ? `Draft ${n.period_name} ditolak — perlu dikoreksi` : `Draft ${n.period_name} diajukan — menunggu approval Anda`}</div>
+        <div className="text-xs text-slate-600 mt-0.5">oleh {n.by} · <span className="num">{n.at ? new Date(n.at).toLocaleString("id-ID") : "-"}</span></div>
+        {n.reason && <div className="text-xs text-rose-700 mt-1">Alasan: {n.reason}</div>}
+      </div>
+      <ArrowRight className="h-4 w-4 text-slate-400 mt-1" />
+    </Link>
+  );
+};
+
 export default function Dashboard() {
+  const [notes, setNotes] = useState([]);
+  const { user } = useAuth();
   const [d, setD] = useState(null);
   const [periods, setPeriods] = useState([]);
   useEffect(() => {
     api.get("/hr/dashboard").then((r) => setD(r.data));
     api.get("/hr/periods").then((r) => setPeriods(r.data));
+    api.get("/hr/notifications").then((r) => setNotes(r.data));
   }, []);
   if (!d) return <div className="text-sm text-slate-500">Memuat...</div>;
   const lp = d.latest_period;
   return (
     <div data-testid="hr-dashboard">
       <PageTitle title="Dashboard Payroll" subtitle={lp ? `Periode terbaru: ${lp.period_name}` : "Belum ada periode"} />
+      <div className="mb-6 space-y-2" data-testid="notifications-panel">
+        {notes.map((n) => <Notice key={n.period_id} n={n} />)}
+        {!notes.length && <div className="text-xs text-slate-400" data-testid="no-notifications">{user?.role === "manager_hrd" ? "Tidak ada draft payroll yang menunggu approval." : "Tidak ada draft payroll yang ditolak."}</div>}
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         <Stat icon={Users} label="Karyawan" value={d.employees} testId="stat-employees" />
         <Stat icon={Wallet} label="Total THP" value={rp(d.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />

@@ -127,6 +127,27 @@ async def shift_recap(month: str):
             "shift_names": {c: names[c] for c in codes}, "rows": rows}
 
 
+@router.get("/overtime-recap")
+async def overtime_recap(month: str):
+    try:
+        first = date.fromisoformat(f"{month}-01")
+    except ValueError:
+        raise HTTPException(400, "Format bulan harus YYYY-MM")
+    nxt = (first.replace(day=28) + timedelta(days=4)).replace(day=1)
+    periods = {p["id"]: p async for p in db.payroll_periods.find(
+        {"end_date": {"$gte": first.isoformat(), "$lt": nxt.isoformat()}}, {"_id": 0})}
+    slips = await db.payslips.find({"payroll_period_id": {"$in": list(periods)}}, {"_id": 0}) \
+        .sort("employee.nik", 1).to_list(5000)
+    emps = {e["id"]: e async for e in db.employees.find({}, {"_id": 0, "id": 1, "overtime_hourly_rate": 1})}
+    rows = [{"employee_id": s["employee_id"], "nik": s["employee"]["nik"], "name": s["employee"]["name"],
+             "department": s["employee"].get("department"), "period_name": periods[s["payroll_period_id"]]["period_name"],
+             "overtime_hours": s.get("overtime_hours", 0),
+             "overtime_rate": emps.get(s["employee_id"], {}).get("overtime_hourly_rate", 0),
+             "overtime_pay": s.get("overtime_pay", 0), "slip_status": s["status"]} for s in slips]
+    return {"month": month, "rows": rows, "total_hours": sum(r["overtime_hours"] for r in rows),
+            "total_pay": sum(r["overtime_pay"] for r in rows)}
+
+
 def _pick(row: dict, key: str):
     for a in ALIASES[key]:
         v = row.get(a)

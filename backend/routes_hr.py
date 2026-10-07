@@ -92,6 +92,19 @@ async def dashboard():
     return stats
 
 
+@router.get("/notifications")
+async def notifications(user: dict = Depends(require_hr)):
+    if user["role"] == "manager_hrd":
+        q, kind = {"status": "pending_approval"}, "submitted"
+    else:
+        q, kind = {"status": "revision"}, "rejected"
+    periods = await db.payroll_periods.find(q, {"_id": 0}).sort("start_date", -1).to_list(100)
+    return [{"kind": kind, "period_id": p["id"], "period_name": p["period_name"],
+             "by": p.get("submitted_by") if kind == "submitted" else p.get("rejected_by"),
+             "at": p.get("submitted_at") if kind == "submitted" else p.get("rejected_at"),
+             "reason": p.get("rejection_reason") if kind == "rejected" else None} for p in periods]
+
+
 @router.get("/configs")
 async def list_configs():
     return await db.payroll_configs.find({}, {"_id": 0}).sort("config_key", 1).to_list(100)

@@ -5,6 +5,7 @@ import { api, errMsg } from "@/lib/api";
 import { LEAVE_LABELS } from "@/lib/format";
 import { PageTitle, Panel, Btn } from "@/components/common";
 import { AttendanceImport } from "@/components/AttendanceImport";
+import { EmployeeSearch } from "@/components/EmployeeSearch";
 
 const mapUrl = (loc) => `https://www.google.com/maps?q=${encodeURIComponent(loc)}`;
 const Evidence = ({ photo, loc, tid }) => (
@@ -57,9 +58,7 @@ export default function Attendance() {
   return (
     <div>
       <PageTitle title="Log Presensi Harian" subtitle="Data otomatis dari Rumatku (clock-in/out) & koreksi manual HRD">
-        <select data-testid="attendance-employee-select" value={eid} onChange={(e) => setEid(e.target.value)} className={`${inp} w-56`}>
-          {emps.map((e) => <option key={e.id} value={e.id}>{e.nik} · {e.name}</option>)}
-        </select>
+        <EmployeeSearch employees={emps} value={eid} onChange={setEid} />
         <input data-testid="attendance-start-input" type="date" value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} className={`${inp} w-40`} />
         <input data-testid="attendance-end-input" type="date" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} className={`${inp} w-40`} />
       </PageTitle>

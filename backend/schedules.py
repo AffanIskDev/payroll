@@ -19,8 +19,9 @@ DEFAULT_SCHEDULES = [
     {"code": "UNIT_2SHIFT", "name": "Unit 2 Shift (Sen–Jum + Sabtu ½ hari)",
      "shifts": [{"code": "S1", "name": "Shift 1", "days": _days(("07:00", "15:00"), ("07:00", "13:00"))},
                 {"code": "S2", "name": "Shift 2", "days": _days(("13:00", "21:00"), ("13:00", "19:00"))}]},
-    {"code": "UNIT_MINGGU", "name": "Unit Khusus (Sen–Jum + Minggu ½ hari)",
-     "shifts": [{"code": "REG", "name": "Reguler", "days": _days(("08:00", "16:00"), ("08:00", "14:00"), 6)}]},
+    {"code": "UNIT_MINGGU", "name": "Unit Khusus Minggu Buka (2 Shift Sen–Jum, Sabtu S1, Minggu S2)",
+     "shifts": [{"code": "S1", "name": "Shift 1", "days": _days(("07:00", "15:00"), ("08:00", "14:00"), 5)},
+                {"code": "S2", "name": "Shift 2", "days": _days(("13:00", "21:00"), ("08:00", "14:00"), 6)}]},
 ]
 
 
@@ -32,6 +33,9 @@ def to_min(t: str) -> int:
 async def seed_schedules():
     for s in DEFAULT_SCHEDULES:
         await db.work_schedules.update_one({"code": s["code"]}, {"$setOnInsert": s}, upsert=True)
+    minggu = next(s for s in DEFAULT_SCHEDULES if s["code"] == "UNIT_MINGGU")
+    await db.work_schedules.update_one({"code": "UNIT_MINGGU", "shifts": {"$size": 1}},
+                                       {"$set": {"name": minggu["name"], "shifts": minggu["shifts"]}})
 
 
 async def employee_schedule(emp: dict) -> dict:
