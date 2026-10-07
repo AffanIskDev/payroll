@@ -1,0 +1,64 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../../app/**/*.php';
+
+@font-face { font-family: 'Roboto'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Roboto-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Roboto'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/Roboto-Medium.ttf') format('truetype'); }
+@font-face { font-family: 'Roboto'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Roboto-Bold.ttf') format('truetype'); }
+@font-face { font-family: 'Roboto'; font-style: italic; font-weight: 400; font-display: swap; src: url('/fonts/Roboto-Italic.ttf') format('truetype'); }
+
+@theme {
+    --font-sans: 'Roboto', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    --color-brand-50: #eff6ff;
+    --color-brand-100: #dbeafe;
+    --color-brand-600: #1d4ed8;
+    --color-brand-700: #1e40af;
+    --color-brand-800: #1e3a8a;
+    --color-ink: #0f172a;
+}
+
+@layer base {
+    [x-cloak] { display: none !important; }
+    body { @apply bg-slate-50 text-slate-800 antialiased; }
+    input[type='number']::-webkit-inner-spin-button { opacity: 0.4; }
+}
+
+@layer components {
+    .card { @apply rounded-xl border border-slate-200 bg-white shadow-sm; }
+    .card-header { @apply flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5; }
+    .card-title { @apply text-sm font-bold tracking-wide text-slate-700 uppercase; }
+
+    .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50; }
+    .btn-primary { @apply bg-brand-700 text-white hover:bg-brand-800 focus-visible:ring-brand-600; }
+    .btn-success { @apply bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-500; }
+    .btn-danger { @apply bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500; }
+    .btn-secondary { @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-400; }
+    .btn-ghost { @apply text-slate-600 hover:bg-slate-100; }
+    .btn-sm { @apply px-2.5 py-1.5 text-xs; }
+
+    .label { @apply mb-1 block text-xs font-semibold tracking-wide text-slate-600 uppercase; }
+    .input { @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none disabled:bg-slate-100; }
+    .input-error { @apply border-red-400 focus:border-red-500 focus:ring-red-100; }
+    .field-error { @apply mt-1 text-xs font-medium text-red-600; }
+
+    .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap; }
+    .badge-draft { @apply bg-amber-100 text-amber-800 ring-1 ring-amber-200; }
+    .badge-locked { @apply bg-sky-100 text-sky-800 ring-1 ring-sky-200; }
+    .badge-published { @apply bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200; }
+    .badge-closed { @apply bg-slate-200 text-slate-700 ring-1 ring-slate-300; }
+    .badge-muted { @apply bg-slate-100 text-slate-600; }
+    .badge-editable { @apply bg-amber-400/90 text-amber-950 text-[10px] tracking-wider uppercase; }
+
+    .table-base { @apply min-w-full divide-y divide-slate-200 text-sm; }
+    .table-base th { @apply bg-slate-50 px-3 py-2.5 text-left text-xs font-bold tracking-wide whitespace-nowrap text-slate-500 uppercase; }
+    .table-base td { @apply px-3 py-2.5 whitespace-nowrap text-slate-700; }
+    .table-base tbody tr { @apply hover:bg-slate-50/70; }
+    .num { @apply text-right tabular-nums; }
+
+    .nav-link { @apply rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900; }
+    .nav-link-active { @apply bg-brand-50 text-brand-700 hover:bg-brand-50; }
+}
