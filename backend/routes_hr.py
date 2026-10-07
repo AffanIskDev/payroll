@@ -1,63 +1,18 @@
+import secrets
 import uuid
-from typing import Optional, Literal
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from core import db, now_iso, require_hr, require_manager, hash_password, get_configs, DEFAULT_CONFIGS
-from schedules import detect_shift, minutes_for, shift_fields
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, ADJ_KEYS)
 from pdf_service import render_payslip
+import integrations
 
 router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_hr)])
-
-LeaveType = Literal["present", "sick_with_certificate", "annual_leave", "statutory_leave", "maternity_leave",
-                    "menstrual_leave", "approved_unpaid_leave", "alpha"]
-PayrollStatus = Literal["active", "unpaid_leave", "prolonged_illness", "work_accident_stmb"]
-
-
-class EmployeeIn(BaseModel):
-    nik: str
-    name: str
-    email: str
-    department: str = ""
-    birth_date: str
-    gender: Literal["L", "P"]
-    marital_status: Literal["TK", "K"]
-    dependents_count: int = 0
-    has_husband_certificate: bool = False
-    payroll_status: PayrollStatus = "active"
-    prolonged_illness_month_count: int = 0
-    unpaid_leave_start: Optional[str] = None
-    unpaid_leave_end: Optional[str] = None
-    basic_salary: float
-    position_allowance: float = 0
-    monthly_attendance_allowance: float = 0
-    overtime_hourly_rate: float = 0
-    has_bpjs_kes: bool = True
-    has_bpjs_tk: bool = True
-    jkk_rate: float = 0.0024
-    bank_name: str = "BSI"
-    bank_account_number: str = ""
-    npwp: str = ""
-    work_schedule_code: str = "KANTOR_PUSAT"
-    password: Optional[str] = None
-
-
-class AttendanceIn(BaseModel):
-    employee_id: str
-    work_date: str
-    check_in_time: Optional[str] = None
-    check_out_time: Optional[str] = None
-    minutes_late: Optional[int] = None
-    minutes_early_leave: Optional[int] = None
-    is_missing_check_in: bool = False
-    is_missing_check_out: bool = False
-    leave_type: LeaveType = "present"
-    shift_code: Optional[str] = None
-    notes: str = ""
 
 
 class PeriodIn(BaseModel):
@@ -121,39 +76,9 @@ async def update_configs(body: dict):
     return await list_configs()
 
 
-class ShiftIn(BaseModel):
-    code: str
-    name: str
-    days: dict
-
-
-class ScheduleIn(BaseModel):
-    name: str
-    shifts: list[ShiftIn]
-
-
-@router.get("/schedules")
-async def list_schedules():
-    return await db.work_schedules.find({}, {"_id": 0}).sort("code", 1).to_list(100)
-
-
-@router.put("/schedules/{code}")
-async def update_schedule(code: str, body: ScheduleIn):
-    if not await db.work_schedules.find_one({"code": code}):
-        raise HTTPException(404, "Jadwal tidak ditemukan")
-    shifts = []
-    for s in body.shifts:
-        days = {}
-        for k, v in s.days.items():
-            if k not in [str(i) for i in range(7)]:
-                raise HTTPException(400, f"Hari tidak valid: {k}")
-            if v and v.get("start") and v.get("end"):
-                if v["start"] >= v["end"]:
-                    raise HTTPException(400, f"{s.name}: jam masuk harus sebelum jam pulang")
-                days[k] = {"start": v["start"][:5], "end": v["end"][:5]}
-        shifts.append({"code": s.code, "name": s.name, "days": days})
-    await db.work_schedules.update_one({"code": code}, {"$set": {"name": body.name, "shifts": shifts}})
-    return await db.work_schedules.find_one({"code": code}, {"_id": 0})
+@router.get("/integrations")
+async def integration_status():
+    return {s.lower(): {"mode": integrations.mode(s)} for s in ("ROSY", "RUMATKU")}
 
 
 @router.get("/employees")
@@ -161,41 +86,26 @@ async def list_employees():
     return await db.employees.find({}, {"_id": 0}).sort("nik", 1).to_list(2000)
 
 
-async def _sync_user(emp: dict, password: Optional[str]):
-    user = await db.users.find_one({"employee_id": emp["id"]})
-    fields = {"email": emp["email"].lower(), "nik": emp["nik"], "name": emp["name"]}
-    if user:
-        if password:
-            fields["password_hash"] = hash_password(password)
-        await db.users.update_one({"employee_id": emp["id"]}, {"$set": fields})
-    else:
-        await db.users.insert_one({"id": str(uuid.uuid4()), "role": "employee", "employee_id": emp["id"],
-                                   "password_hash": hash_password(password or "Password123!"),
-                                   "created_at": now_iso(), **fields})
-
-
-@router.post("/employees")
-async def create_employee(body: EmployeeIn):
-    data = body.model_dump(exclude={"password"})
-    if await db.employees.find_one({"nik": data["nik"]}):
-        raise HTTPException(400, "NIK sudah terdaftar")
-    if await db.users.find_one({"email": data["email"].lower()}):
-        raise HTTPException(400, "Email sudah terdaftar")
-    data.update(id=str(uuid.uuid4()), created_at=now_iso())
-    await db.employees.insert_one({**data})
-    await _sync_user(data, body.password)
-    data.pop("_id", None)
-    return data
-
-
-@router.put("/employees/{eid}")
-async def update_employee(eid: str, body: EmployeeIn):
-    await get_employee(eid)
-    data = body.model_dump(exclude={"password"})
-    await db.employees.update_one({"id": eid}, {"$set": data})
-    emp = await get_employee(eid)
-    await _sync_user(emp, body.password)
-    return emp
+async def sync_employees() -> list:
+    """Fetch master karyawan & gaji dari ROSY; upsert by NIK. Returns employee ids."""
+    try:
+        rows = await integrations.fetch_employees()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Gagal mengambil data karyawan dari ROSY: {e}")
+    ids = []
+    for r in rows:
+        existing = await db.employees.find_one({"nik": r["nik"]}, {"_id": 0, "id": 1})
+        eid = existing["id"] if existing else str(uuid.uuid4())
+        await db.employees.update_one({"nik": r["nik"]}, {"$set": {**r, "source": "rosy", "synced_at": now_iso()},
+                                                         "$setOnInsert": {"id": eid, "created_at": now_iso()}},
+                                      upsert=True)
+        if r["email"] and not await db.users.find_one({"$or": [{"employee_id": eid}, {"email": r["email"]}]}):
+            await db.users.insert_one({"id": str(uuid.uuid4()), "role": "employee", "employee_id": eid,
+                                       "email": r["email"], "nik": r["nik"], "name": r["name"],
+                                       "password_hash": hash_password(secrets.token_urlsafe(16)),
+                                       "created_at": now_iso()})
+        ids.append(eid)
+    return ids
 
 
 @router.get("/attendance")
@@ -205,39 +115,6 @@ async def list_attendance(employee_id: str, start: str, end: str):
     ).sort("work_date", 1).to_list(400)
 
 
-@router.post("/attendance")
-async def upsert_attendance(body: AttendanceIn):
-    emp = await get_employee(body.employee_id)
-    data = body.model_dump()
-    shift, src = None, "auto"
-    if data["leave_type"] == "present":
-        shift, src = await detect_shift(emp, data["work_date"], data["check_in_time"], data["check_out_time"],
-                                        data["shift_code"])
-    late, early = minutes_for(shift, data["check_in_time"], data["check_out_time"])
-    if data["minutes_late"] is None:
-        data["minutes_late"] = late
-    if data["minutes_early_leave"] is None:
-        data["minutes_early_leave"] = early
-    data.update(shift_fields(shift, src), is_off_day=data["leave_type"] == "present" and shift is None)
-    data.update(source="hrd_manual", updated_at=now_iso())
-    existing = await db.attendance_daily_logs.find_one({"employee_id": body.employee_id, "work_date": body.work_date})
-    if existing:
-        await db.attendance_daily_logs.update_one({"_id": existing["_id"]}, {"$set": data})
-        data["id"] = existing["id"]
-    else:
-        data["id"] = str(uuid.uuid4())
-        await db.attendance_daily_logs.insert_one({**data})
-    return data
-
-
-@router.delete("/attendance/{log_id}")
-async def delete_attendance(log_id: str):
-    res = await db.attendance_daily_logs.delete_one({"id": log_id})
-    if not res.deleted_count:
-        raise HTTPException(404, "Log tidak ditemukan")
-    return {"ok": True}
-
-
 @router.get("/periods")
 async def list_periods():
     return await db.payroll_periods.find({}, {"_id": 0}).sort("start_date", -1).to_list(100)
@@ -245,11 +122,45 @@ async def list_periods():
 
 @router.post("/periods")
 async def create_period(body: PeriodIn):
+    ids = await sync_employees()
     data = body.model_dump()
-    data.update(id=str(uuid.uuid4()), status="draft", approved_by=None, approved_at=None, created_at=now_iso())
+    data.update(id=str(uuid.uuid4()), status="draft", approved_by=None, approved_at=None, created_at=now_iso(),
+                employee_ids=ids, employee_count=len(ids), employees_synced_at=now_iso(),
+                employees_source=integrations.mode("ROSY"), attendance_synced_at=None)
     await db.payroll_periods.insert_one({**data})
     data.pop("_id", None)
     return data
+
+
+@router.post("/periods/{pid}/fetch-attendance")
+async def fetch_attendance(pid: str):
+    period = await get_period(pid)
+    if period["status"] not in EDITABLE_STATUSES:
+        raise HTTPException(400, "Periode sedang direview Manager atau sudah dikunci")
+    q = {"id": {"$in": period["employee_ids"]}} if period.get("employee_ids") else {}
+    emps = await db.employees.find(q, {"_id": 0}).to_list(5000)
+    by_nik = {e["nik"]: e["id"] for e in emps}
+    try:
+        rows = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
+    await db.attendance_daily_logs.delete_many({"employee_id": {"$in": list(by_nik.values())},
+                                                "work_date": {"$gte": period["start_date"], "$lte": period["end_date"]}})
+    unknown, docs = set(), []
+    for r in rows:
+        nik = r.pop("nik")
+        if nik not in by_nik or not (period["start_date"] <= r["work_date"] <= period["end_date"]):
+            unknown.add(nik)
+            continue
+        docs.append({**r, "id": str(uuid.uuid4()), "employee_id": by_nik[nik], "source": "rumatku",
+                     "synced_at": now_iso()})
+    if docs:
+        await db.attendance_daily_logs.insert_many(docs)
+    await db.payroll_periods.update_one({"id": pid}, {"$set": {
+        "attendance_synced_at": now_iso(), "attendance_count": len(docs),
+        "attendance_source": integrations.mode("RUMATKU")}})
+    processed = await process_period(await get_period(pid))
+    return {"logs": len(docs), "processed": processed, "unknown_niks": sorted(unknown)}
 
 
 @router.get("/periods/{pid}")

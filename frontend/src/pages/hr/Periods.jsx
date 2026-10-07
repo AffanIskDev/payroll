@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
@@ -20,17 +20,20 @@ export default function Periods() {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ period_name: "", start_date: "", end_date: "", payment_date: "" });
   const [del, setDel] = useState(null);
+  const nav = useNavigate();
   const load = () => api.get("/hr/periods").then((r) => setList(r.data));
   useEffect(() => { load(); }, []);
 
+  const [syncing, setSyncing] = useState(false);
   const create = async (e) => {
     e.preventDefault();
+    setSyncing(true);
     try {
-      await api.post("/hr/periods", f);
-      toast.success("Periode dibuat");
+      const { data } = await api.post("/hr/periods", f);
+      toast.success(`Periode dibuat · ${data.employee_count} karyawan diambil dari ROSY`);
       setOpen(false);
-      load();
-    } catch (err) { toast.error(errMsg(err)); }
+      nav(`/hr-manager/payroll/${data.id}`);
+    } catch (err) { toast.error(errMsg(err)); } finally { setSyncing(false); }
   };
 
   const remove = async () => {
@@ -79,7 +82,7 @@ export default function Periods() {
               <Field label="Selesai" type="date" testId="period-end-input" required value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} />
             </div>
             <Field label="Tanggal Transfer" type="date" testId="period-payment-input" value={f.payment_date} onChange={(e) => setF({ ...f, payment_date: e.target.value })} />
-            <Btn data-testid="period-submit-button" className="w-full justify-center">Simpan</Btn>
+            <Btn data-testid="period-submit-button" disabled={syncing} className="w-full justify-center">{syncing ? "Mengambil data karyawan dari ROSY..." : "Simpan & Ambil Data Karyawan (ROSY)"}</Btn>
           </form>
         </DialogContent>
       </Dialog>

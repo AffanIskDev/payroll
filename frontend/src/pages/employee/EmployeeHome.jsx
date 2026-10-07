@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, ChevronRight, LogIn, Clock, CheckCircle2, Landmark, FileBadge, Download } from "lucide-react";
+import { LogOut, ChevronRight, CheckCircle2, Landmark, FileBadge, Download } from "lucide-react";
 import { toast } from "sonner";
-import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
+import { api, saveFile, blobErrMsg } from "@/lib/api";
 import { rp } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 
@@ -12,31 +12,19 @@ export default function EmployeeHome() {
   const { user, logout } = useAuth();
   const [slips, setSlips] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [today, setToday] = useState(null);
   const [forms, setForms] = useState([]);
 
-  const loadToday = () => api.get("/v1/employee/attendance/today").then((r) => setToday(r.data));
   useEffect(() => {
     api.get("/v1/employee/payslips").then((r) => setSlips(r.data));
     api.get("/v1/employee/profile").then((r) => setProfile(r.data));
     api.get("/v1/employee/tax-forms/1721a1").then((r) => setForms(r.data));
-    loadToday();
   }, []);
-
-  const clock = async (kind) => {
-    try {
-      const { data } = await api.post(`/v1/employee/attendance/clock-${kind}`);
-      toast.success(kind === "in" ? `Absen masuk ${data.check_in_time}` : `Absen pulang ${data.check_out_time}`);
-      loadToday();
-    } catch (e) { toast.error(errMsg(e)); }
-  };
 
   const downloadA1 = (y) => saveFile("get", `/v1/employee/tax-forms/1721a1/${y}/download`, `1721-A1_${y}.pdf`)
     .then(() => toast.success("Bukti potong diunduh. Buka dengan sandi DDMMYY."))
     .catch(async (e) => toast.error(await blobErrMsg(e)));
 
   const latest = slips?.[0];
-  const log = today?.log;
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-50 pb-16 sm:border-x border-slate-200" data-testid="employee-home">
       <div className="px-5 pt-6 pb-4 flex items-center justify-between">
@@ -64,25 +52,6 @@ export default function EmployeeHome() {
         ) : (
           <div className="rounded-2xl bg-white border border-slate-200 p-6 text-sm text-slate-500" data-testid="no-payslip">{slips ? "Belum ada slip gaji yang disetujui HRD." : "Memuat..."}</div>
         )}
-      </div>
-      <div className="px-4 mt-5">
-        <div className="bg-white rounded-2xl border border-slate-200 p-4" data-testid="clock-card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold"><Clock className="h-4 w-4 text-teal-600" /> Presensi Hari Ini</div>
-            <span className="num text-xs text-slate-500">{today?.day_name}, {today?.date}</span>
-          </div>
-          <div className="mt-2 text-xs text-slate-600" data-testid="today-schedule">
-            {today && (today.shifts.length
-              ? today.shifts.map((s) => `${s.name} ${s.start}–${s.end}`).join(" · ")
-              : "Hari libur sesuai jadwal")}
-            <div className="text-[11px] text-slate-400">{today?.schedule_name}</div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <button data-testid="clock-in-button" disabled={!!log?.check_in_time} onClick={() => clock("in")} className="rounded-xl bg-teal-600 hover:bg-teal-700 text-white py-3 text-sm font-semibold disabled:bg-slate-200 disabled:text-slate-500 flex items-center justify-center gap-1.5"><LogIn className="h-4 w-4" /> {log?.check_in_time ? `Masuk ${log.check_in_time}` : "Absen Masuk"}</button>
-            <button data-testid="clock-out-button" disabled={!!log?.check_out_time} onClick={() => clock("out")} className="rounded-xl border-2 border-teal-600 text-teal-700 py-3 text-sm font-semibold disabled:border-slate-200 disabled:text-slate-500 flex items-center justify-center gap-1.5"><LogOut className="h-4 w-4" /> {log?.check_out_time ? `Pulang ${log.check_out_time}` : "Absen Pulang"}</button>
-          </div>
-          {log && (log.minutes_late > 0 || log.minutes_early_leave > 0) && <div className="mt-2 text-xs text-rose-600" data-testid="clock-late-info">Terlambat {log.minutes_late} m · Pulang cepat {log.minutes_early_leave} m</div>}
-        </div>
       </div>
       <div className="px-4 mt-6">
         <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2 px-1">Riwayat Slip Gaji</div>

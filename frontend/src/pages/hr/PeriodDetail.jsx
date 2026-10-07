@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Play, LockKeyhole, ChevronLeft, Landmark, Send, XCircle, AlertTriangle, History } from "lucide-react";
+import { DownloadCloud, LockKeyhole, ChevronLeft, Landmark, Send, XCircle, AlertTriangle, History, Users, CalendarCheck } from "lucide-react";
+import { IntegrationBadge } from "@/components/IntegrationBadge";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp, PERIOD_STATUS, SLIP_STATUS, PAYROLL_STATUS_LABELS } from "@/lib/format";
@@ -57,12 +58,17 @@ export default function PeriodDetail() {
       <Link to="/hr-manager/payroll" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-3"><ChevronLeft className="h-4 w-4" /> Semua periode</Link>
       <PageTitle title={period.period_name} subtitle={`${period.start_date} → ${period.end_date} · Transfer ${period.payment_date || "-"}`}>
         <StatusBadge map={PERIOD_STATUS} status={period.status} testId="period-status-badge" />
-        <Btn variant="outline" data-testid="process-payroll-button" disabled={busy || !editable} onClick={() => act("process", "Batch payroll selesai dihitung")}><Play className="h-4 w-4" /> Proses Payroll</Btn>
+        <IntegrationBadge system="rumatku" />
+        <Btn variant="outline" data-testid="fetch-attendance-button" disabled={busy || !editable} onClick={() => act("fetch-attendance", "Data absensi RUMATKU diambil & payroll dihitung")}><DownloadCloud className="h-4 w-4" /> {busy ? "Mengambil..." : "Ambil Data Absensi"}</Btn>
         {editable && <Btn variant="primary" data-testid="submit-period-button" disabled={busy || !payslips.length} onClick={() => act("submit", "Draft payroll diajukan ke Manager HRD")}><Send className="h-4 w-4" /> Ajukan ke Manager</Btn>}
         {isManager && pending && <Btn variant="outline" data-testid="reject-period-button" disabled={busy} onClick={() => setRejectOpen(true)} className="!border-rose-300 !text-rose-700 hover:!bg-rose-50"><XCircle className="h-4 w-4" /> Tolak Draft</Btn>}
         {isManager && <Btn variant="success" data-testid="approve-all-button" disabled={busy || !pending} onClick={() => act("approve-all", "Semua slip di-approve & dikunci")} title={!pending ? "Periode harus diajukan dulu" : ""}><LockKeyhole className="h-4 w-4" /> Approve & Lock Semua</Btn>}
         <Btn variant="primary" data-testid="export-bsi-button" disabled={!approvedCount} onClick={exportBsi} title="Hanya slip approved"><Landmark className="h-4 w-4" /> Ekspor BSI (CSV)</Btn>
       </PageTitle>
+      <div className="mb-4 grid sm:grid-cols-2 gap-3 text-sm" data-testid="sync-status">
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-4 py-2.5"><Users className="h-4 w-4 text-blue-900" /> Karyawan dari ROSY: <b className="num" data-testid="sync-employee-count">{period.employee_count ?? payslips.length}</b><span className="text-xs text-slate-500 num ml-auto">{period.employees_synced_at ? new Date(period.employees_synced_at).toLocaleString("id-ID") : "-"}</span></div>
+        <div className={`flex items-center gap-2 border rounded-md px-4 py-2.5 ${period.attendance_synced_at ? "bg-white border-slate-200" : "bg-amber-50 border-amber-200 text-amber-900"}`}><CalendarCheck className="h-4 w-4 text-teal-700" /> {period.attendance_synced_at ? <>Absensi RUMATKU: <b className="num" data-testid="sync-attendance-count">{period.attendance_count} log</b><span className="text-xs text-slate-500 num ml-auto">{new Date(period.attendance_synced_at).toLocaleString("id-ID")}</span></> : <span data-testid="sync-attendance-pending">Absensi belum diambil — klik "Ambil Data Absensi"</span>}</div>
+      </div>
       {period.status === "revision" && (
         <div className="mb-4 flex gap-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-4 py-3" data-testid="rejection-banner">
           <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -104,7 +110,7 @@ export default function PeriodDetail() {
                   <td className="px-4 py-3 text-right"><Link to={`/hr-manager/payroll/${pid}/employee/${s.employee_id}`} data-testid={`review-${s.employee.nik}`} className="text-blue-900 font-semibold hover:underline whitespace-nowrap">Review</Link></td>
                 </tr>
               ))}
-              {!payslips.length && <tr><td colSpan={12} className="px-4 py-8 text-center text-slate-500">Belum ada slip. Klik "Proses Payroll".</td></tr>}
+              {!payslips.length && <tr><td colSpan={12} className="px-4 py-8 text-center text-slate-500">Belum ada slip. Klik "Ambil Data Absensi".</td></tr>}
             </tbody>
             {!!payslips.length && (
               <tfoot className="bg-slate-50 font-semibold">

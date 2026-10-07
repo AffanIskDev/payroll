@@ -119,7 +119,7 @@ export default function Workbench() {
             <Row label="Potongan Denda Kehadiran" hint={`${calc.late_penalty_days} hari / 25 (poin disiplin ${calc.late_penalty_points} + hari absen ${dc.attendance_cut_days})`} value={`- ${rp(calc.late_penalty_amount)}`} tone="text-rose-600" testId="earn-late-penalty" />
             <Edit label="Kompensasi Denda Keterlambatan" hint="Mengembalikan sebagian/seluruh denda (Rp)" value={adj.late_penalty_compensation} onChange={set("late_penalty_compensation")} disabled={locked} testId="input-penalty-compensation" />
             <Row label="Tunjangan Kehadiran Bersih" value={rp(calc.attendance_allowance)} tone="font-semibold" testId="earn-attendance-net" />
-            <Edit label="Lembur" hint={`${rp(emp.overtime_hourly_rate)}/jam → ${rp(calc.overtime_pay)}`} value={adj.overtime_hours} onChange={set("overtime_hours")} disabled={locked} testId="input-overtime-hours" suffix="jam" />
+            <Row label={`Lembur (${calc.overtime_hours} jam dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />
             <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />
             <Edit label="Bonus Tambahan" value={adj.additional_bonus} onChange={set("additional_bonus")} disabled={locked} testId="input-additional-bonus" />
             <Row label="Tunjangan BPJS Kesehatan (4%)" hint={`Basis ${rp(bp.kes_base)} (max gaji pokok, UMK Bekasi)`} value={rp(calc.tunjangan_bpjs_kes)} testId="earn-bpjs-kes" />

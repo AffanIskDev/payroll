@@ -55,6 +55,7 @@ async def december_context(period: dict, emp: dict) -> Optional[dict]:
 async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = None) -> dict:
     cfg = cfg or await get_configs()
     logs = await period_logs(emp["id"], period)
+    adj = {**adj, "overtime_hours": sum(float(lg.get("overtime_hours") or 0) for lg in logs)}
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     return calc
@@ -83,7 +84,8 @@ async def recalc_and_save(period: dict, emp: dict, adj: dict, notes: Optional[st
 async def process_period(period: dict) -> int:
     cfg = await get_configs()
     count = 0
-    async for emp in db.employees.find({}, {"_id": 0}):
+    q = {"id": {"$in": period["employee_ids"]}} if period.get("employee_ids") else {}
+    async for emp in db.employees.find(q, {"_id": 0}):
         existing = await db.payslips.find_one({"payroll_period_id": period["id"], "employee_id": emp["id"]},
                                               {"_id": 0})
         adj = {k: (existing or {}).get(k, 0) for k in ADJ_KEYS}

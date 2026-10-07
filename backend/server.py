@@ -16,7 +16,7 @@ from seed import seed  # noqa: E402
 import routes_hr  # noqa: E402
 import routes_employee  # noqa: E402
 import routes_tax  # noqa: E402
-import routes_roster  # noqa: E402
+import routes_recap  # noqa: E402
 
 app = FastAPI(title="Payroll ROSY & Rumatku")
 auth = APIRouter(prefix="/api/auth")
@@ -89,7 +89,7 @@ app.include_router(auth)
 app.include_router(routes_hr.router)
 app.include_router(routes_employee.router)
 app.include_router(routes_tax.router)
-app.include_router(routes_roster.router)
+app.include_router(routes_recap.router)
 
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origin_regex=".*",
                    allow_methods=["*"], allow_headers=["*"],

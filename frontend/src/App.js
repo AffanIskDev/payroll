@@ -7,10 +7,10 @@ import Dashboard from "@/pages/hr/Dashboard";
 import Periods from "@/pages/hr/Periods";
 import PeriodDetail from "@/pages/hr/PeriodDetail";
 import Workbench from "@/pages/hr/Workbench";
-import Employees from "@/pages/hr/Employees";
-import Attendance from "@/pages/hr/Attendance";
+import Employees from "@/pages/hr/EmployeesView";
+import Attendance from "@/pages/hr/AttendanceView";
 import Configs from "@/pages/hr/Configs";
-import { TaxPage, ScheduleShiftPage, RecapPage } from "@/pages/hr/MergedPages";
+import { TaxPage, RecapPage } from "@/pages/hr/MergedPages";
 import EmployeeHome from "@/pages/employee/EmployeeHome";
 import PayslipDetail from "@/pages/employee/PayslipDetail";
 
@@ -47,8 +47,6 @@ export default function App() {
             <Route path="config" element={<Configs />} />
             <Route path="tax" element={<TaxPage />} />
             <Route path="tax-forms" element={<Navigate to="/hr-manager/tax?tab=a1" replace />} />
-            <Route path="schedules" element={<ScheduleShiftPage />} />
-            <Route path="rotations" element={<Navigate to="/hr-manager/schedules?tab=rotations" replace />} />
             <Route path="recap" element={<RecapPage />} />
             <Route path="shift-recap" element={<Navigate to="/hr-manager/recap?tab=shift" replace />} />
           </Route>

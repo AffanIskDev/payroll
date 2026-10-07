@@ -8,6 +8,7 @@ export const LEAVE_LABELS = {
   maternity_leave: "Cuti Melahirkan",
   menstrual_leave: "Cuti Haid",
   approved_unpaid_leave: "Izin Tanpa Upah",
+  day_off: "Libur",
   alpha: "Mangkir (Alpha)",
 };
 

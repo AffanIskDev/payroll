@@ -1,18 +1,14 @@
-import uuid
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
-from core import db, now_iso, require_employee, get_configs
-from schedules import employee_schedule, detect_shift, minutes_for, shift_fields, DAY_NAMES
+from core import db, require_employee, get_configs
 from pipeline import get_period
 from pdf_service import save_encrypted, encrypt_pdf, birth_password
 from tax_forms import list_1721a1, render_1721a1
 
 router = APIRouter(prefix="/api/v1/employee")
-WIB = timezone(timedelta(hours=7))
 SUMMARY_FIELDS = {"_id": 0, "discipline": 0, "bpjs": 0, "pdf_path": 0, "pdf_password_hash": 0}
 
 
@@ -88,64 +84,3 @@ async def profile(user: dict = Depends(require_employee)):
     emp = await db.employees.find_one({"id": user["employee_id"]}, {"_id": 0})
     return {k: emp.get(k) for k in ("nik", "name", "email", "department", "bank_name", "bank_account_number",
                                     "payroll_status")}
-
-
-def _today():
-    n = datetime.now(WIB)
-    return n.strftime("%Y-%m-%d"), n.strftime("%H:%M"), n.hour * 60 + n.minute
-
-
-async def _emp(user: dict) -> dict:
-    return await db.employees.find_one({"id": user["employee_id"]}, {"_id": 0})
-
-
-async def _ctx(user: dict):
-    return await employee_schedule(await _emp(user))
-
-
-@router.get("/attendance/today")
-async def today(user: dict = Depends(require_employee)):
-    d, _, _ = _today()
-    log = await db.attendance_daily_logs.find_one({"employee_id": user["employee_id"], "work_date": d}, {"_id": 0})
-    sched = await _ctx(user)
-    wd = str(datetime.fromisoformat(d).weekday())
-    shifts = [{"code": s["code"], "name": s["name"], **s["days"][wd]} for s in sched["shifts"] if wd in s["days"]]
-    return {"date": d, "day_name": DAY_NAMES[int(wd)], "schedule_name": sched["name"], "shifts": shifts, "log": log}
-
-
-@router.post("/attendance/clock-in")
-async def clock_in(user: dict = Depends(require_employee)):
-    d, hhmm, _ = _today()
-    eid = user["employee_id"]
-    if await db.attendance_daily_logs.find_one({"employee_id": eid, "work_date": d, "check_in_time": {"$ne": None}}):
-        raise HTTPException(400, "Anda sudah absen masuk hari ini")
-    shift, src = await detect_shift(await _emp(user), d, hhmm, None)
-    late, _ = minutes_for(shift, hhmm, None)
-    data = {"check_in_time": hhmm, "minutes_late": late, "is_missing_check_in": False, "leave_type": "present",
-            "source": "rumatku", "updated_at": now_iso(), **shift_fields(shift, src)}
-    res = await db.attendance_daily_logs.update_one(
-        {"employee_id": eid, "work_date": d}, {"$set": data,
-                                               "$setOnInsert": {"id": str(uuid.uuid4()), "check_out_time": None,
-                                                                "minutes_early_leave": 0, "is_missing_check_out": False,
-                                                                "notes": ""}}, upsert=True)
-    return {"date": d, **data, "upserted": bool(res.upserted_id)}
-
-
-@router.post("/attendance/clock-out")
-async def clock_out(user: dict = Depends(require_employee)):
-    d, hhmm, _ = _today()
-    eid = user["employee_id"]
-    log = await db.attendance_daily_logs.find_one({"employee_id": eid, "work_date": d})
-    if log and log.get("check_out_time"):
-        raise HTTPException(400, "Anda sudah absen pulang hari ini")
-    shift, src = await detect_shift(await _emp(user), d, (log or {}).get("check_in_time"), hhmm,
-                                    (log or {}).get("shift_code") if (log or {}).get("shift_source") == "manual" else None)
-    _, early = minutes_for(shift, None, hhmm)
-    data = {"check_out_time": hhmm, "minutes_early_leave": early, "is_missing_check_out": False,
-            "source": "rumatku", "updated_at": now_iso(), **shift_fields(shift, src)}
-    await db.attendance_daily_logs.update_one(
-        {"employee_id": eid, "work_date": d},
-        {"$set": data, "$setOnInsert": {"id": str(uuid.uuid4()), "check_in_time": None, "minutes_late": 0,
-                                        "is_missing_check_in": True, "leave_type": "present", "notes": ""}},
-        upsert=True)
-    return {"date": d, **data}
