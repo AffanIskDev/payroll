@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 9 — ROSY/RUMATKU simplification: verified mock integrations, auto employee-sync on period create, read-only Karyawan/Absensi, Ambil Data Absensi flow, overtime from logs, removal of schedules/rotations/attendance CRUD, nav cleanup. Backend 93/93 pass. Frontend full flow verified via Playwright (manager login → create TEST_UI April 2026 period → 3 employees synced → fetch-attendance → 90 logs → Budi THP Rp 7.974.276 → review page shows read-only earn-overtime row → delete period). Removed/obsolete tests cleaned up (test_schedules.py, test_rotations_and_import.py, test_shift_recap.py deleted; TestAttendance / test_attendance_today_shape / TestUnitMingguSchedule / NPWP PUT / overtime-editable asserts replaced). All TEST_ periods and non-March attendance logs purged after run; Maret 2026 approved period + Budi's 18 March logs preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PeriodDetail / Create period dialog", "issues": ["Radix Dialog warning in console: 'Missing Description or aria-describedby for DialogContent' (accessibility nit)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_integrations.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iter8_new_features.py",
+    "/app/backend/tests/test_workflow_v7.py",
+    "/app/backend/tests/test_tax_and_bsi.py",
+    "/app/backend/tests/test_1721a1_and_delete_period.py",
+    "/app/test_reports/pytest/iter9_full.xml",
+    "/app/test_reports/pytest/iter9_new.xml"
+  ],
+  "action_items": [
+    "(nit) Add DialogDescription or aria-describedby to create-period-dialog and reject-dialog to clear Radix a11y warning.",
+    "(nit) IntegrationBadge returns null until /api/hr/integrations resolves; could render skeleton to avoid layout shift on first paint."
+  ],
+  "critical_code_review_comments": [
+    "routes_hr.fetch_attendance deletes logs by (employee_id IN by_nik, work_date range) — correct scoping. However, if ROSY sync later renames an employee's NIK, old by_nik → employee_id mapping would strand prior logs; low risk given mock dataset.",
+    "integrations._mock_rumatku: when start.startswith('2026-03') it returns ONLY Budi (EMP-001) rows — intentional per spec. unknown_niks returned = [] (never populated) because Siti/Dimas simply get no rows in the response rather than being flagged. Spec says 'returns logs/processed/unknown_niks' so returning [] is correct.",
+    "pipeline.build_slip now overrides adj['overtime_hours'] with sum of log.overtime_hours. This means any manual save-draft payload that includes overtime_hours is silently ignored. UI already hides the input (Workbench) — consistent.",
+    "sync_employees upserts users by email idempotently; good. Password hash is random secrets.token_urlsafe(16) — only used for new users (employee login still works via existing seeded passwords).",
+    "routes_recap.shift_recap counts 'present_no_shift' only when log.shift_code is empty — spec's 'Masuk Tanpa Shift' column matches. 'Libur (day_off)' uses leave_type == 'day_off' OR is_off_day. 'Tanpa Log' = days_in_month − len(mine). Looks correct.",
+    "No endpoint restricts fetch-attendance to a specific status window beyond EDITABLE_STATUSES — approve-all can therefore still mutate attendance_count field in payroll_periods via re-run on draft/revision only; good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_integrations.py (new, 21 tests)",
+    "/app/backend/tests/backend_test.py (replaced obsolete overtime-editable tests + attendance CRUD + attendance/today)",
+    "/app/backend/tests/test_iter8_new_features.py (disabled UNIT_MINGGU + employee POST tests)",
+    "/app/backend/tests/test_workflow_v7.py (disabled attendance-template delimiter test)",
+    "/app/backend/tests/test_tax_and_bsi.py (tolerant YTD cleanup)",
+    "/app/backend/tests/test_1721a1_and_delete_period.py (disabled TestEmployeeNpwp PUT)",
+    "/app/backend/tests/test_schedules.py (DELETED — endpoint removed)",
+    "/app/backend/tests/test_rotations_and_import.py (DELETED — endpoints removed)",
+    "/app/backend/tests/test_shift_recap.py (DELETED — relied on POST/PUT /hr/employees + POST/DELETE /hr/attendance)"
+  ],
+  "success_rate": {"backend": "100% (93/93)", "frontend": "100% on all iter9 flows"},
+  "test_credentials": "/app/memory/test_credentials.md — hrd.manager@rumatku.id (manager_hrd), staff.hr@rumatku.id (admin_payroll), EMP-001/EMP-002/EMP-003 pwd Password123!.",
+  "seed_data_creation": "Playwright created TEST_UI_<ts> period and deleted it afterwards. Backend tests created TEST_Iter9 Apr Sync / Apr Fetch / Mar Fetch periods — all auto-deleted in fixtures. Final DB cleanup: 6 TEST periods purged, 90 orphan non-March attendance logs purged. Remaining: Maret 2026 (approved) + 3 real employees + 18 Budi March logs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend tests: 93 total across 6 files. New iter9 test file is test_iter9_integrations.py (TestIntegrations/TestCreatePeriodSyncsEmployees/TestFetchAttendance/TestRemovedEndpoints/TestShiftRecapFromLogs). Run `pytest /app/backend/tests/ -n0 -v` (29s). Mocked flows: ROSY → EMPLOYEES seed list; RUMATKU → _mock_rumatku(start,end,employees): special-cases 2026-03-* to return BUDI_MARCH dataset only, otherwise generates present-day entries for every employee with Sun as day_off and deterministic late/early/overtime via SHA1(nik+date). overtime_hours now sourced from logs only (adj.overtime_hours ignored by build_slip). Approved periods cannot re-fetch attendance (400). Removed endpoints: POST/PUT/DELETE /hr/employees, POST/DELETE /hr/attendance, /hr/attendance/import*, /hr/schedules, /hr/shift-rotations, /v1/employee/attendance/*.",
+  "rca of the issue": "No defects detected. Pre-existing obsolete tests (overtime-editable preview/save-draft assertions in backend_test.py) correctly failed against new 'overtime from logs read-only' behavior and were updated. Pre-existing YTD cleanup race in test_tax_and_bsi (xdist LoadScope split class vs module tests across workers) made tolerant to 404 — not a bug, just test infra. Minor Radix a11y console warning on Dialog components (missing aria-describedby) — cosmetic only."
+}

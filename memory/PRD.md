@@ -54,7 +54,14 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 - Menu Rekap (tab Rekap Shift + Rekap Lembur, GET /api/hr/overtime-recap, ekspor CSV).
 - Absensi: pencarian karyawan (combobox search). Karyawan: label "Rate Lembur (Rp / jam)" default 0 + kolom tabel. Testing iteration_8: pass.
 
+## Implemented (2026-10-06, iteration 9) — Penyederhanaan ROSY + RUMATKU
+- Data karyawan & gaji diambil dari ROSY saat "+ Periode Baru" (integrations.fetch_employees). Menu Karyawan hanya-lihat.
+- Tombol "Ambil Data Absensi" per periode mengambil absensi/shift/lembur dari RUMATKU (integrations.fetch_attendance), lalu payroll dihitung otomatis. Jam lembur dari RUMATKU (tidak bisa diedit).
+- Menu Jadwal-Shift, input/impor absensi manual, CRUD karyawan, clock-in karyawan dihapus. Absensi hanya-lihat; Rekap dari data hasil fetching.
+- **MOCKED**: kedua integrasi masih data simulasi. Untuk live set env ROSY_API_URL/ROSY_API_KEY (GET /employees) dan RUMATKU_API_URL/RUMATKU_API_KEY (GET /attendance?start&end), format JSON lihat integrations.py. Testing iteration_9: 93/93 pass.
+
 ## Backlog
+- P0: Sambungkan API asli ROSY & RUMATKU (sesuaikan normalize_employee / normalize_attendance dengan JSON asli)
 - P2: Notifikasi email slip & bukti potong, impor CSV absensi
 - P2: Ekspor CSV e-Bupot / Coretax
 - P2: Impor CSV absensi, notifikasi email slip, queue background PDF

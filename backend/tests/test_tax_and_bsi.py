@@ -242,4 +242,11 @@ def test_zzz_cleanup_ytd_rows(hrd_token):
         if bid:
             r = requests.delete(f"{API}/hr/tax-balances/{bid}",
                                 headers=_h(hrd_token), timeout=30)
-            assert r.status_code == 200, r.text
+            assert r.status_code in (200, 404), r.text
+    # Belt-and-braces: delete any lingering TEST YTD rows for Budi/Siti
+    lst = requests.get(f"{API}/hr/tax-balances", headers=_h(hrd_token),
+                       params={"year": 2026}, timeout=30).json()
+    for row in lst:
+        if row.get("nik") in ("EMP-001", "EMP-002") and "TEST" in (row.get("notes") or ""):
+            requests.delete(f"{API}/hr/tax-balances/{row['id']}",
+                            headers=_h(hrd_token), timeout=30)

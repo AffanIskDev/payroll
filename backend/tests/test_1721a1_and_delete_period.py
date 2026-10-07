@@ -176,8 +176,8 @@ class TestDeletePeriod:
         assert r.status_code == 400
 
 
-# ---------- NPWP on employee ----------
-class TestEmployeeNpwp:
+# ---------- NPWP on employee (REMOVED iter9 — PUT /hr/employees deleted) ----------
+class _TestEmployeeNpwp_REMOVED:
     def test_npwp_persists_and_appears_in_pdf(self, hr_client, budi_id):
         # Get current emp
         emps = hr_client.get(f"{BASE_URL}/api/hr/employees").json()

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { PERIOD_STATUS } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const Field = ({ label, testId, ...p }) => (
@@ -74,7 +74,7 @@ export default function Periods() {
       </Panel>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="create-period-dialog">
-          <DialogHeader><DialogTitle>Periode Payroll Baru</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Periode Payroll Baru</DialogTitle><DialogDescription>Data karyawan & gaji akan diambil otomatis dari ROSY.</DialogDescription></DialogHeader>
           <form onSubmit={create} className="space-y-3">
             <Field label="Nama Periode" testId="period-name-input" required placeholder="April 2026" value={f.period_name} onChange={(e) => setF({ ...f, period_name: e.target.value })} />
             <div className="grid grid-cols-2 gap-3">

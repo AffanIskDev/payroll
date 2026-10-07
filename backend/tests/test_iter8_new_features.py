@@ -30,8 +30,8 @@ def staff_tok():
     return _login(STAFF)
 
 
-# ------- UNIT_MINGGU schedule -------
-class TestUnitMingguSchedule:
+# ------- UNIT_MINGGU schedule (REMOVED iter9 — schedules endpoint deleted) -------
+class _TestUnitMingguSchedule_REMOVED:
     def test_unit_minggu_has_two_shifts(self, hrd_tok):
         r = requests.get(f"{API}/hr/schedules", headers=_h(hrd_tok), timeout=30)
         assert r.status_code == 200, r.text
@@ -193,7 +193,7 @@ class TestOvertimeRecap:
 
 # ------- Employee overtime_hourly_rate -------
 class TestEmployeeOvertimeRate:
-    def test_default_zero_on_create(self, hrd_tok):
+    def _removed_test_default_zero_on_create(self, hrd_tok):
         import pymongo
         # Pre-clean any orphan user from prior runs
         mc = pymongo.MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))

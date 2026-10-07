@@ -155,19 +155,20 @@ class TestSeededCalculations:
 
 # ---------- workbench preview / draft ----------
 class TestWorkbench:
-    def test_preview_live_recalc_overtime(self, hrd_token, period_id, employees):
+    def test_preview_live_recalc_overtime_readonly(self, hrd_token, period_id, employees):
+        """Iter9: overtime_hours in adj is IGNORED by build_slip (sourced from logs)."""
         eid = employees["EMP-001"]["id"]
         base = requests.post(f"{API}/hr/periods/{period_id}/employees/{eid}/preview",
                              headers=_h(hrd_token), timeout=30, json={}).json()
         with_ot = requests.post(f"{API}/hr/periods/{period_id}/employees/{eid}/preview",
                                 headers=_h(hrd_token), timeout=30,
                                 json={"overtime_hours": 5}).json()
-        # Budi overtime_hourly_rate = 50000 → +250_000 overtime_pay
-        assert with_ot["overtime_pay"] - base["overtime_pay"] == 250000
-        assert with_ot["gross_earnings"] - base["gross_earnings"] == 250000
+        # Overtime is now read-only from attendance logs; adj.overtime_hours ignored
+        assert with_ot["overtime_pay"] == base["overtime_pay"]
+        assert with_ot["overtime_hours"] == base["overtime_hours"]
 
     def test_save_draft(self, hrd_token, employees):
-        # Maret 2026 is locked (already approved). Create a TEST period to test save-draft.
+        # Create a TEST period (no attendance fetched → 0 OT). KPI incentive still editable.
         eid = employees["EMP-001"]["id"]
         pr = requests.post(f"{API}/hr/periods", headers=_h(hrd_token), timeout=30,
                            json={"period_name": "TEST_April 2026", "start_date": "2026-04-01",
@@ -179,12 +180,12 @@ class TestWorkbench:
             assert proc.status_code == 200, proc.text
             r = requests.put(f"{API}/hr/periods/{pid}/employees/{eid}",
                              headers=_h(hrd_token), timeout=30,
-                             json={"overtime_hours": 5, "kpi_incentive": 0, "additional_bonus": 0,
+                             json={"overtime_hours": 0, "kpi_incentive": 500000, "additional_bonus": 0,
                                    "late_penalty_compensation": 0, "other_deductions": 0,
                                    "adjustment_notes": "TEST draft"})
             assert r.status_code == 200, r.text
             assert r.json()["adjustment_notes"] == "TEST draft"
-            assert r.json()["overtime_pay"] == 250000
+            assert r.json()["kpi_incentive"] == 500000
         finally:
             requests.delete(f"{API}/hr/periods/{pid}", headers=_h(hrd_token), timeout=30)
 
@@ -218,25 +219,6 @@ class TestConfigs:
         assert r.status_code == 400
 
 
-class TestAttendance:
-    def test_attendance_minutes_from_times(self, hrd_token, employees):
-        eid = employees["EMP-001"]["id"]
-        # Create a TEST attendance on a date outside Maret seed to avoid overwrite
-        wd = "2026-04-02"
-        r = requests.post(f"{API}/hr/attendance", headers=_h(hrd_token), timeout=30,
-                          json={"employee_id": eid, "work_date": wd,
-                                "check_in_time": "08:20", "check_out_time": "15:45",
-                                "leave_type": "present"})
-        assert r.status_code == 200, r.text
-        log = r.json()
-        assert log["minutes_late"] == 20
-        assert log["minutes_early_leave"] == 15
-        # cleanup
-        d = requests.delete(f"{API}/hr/attendance/{log['id']}",
-                            headers=_h(hrd_token), timeout=30)
-        assert d.status_code == 200
-
-
 # ---------- employee API ----------
 class TestEmployeeAPI:
     def test_payslips_empty_before_approval(self, budi_token):
@@ -251,11 +233,10 @@ class TestEmployeeAPI:
         assert r.status_code == 200
         assert r.json()["nik"] == "EMP-001"
 
-    def test_attendance_today_shape(self, budi_token):
+    def test_employee_attendance_removed(self, budi_token):
         r = requests.get(f"{API}/v1/employee/attendance/today",
                          headers=_h(budi_token), timeout=30)
-        assert r.status_code == 200
-        assert "date" in r.json() and "log" in r.json()
+        assert r.status_code == 404
 
 
 # ---------- approve & lock + PDF encryption ----------
