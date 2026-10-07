@@ -61,11 +61,15 @@ def test_list_schedules_defaults(hrd):
     assert "6" not in s1["days"] and "6" not in s2["days"]
 
     um = by_code["UNIT_MINGGU"]
-    reg = next(s for s in um["shifts"] if s["code"] == "REG")
+    s1 = next(s for s in um["shifts"] if s["code"] == "S1")
+    s2 = next(s for s in um["shifts"] if s["code"] == "S2")
     for i in range(5):
-        assert reg["days"][str(i)] == {"start": "08:00", "end": "16:00"}
-    assert "5" not in reg["days"]
-    assert reg["days"]["6"] == {"start": "08:00", "end": "14:00"}
+        assert s1["days"][str(i)] == {"start": "07:00", "end": "15:00"}
+        assert s2["days"][str(i)] == {"start": "13:00", "end": "21:00"}
+    assert s1["days"]["5"] == {"start": "08:00", "end": "14:00"}
+    assert "6" not in s1["days"] or not s1["days"].get("6", {}).get("start")
+    assert "5" not in s2["days"] or not s2["days"].get("5", {}).get("start")
+    assert s2["days"]["6"] == {"start": "08:00", "end": "14:00"}
 
 
 def test_update_schedule_invalid_time_rejected(hrd):
@@ -226,12 +230,14 @@ def test_attendance_minggu_sunday_work(hrd, budi_id, budi_as_minggu):
         _del_att(hrd, log["id"])
 
 
-def test_attendance_minggu_saturday_off(hrd, budi_id, budi_as_minggu):
+def test_attendance_minggu_saturday_s1(hrd, budi_id, budi_as_minggu):
+    # New UNIT_MINGGU: Saturday S1 08-14 is active; S2 Saturday off.
     log = _post_att(hrd, {"employee_id": budi_id, "work_date": "2026-04-11",
                           "check_in_time": "08:00", "check_out_time": "14:00"})
     try:
-        assert log["is_off_day"] is True
-        assert log["shift_code"] is None
+        assert log["is_off_day"] is False
+        assert log["shift_code"] == "S1"
+        assert log["minutes_late"] == 0 and log["minutes_early_leave"] == 0
     finally:
         _del_att(hrd, log["id"])
 

@@ -48,6 +48,12 @@ Waterfall non-duplikasi denda (25 hari), leave matrix, BPJS basis gaji pokok + f
 - Menu digabung: Pajak (tab Saldo Awal YTD + Bukti Potong 1721-A1), Jadwal-Shift (tab Jadwal Kerja + Rotasi Shift).
 - Workflow approval: Staff HR (admin_payroll) proses & ajukan → Manager HRD approve atau tolak dengan alasan → status revisi kembali ke staff; riwayat review. Akun demo staff.hr@rumatku.id. Testing iteration_7: 103/103 pass.
 
+## Implemented (2026-10-06, iteration 8)
+- Notifikasi dashboard (GET /api/hr/notifications): Manager melihat draft diajukan; Staff melihat draft ditolak + alasan.
+- UNIT_MINGGU jadi 2 shift: S1 Sen–Jum 07–15 + Sabtu 08–14; S2 Sen–Jum 13–21 + Minggu 08–14.
+- Menu Rekap (tab Rekap Shift + Rekap Lembur, GET /api/hr/overtime-recap, ekspor CSV).
+- Absensi: pencarian karyawan (combobox search). Karyawan: label "Rate Lembur (Rp / jam)" default 0 + kolom tabel. Testing iteration_8: pass.
+
 ## Backlog
 - P2: Notifikasi email slip & bukti potong, impor CSV absensi
 - P2: Ekspor CSV e-Bupot / Coretax
