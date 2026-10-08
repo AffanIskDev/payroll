@@ -46,11 +46,21 @@ async def ensure_user(email, password, name, role, employee_id=None, nik=None):
         await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(password)}})
 
 
+async def migrate_employee_indexes():
+    """HAM's nik is not unique (placeholders '-', '0'); employees are keyed by rosy_employee_id instead."""
+    if (await db.employees.index_information()).get("nik_1", {}).get("unique"):
+        await db.employees.drop_index("nik_1")
+    await db.employees.create_index("nik")
+    await db.employees.create_index("rosy_employee_id", unique=True, name="rosy_employee_id_unique",
+                                    partialFilterExpression={"rosy_employee_id": {"$type": "string"}})
+
+
 async def seed():
     await db.users.create_index("email", unique=True)
-    await db.employees.create_index("nik", unique=True)
+    await migrate_employee_indexes()
     await db.payslips.create_index([("payroll_period_id", 1), ("employee_id", 1)], unique=True)
     await db.attendance_daily_logs.create_index([("employee_id", 1), ("work_date", 1)], unique=True)
+    await db.overtime_claims.create_index([("payroll_period_id", 1), ("employee_id", 1)])
     await db.login_attempts.create_index("identifier")
     for k, (v, desc) in DEFAULT_CONFIGS.items():
         await db.payroll_configs.update_one({"config_key": k}, {"$setOnInsert": {
@@ -63,6 +73,10 @@ async def seed():
     await ensure_user("hrd.manager@rumatku.id", DEMO_PASSWORD, "Manager HRD", "manager_hrd")
     await ensure_user(os.environ["ADMIN_EMAIL"], os.environ["ADMIN_PASSWORD"], "Admin Payroll", "admin_payroll")
     await ensure_user("staff.hr@rumatku.id", DEMO_PASSWORD, "Staff HR", "admin_payroll")
+
+    if os.environ.get("HAM_API_URL"):
+        # Live: employees & periods come from HAM; the Budi/Siti/Dimas sample belongs to the simulation only
+        return
 
     for e in EMPLOYEES:
         emp = await db.employees.find_one({"nik": e["nik"]})

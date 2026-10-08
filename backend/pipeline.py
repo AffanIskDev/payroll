@@ -54,10 +54,20 @@ async def december_context(period: dict, emp: dict) -> Optional[dict]:
     }
 
 
+async def overtime_hours(period: dict, emp_id: str, logs: list) -> float:
+    """HAM periods: approved claims paid in this period (pay month may differ from the claim date).
+    Simulation: overtime recorded on the daily logs."""
+    if period.get("overtime_source") == "ham":
+        claims = await db.overtime_claims.find({"payroll_period_id": period["id"], "employee_id": emp_id},
+                                               {"_id": 0, "menit_disetujui": 1}).to_list(1000)
+        return sum(int(c["menit_disetujui"]) for c in claims) / 60
+    return sum(float(lg.get("overtime_hours") or 0) for lg in logs)
+
+
 async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = None) -> dict:
     cfg = cfg or await get_configs()
     logs = await period_logs(emp["id"], period)
-    adj = {**adj, "overtime_hours": sum(float(lg.get("overtime_hours") or 0) for lg in logs)}
+    adj = {**adj, "overtime_hours": await overtime_hours(period, emp["id"], logs)}
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     return calc

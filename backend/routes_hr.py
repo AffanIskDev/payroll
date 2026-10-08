@@ -1,6 +1,10 @@
+import re
 import secrets
 import uuid
+from collections import Counter
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -86,26 +90,58 @@ async def list_employees():
     return await db.employees.find({}, {"_id": 0}).sort("nik", 1).to_list(2000)
 
 
-async def sync_employees() -> list:
-    """Fetch master karyawan & gaji dari ROSY; upsert by NIK. Returns employee ids."""
+async def sync_employees(periode: str) -> tuple:
+    """Fetch master karyawan & gaji dari ROSY (HAM); upsert by rosy_employee_id. Returns (employee ids, meta).
+
+    HAM's nik is not unique, so it is never the key. Employees created before rosy_employee_id existed
+    are adopted once by nik."""
     try:
-        rows = await integrations.fetch_employees()
+        rows, meta = await integrations.fetch_employees(periode)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data karyawan dari ROSY: {e}")
+    live = integrations.mode("ROSY") == "live"
     ids = []
     for r in rows:
-        existing = await db.employees.find_one({"nik": r["nik"]}, {"_id": 0, "id": 1})
+        existing = await db.employees.find_one({"rosy_employee_id": r["rosy_employee_id"]}, {"_id": 0, "id": 1}) or \
+            await db.employees.find_one({"rosy_employee_id": {"$exists": False}, "nik": r["nik"]}, {"_id": 0, "id": 1})
         eid = existing["id"] if existing else str(uuid.uuid4())
-        await db.employees.update_one({"nik": r["nik"]}, {"$set": {**r, "source": "rosy", "synced_at": now_iso()},
-                                                         "$setOnInsert": {"id": eid, "created_at": now_iso()}},
-                                      upsert=True)
-        if r["email"] and not await db.users.find_one({"$or": [{"employee_id": eid}, {"email": r["email"]}]}):
+        await db.employees.update_one({"id": eid}, {"$set": {**r, "source": "rosy", "in_rosy": True,
+                                                            "synced_at": now_iso()},
+                                                   "$setOnInsert": {"created_at": now_iso()}}, upsert=True)
+        # Real employees read their slips in the RUMATKU app; local login accounts exist only for the simulation
+        if not live and r["email"] and not await db.users.find_one({"$or": [{"employee_id": eid}, {"email": r["email"]}]}):
             await db.users.insert_one({"id": str(uuid.uuid4()), "role": "employee", "employee_id": eid,
                                        "email": r["email"], "nik": r["nik"], "name": r["name"],
                                        "password_hash": hash_password(secrets.token_urlsafe(16)),
                                        "created_at": now_iso()})
         ids.append(eid)
-    return ids
+    # Employees ROSY no longer returns (resigned, moved company, lost their salary contract) stay for history
+    # but are flagged, so the list never silently mixes them with the current payroll population
+    gone = await db.employees.update_many(
+        {"source": "rosy", "rosy_employee_id": {"$nin": [r["rosy_employee_id"] for r in rows]}},
+        {"$set": {"in_rosy": False}})
+    await db.sync_status.update_one({"key": "employees"}, {"$set": {
+        "key": "employees", "synced_at": now_iso(), "periode": periode, "source": integrations.mode("ROSY"),
+        "count": len(ids), "skipped": meta.get("dilewati") or [], "company": meta.get("company"),
+        "not_in_rosy": await db.employees.count_documents({"source": "rosy", "in_rosy": False}),
+        "newly_not_in_rosy": gone.modified_count,
+        "data_issues": dict(Counter(i for r in rows for i in r.get("data_issues") or []))}}, upsert=True)
+    return ids, meta
+
+
+@router.get("/employees/sync-status")
+async def employees_sync_status():
+    return await db.sync_status.find_one({"key": "employees"}, {"_id": 0}) or {}
+
+
+@router.post("/employees/sync")
+async def sync_employees_now(periode: Optional[str] = None):
+    """Manual sync from the Karyawan menu; defaults to the current month (WIB)."""
+    periode = periode or datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m")
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", periode):
+        raise HTTPException(400, "Format periode harus YYYY-MM")
+    await sync_employees(periode)
+    return await employees_sync_status()
 
 
 @router.get("/attendance")
@@ -122,11 +158,12 @@ async def list_periods():
 
 @router.post("/periods")
 async def create_period(body: PeriodIn):
-    ids = await sync_employees()
+    ids, meta = await sync_employees(body.start_date[:7])
     data = body.model_dump()
     data.update(id=str(uuid.uuid4()), status="draft", approved_by=None, approved_at=None, created_at=now_iso(),
                 employee_ids=ids, employee_count=len(ids), employees_synced_at=now_iso(),
-                employees_source=integrations.mode("ROSY"), attendance_synced_at=None)
+                employees_source=integrations.mode("ROSY"), employees_skipped=meta.get("dilewati") or [],
+                company=meta.get("company"), attendance_synced_at=None)
     await db.payroll_periods.insert_one({**data})
     data.pop("_id", None)
     return data
@@ -137,30 +174,77 @@ async def fetch_attendance(pid: str):
     period = await get_period(pid)
     if period["status"] not in EDITABLE_STATUSES:
         raise HTTPException(400, "Periode sedang direview Manager atau sudah dikunci")
+    # One button pulls everything fresh from ROSY: salary, overtime rate and population can change in HAM
+    # after the period was created (e.g. HRD fills in an overtime rate), and the slips must follow
+    ids, emp_meta = await sync_employees(period["start_date"][:7])
+    await db.payroll_periods.update_one({"id": pid}, {"$set": {
+        "employee_ids": ids, "employee_count": len(ids), "employees_synced_at": now_iso(),
+        "employees_source": integrations.mode("ROSY"), "employees_skipped": emp_meta.get("dilewati") or []}})
+    # draft slips of people who dropped out of the population (resigned, no salary contract) must not linger
+    await db.payslips.delete_many({"payroll_period_id": pid, "employee_id": {"$nin": ids}, "status": {"$ne": "approved"}})
+    period = await get_period(pid)
     q = {"id": {"$in": period["employee_ids"]}} if period.get("employee_ids") else {}
     emps = await db.employees.find(q, {"_id": 0}).to_list(5000)
+    by_rosy = {e["rosy_employee_id"]: e["id"] for e in emps if e.get("rosy_employee_id")}
     by_nik = {e["nik"]: e["id"] for e in emps}
     try:
-        rows = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
+        rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
-    await db.attendance_daily_logs.delete_many({"employee_id": {"$in": list(by_nik.values())},
+    try:
+        overtime = await integrations.fetch_overtime(period["start_date"][:7])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Gagal mengambil data lembur dari ROSY: {e}")
+    await db.attendance_daily_logs.delete_many({"employee_id": {"$in": [e["id"] for e in emps]},
                                                 "work_date": {"$gte": period["start_date"], "$lte": period["end_date"]}})
+    # Approved overtime claims paid in this period (live only): the slip uses these, the daily log only shows them
+    claim_docs, claim_minutes = [], {}
+    if overtime is not None:
+        claims, ot_meta = overtime
+        for c in claims:
+            eid = by_rosy.get(c["rosy_employee_id"])
+            if not eid:
+                continue
+            claim_docs.append({**c, "id": str(uuid.uuid4()), "payroll_period_id": pid, "employee_id": eid,
+                               "synced_at": now_iso()})
+            claim_minutes[(eid, c["tanggal"])] = claim_minutes.get((eid, c["tanggal"]), 0) + c["menit_disetujui"]
+        await db.overtime_claims.delete_many({"payroll_period_id": pid})
+        if claim_docs:
+            await db.overtime_claims.insert_many(claim_docs)
     unknown, docs = set(), []
     for r in rows:
-        nik = r.pop("nik")
-        if nik not in by_nik or not (period["start_date"] <= r["work_date"] <= period["end_date"]):
-            unknown.add(nik)
+        key = r.pop("rosy_employee_id", None)
+        nik = r.pop("nik", None)
+        eid = by_rosy.get(key) if key else by_nik.get(nik)
+        if not eid or not (period["start_date"] <= r["work_date"] <= period["end_date"]):
+            unknown.add(key or nik)
             continue
-        docs.append({**r, "id": str(uuid.uuid4()), "employee_id": by_nik[nik], "source": "rumatku",
+        if (eid, r["work_date"]) in claim_minutes:
+            r["overtime_hours"] = claim_minutes[(eid, r["work_date"])] / 60
+        docs.append({**r, "id": str(uuid.uuid4()), "employee_id": eid, "source": "rumatku",
                      "synced_at": now_iso()})
     if docs:
         await db.attendance_daily_logs.insert_many(docs)
+    if overtime is not None:
+        await db.payroll_periods.update_one({"id": pid}, {"$set": {"overtime_source": "ham", "overtime_summary": {
+            "periode_bayar": ot_meta.get("periode_bayar"), "claims": len(claim_docs),
+            "employees": len({d["employee_id"] for d in claim_docs}),
+            "minutes": sum(d["menit_disetujui"] for d in claim_docs), "pending": ot_meta.get("menunggu", 0),
+            "without_rate": ot_meta.get("tanpa_tarif") or []}}})
+    # Without attendance rows an employee keeps the full attendance allowance — report them, never drop silently
+    unlinked = meta.get("unlinked") or []
+    unlinked_ids = {u.get("employee_id") for u in unlinked}
+    logged = {d["employee_id"] for d in docs}
+    missing = [{"employee_id": e["id"], "nik": e["nik"], "name": e["name"]} for e in emps
+               if e["id"] not in logged and not e.get("attendance_exempt")
+               and e.get("rosy_employee_id") not in unlinked_ids]
     await db.payroll_periods.update_one({"id": pid}, {"$set": {
         "attendance_synced_at": now_iso(), "attendance_count": len(docs),
-        "attendance_source": integrations.mode("RUMATKU")}})
+        "attendance_source": integrations.mode("RUMATKU"), "attendance_unlinked": unlinked,
+        "attendance_missing": missing, "attendance_unknown": sorted(unknown)}})
     processed = await process_period(await get_period(pid))
-    return {"logs": len(docs), "processed": processed, "unknown_niks": sorted(unknown)}
+    return {"logs": len(docs), "processed": processed, "unknown_niks": sorted(unknown),
+            "unlinked": unlinked, "missing": missing}
 
 
 @router.get("/periods/{pid}")
@@ -178,6 +262,7 @@ async def delete_period(pid: str):
             await db.payslips.count_documents({"payroll_period_id": pid, "status": "approved"}):
         raise HTTPException(400, "Hanya periode yang belum memiliki slip approved yang dapat dihapus")
     res = await db.payslips.delete_many({"payroll_period_id": pid})
+    await db.overtime_claims.delete_many({"payroll_period_id": pid})
     await db.payroll_periods.delete_one({"id": pid})
     return {"ok": True, "deleted_payslips": res.deleted_count}
 

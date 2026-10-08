@@ -1,5 +1,6 @@
 """Payroll calculation engine (PP 35/2021, PP 58/2023, PMK 168/2023, UU Naker)."""
 import math
+import re
 
 TER_A = [(5400000, 0), (5650000, 0.25), (5950000, 0.5), (6300000, 0.75), (6750000, 1), (7500000, 1.25),
          (8550000, 1.5), (9650000, 1.75), (10050000, 2), (10350000, 2.25), (10700000, 2.5), (11050000, 3),
@@ -25,11 +26,16 @@ TER_C = [(6600000, 0), (6950000, 0.25), (7350000, 0.5), (7800000, 0.75), (885000
          (463000000, 29), (561000000, 30), (709000000, 31), (965000000, 32), (1419000000, 33)]
 TER_TABLES = {"A": TER_A, "B": TER_B, "C": TER_C}
 
-ATT_CUT_LEAVES = ("sick_with_certificate", "annual_leave")
+ATT_CUT_LEAVES = ("sick_with_certificate", "annual_leave", "permission_leave")
 FULL_CUT_LEAVES = ("alpha", "approved_unpaid_leave")
+BPJS_TK_PROGRAMS = ("jkk", "jkm", "jht", "jp")
 
 
 def resolve_ptkp(emp: dict) -> str:
+    # HAM sends the effective status (married women already TK/0); only derive it when absent
+    status = str(emp.get("ptkp_status") or "").replace(" ", "").upper()
+    if re.fullmatch(r"(TK|K)/[0-3]", status):
+        return status
     dep = min(int(emp.get("dependents_count") or 0), 3)
     if emp.get("marital_status") == "K":
         if emp.get("gender") == "P" and not emp.get("has_husband_certificate"):
@@ -115,15 +121,22 @@ def calc_bpjs(emp: dict, cfg: dict) -> dict:
     jp_cap = float(cfg.get("BPJS_JP_MAX_WAGE", 0))
     r = dict.fromkeys(["kes_base", "kes_company", "kes_employee", "jkk", "jkm", "jht_company",
                        "jht_employee", "jp_base", "jp_company", "jp_employee"], 0)
-    if emp.get("has_bpjs_kes", True):
+    # per-program membership from HAM's salary template; falls back to the two legacy flags
+    programs = emp.get("bpjs_programs") or {}
+    joined = {"kes": programs.get("kes", emp.get("has_bpjs_kes", True)),
+              **{p: programs.get(p, emp.get("has_bpjs_tk", True)) for p in BPJS_TK_PROGRAMS}}
+    if joined["kes"]:
         r["kes_base"] = round(min(max(basic, umk), kes_cap))
         r["kes_company"] = round(r["kes_base"] * 0.04)
         r["kes_employee"] = round(r["kes_base"] * 0.01)
-    if emp.get("has_bpjs_tk", True):
+    if joined["jkk"]:
         r["jkk"] = round(basic * float(emp.get("jkk_rate") or 0.0024))
+    if joined["jkm"]:
         r["jkm"] = round(basic * 0.003)
+    if joined["jht"]:
         r["jht_company"] = round(basic * 0.037)
         r["jht_employee"] = round(basic * 0.02)
+    if joined["jp"]:
         r["jp_base"] = round(min(basic, jp_cap))
         r["jp_company"] = round(r["jp_base"] * 0.02)
         r["jp_employee"] = round(r["jp_base"] * 0.01)
@@ -179,7 +192,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     wd = int(cfg.get("DEFAULT_WORK_DAYS", 25))
     status = emp.get("payroll_status", "active")
     mult = wage_multiplier(status, emp.get("prolonged_illness_month_count"))
-    disc = calc_discipline(logs)
+    # directors exempt from attendance assessment in HAM (PresensiHelpers) are never penalised
+    disc = calc_discipline([] if emp.get("attendance_exempt") else logs)
     basic = float(emp.get("basic_salary") or 0)
     att = float(emp.get("monthly_attendance_allowance") or 0)
     unpaid = status == "unpaid_leave"
@@ -195,7 +209,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     if status == "active":
         penalty_days = min(disc["total_points"] + disc["attendance_cut_days"], wd)
         penalty_amount = round(penalty_days / wd * att)
-        absent_deduction = round(disc["basic_cut_days"] / wd * basic)
+        # capped at 100% of basic salary (Rencana Setting Payroll D3): a month of alpha must not yield negative pay
+        absent_deduction = round(min(disc["basic_cut_days"], wd) / wd * basic)
     else:
         penalty_days = wd
         penalty_amount = round(att)

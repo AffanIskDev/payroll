@@ -11,6 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 const ACTIONS = { submitted: "Diajukan ke Manager", rejected: "Ditolak", approved: "Approve & Lock" };
 
+const nameList = (rows) => {
+  const names = rows.slice(0, 8).map((r) => r.name).join(", ");
+  return rows.length > 8 ? `${names}, dan ${rows.length - 8} lainnya` : names;
+};
+
 export default function PeriodDetail() {
   const { pid } = useParams();
   const [d, setD] = useState(null);
@@ -60,6 +65,11 @@ export default function PeriodDetail() {
   const failed = payslips.filter((s) => s.delivery_status === "failed").length;
   const sentCount = payslips.filter((s) => s.delivery_status === "sent").length;
   const sum = (k) => payslips.reduce((a, s) => a + (s[k] || 0), 0);
+  const missing = period.attendance_missing || [];
+  const unlinked = period.attendance_unlinked || [];
+  const skipped = period.employees_skipped || [];
+  const ot = period.overtime_summary;
+  const otNoRate = ot?.without_rate || [];
 
   return (
     <div data-testid="period-detail-page">
@@ -67,7 +77,7 @@ export default function PeriodDetail() {
       <PageTitle title={period.period_name} subtitle={`${period.start_date} → ${period.end_date} · Transfer ${period.payment_date || "-"}`}>
         <StatusBadge map={PERIOD_STATUS} status={period.status} testId="period-status-badge" />
         <IntegrationBadge system="rumatku" />
-        <Btn variant="outline" data-testid="fetch-attendance-button" disabled={busy || !editable} onClick={() => act("fetch-attendance", "Data absensi RUMATKU diambil & payroll dihitung")}><DownloadCloud className="h-4 w-4" /> {busy ? "Mengambil..." : "Ambil Data Absensi"}</Btn>
+        <Btn variant="outline" data-testid="fetch-attendance-button" disabled={busy || !editable} onClick={() => act("fetch-attendance", "Data terbaru dari ROSY diambil & payroll dihitung ulang")} title="Karyawan, gaji, tarif lembur, absensi, dan klaim lembur terbaru dari ROSY"><DownloadCloud className="h-4 w-4" /> {busy ? "Mengambil..." : "Ambil Data Terbaru"}</Btn>
         {editable && <Btn variant="primary" data-testid="submit-period-button" disabled={busy || !payslips.length} onClick={() => act("submit", "Draft payroll diajukan ke Manager HRD")}><Send className="h-4 w-4" /> Ajukan ke Manager</Btn>}
         {isManager && pending && <Btn variant="outline" data-testid="reject-period-button" disabled={busy} onClick={() => setRejectOpen(true)} className="!border-rose-300 !text-rose-700 hover:!bg-rose-50"><XCircle className="h-4 w-4" /> Tolak Draft</Btn>}
         {isManager && <Btn variant="success" data-testid="approve-all-button" disabled={busy || !pending} onClick={() => act("approve-all", "Semua slip di-approve & dikunci")} title={!pending ? "Periode harus diajukan dulu" : ""}><LockKeyhole className="h-4 w-4" /> Approve & Lock Semua</Btn>}
@@ -77,6 +87,23 @@ export default function PeriodDetail() {
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-4 py-2.5"><Users className="h-4 w-4 text-blue-900" /> Karyawan dari ROSY: <b className="num" data-testid="sync-employee-count">{period.employee_count ?? payslips.length}</b><span className="text-xs text-slate-500 num ml-auto">{period.employees_synced_at ? new Date(period.employees_synced_at).toLocaleString("id-ID") : "-"}</span></div>
         <div className={`flex items-center gap-2 border rounded-md px-4 py-2.5 ${period.attendance_synced_at ? "bg-white border-slate-200" : "bg-amber-50 border-amber-200 text-amber-900"}`}><CalendarCheck className="h-4 w-4 text-teal-700" /> {period.attendance_synced_at ? <>Absensi RUMATKU: <b className="num" data-testid="sync-attendance-count">{period.attendance_count} log</b><span className="text-xs text-slate-500 num ml-auto">{new Date(period.attendance_synced_at).toLocaleString("id-ID")}</span></> : <span data-testid="sync-attendance-pending">Absensi belum diambil — klik "Ambil Data Absensi"</span>}</div>
       </div>
+      {ot && (
+        <div className={`mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border rounded-md px-4 py-2.5 text-sm ${ot.pending || otNoRate.length ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-white border-slate-200"}`} data-testid="overtime-summary">
+          <span>Lembur dari ROSY (dibayar periode <span className="num">{ot.periode_bayar}</span>): <b className="num">{ot.claims}</b> klaim disetujui · <b className="num">{(ot.minutes / 60).toLocaleString("id-ID")}</b> jam · <b className="num">{ot.employees}</b> karyawan</span>
+          {ot.pending > 0 && <span data-testid="overtime-pending">· <b className="num">{ot.pending}</b> klaim masih menunggu persetujuan HRD — belum masuk slip</span>}
+          {otNoRate.length > 0 && <span data-testid="overtime-no-rate">· {otNoRate.length} karyawan punya jam lembur tapi tarifnya kosong, sehingga tidak dibayar: {nameList(otNoRate)}. Isi tarifnya di ROSY HRD (Gaji Karyawan → Atur Kontrak), lalu klik "Ambil Data Terbaru".</span>}
+        </div>
+      )}
+      {(missing.length > 0 || unlinked.length > 0 || skipped.length > 0) && (
+        <div className="mb-4 flex gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-3" data-testid="sync-warning-banner">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="text-sm space-y-1">
+            {missing.length > 0 && <div data-testid="attendance-missing"><b className="num">{missing.length}</b> karyawan tanpa data absensi, sehingga Tunjangan Kehadirannya tidak terpotong apa pun: {nameList(missing)}</div>}
+            {unlinked.length > 0 && <div data-testid="attendance-unlinked"><b className="num">{unlinked.length}</b> karyawan belum tertaut ke akun RUMATKU di HAM, jadi absensinya tidak terbaca: {nameList(unlinked)}</div>}
+            {skipped.length > 0 && <div data-testid="employees-skipped"><b className="num">{skipped.length}</b> karyawan tidak ikut periode ini karena belum punya Kontrak Gaji di HAM: {nameList(skipped)}</div>}
+          </div>
+        </div>
+      )}
       {period.status === "approved" && (
         <div className={`mb-4 flex flex-wrap items-center gap-3 border rounded-md px-4 py-2.5 text-sm ${failed ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-white border-slate-200"}`} data-testid="delivery-banner">
           <Smartphone className="h-4 w-4 text-teal-700" />

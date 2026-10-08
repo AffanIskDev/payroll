@@ -8,8 +8,22 @@ export const LEAVE_LABELS = {
   maternity_leave: "Cuti Melahirkan",
   menstrual_leave: "Cuti Haid",
   approved_unpaid_leave: "Izin Tanpa Upah",
+  permission_leave: "Izin",
+  official_duty: "Dinas Luar",
   day_off: "Libur",
   alpha: "Mangkir (Alpha)",
+};
+
+// data_issues from HAM's payroll feed (PayrollFeedRules::masalahData)
+export const DATA_ISSUE_LABELS = {
+  npwp_kosong: "NPWP kosong",
+  npwp_format_salah: "NPWP salah format",
+  tgl_lahir_kosong_atau_tidak_terbaca: "Tgl lahir kosong",
+  tgl_lahir_tidak_wajar: "Tgl lahir tidak wajar",
+  rekening_kosong: "Rekening kosong",
+  belum_tertaut_rumatku: "Belum tertaut RUMATKU",
+  gaji_pokok_nol: "Gaji pokok 0",
+  lembur_tanpa_tarif: "Akses lembur tanpa tarif",
 };
 
 export const PAYROLL_STATUS_LABELS = {
