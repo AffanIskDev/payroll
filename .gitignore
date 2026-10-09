@@ -89,3 +89,6 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Slip PDF hasil generate (berisi data gaji) — jangan pernah masuk git
+backend/storage/
