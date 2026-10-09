@@ -1,6 +1,7 @@
 import io
 import secrets
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
@@ -27,22 +28,58 @@ def birth_password(birth_date: str) -> str:
     return f"{d}{m}{y[2:]}"
 
 
+_DETAIL = ParagraphStyle("d", fontName="Helvetica", fontSize=8, leading=9.5)
+
+
+def _label(k: str, detail: str):
+    """Row label; a detail (e.g. '2 hari alfa, 1 hari izin') goes on a small grey second line."""
+    if not detail:
+        return k
+    return Paragraph(f"{escape(k)}<br/><font size=6.5 color='#64748B'>{escape(detail)}</font>", _DETAIL)
+
+
 def _col(rows, title):
-    data = [[title, ""]] + [[k, rp(v)] for k, v in rows]
+    data = [[title, ""]] + [[_label(k, d), rp(v)] for k, v, d in rows]
     t = Table(data, colWidths=[46 * mm, 30 * mm])
     t.setStyle(TableStyle([
         ("SPAN", (0, 0), (1, 0)), ("BACKGROUND", (0, 0), (-1, 0), NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 1), (1, -1), "RIGHT"),
         ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#E2E8F0")),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("VALIGN", (0, 1), (-1, -1), "TOP"),
     ]))
     return t
 
 
 def _shown(rows):
-    """Rows worth printing: a zero amount says nothing to the employee — except PPh 21 and the totals."""
-    return [(k, v) for k, v, always in rows if always or round(v or 0) != 0]
+    """Rows worth printing: a zero amount says nothing to the employee — except PPh 21 and the totals.
+    Rows are (label, value, always[, detail]); returns (label, value, detail)."""
+    return [(r[0], r[1], r[3] if len(r) > 3 else "") for r in rows if r[2] or round(r[1] or 0) != 0]
+
+
+# short names for the Potongan Absensi detail, in PPT order (alfa/izin also cost gaji pokok & tunjangan jabatan)
+ABSENCE_NAMES = {"alpha": "alfa", "permission_leave": "izin", "approved_unpaid_leave": "cuti tanpa upah",
+                 "annual_leave": "cuti tahunan", "sick_with_certificate": "sakit", "statutory_leave": "cuti khusus",
+                 "maternity_leave": "cuti melahirkan", "religious_leave": "cuti ibadah"}
+
+
+def _absence_detail(slip: dict) -> str:
+    by_type = (slip.get("discipline") or {}).get("absence_by_type") or {}
+    if not by_type:  # slips calculated before the per-type breakdown existed
+        n = slip.get("absence_points", slip.get("absent_days", 0))
+        return f"{n} hari" if n else ""
+    return ", ".join(f"{by_type[t]} hari {name}" for t, name in ABSENCE_NAMES.items() if by_type.get(t))
+
+
+# Poin Presensi Rule 1-4 (engine.calc_discipline); plain ASCII/WinAnsi text — the base PDF font has no "≥"
+PRESENCE_NAMES = (("rule1_points", "{}x lupa absen"), ("rule2_points", "{}x telat/pulang cepat min. 60 mnt"),
+                  ("rule3_points", "{} poin telat 15–59 mnt"), ("rule4_points", "{} poin akumulasi telat <15 mnt"))
+
+
+def _presence_detail(slip: dict) -> str:
+    d = slip.get("discipline") or {}
+    return (", ".join(fmt.format(d[k]) for k, fmt in PRESENCE_NAMES if d.get(k))
+            or f"{slip.get('late_penalty_points', 0)} poin")
 
 
 def _logo(name: str, max_w: float) -> Image:
@@ -64,29 +101,33 @@ def _jam(h) -> str:
 
 
 def payslip_lines(slip: dict) -> tuple:
-    """PENDAPATAN and POTONGAN rows as printed. The alfa/izin cuts of gaji pokok and tunjangan jabatan are
-    shown under POTONGAN (user request 9 Oct), so both totals carry them and
-    TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
-    alfa_izin = f"{slip.get('absent_days', 0)} hari alfa/izin"
-    gapok_cut = slip["absent_deduction_amount"]
-    jabatan_cut = slip.get("position_deduction_amount", 0)  # absent on slips approved before 9 Oct
+    """PENDAPATAN and POTONGAN rows as printed (user requests 9 Oct): allowances in full under PENDAPATAN; every
+    attendance-related cut under POTONGAN as just two lines — Potongan Presensi (lateness points) and Potongan
+    Absensi (absence days: the attendance-allowance cut plus, for alfa/izin, the gaji pokok and tunjangan jabatan
+    cuts of the PPT). Both totals carry the cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
+    split = "presence_penalty_amount" in slip  # slips calculated before 9 Oct only have the net allowance
+    presensi = slip.get("presence_penalty_amount", 0)
+    absensi = (slip.get("absence_penalty_amount", 0) + slip["absent_deduction_amount"]
+               + slip.get("position_deduction_amount", 0))
+    kehadiran = (("Tunjangan Kehadiran", slip["attendance_allowance_base"]) if split
+                 else ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"]))
     earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
                    ("Tunjangan Jabatan", slip["position_allowance"], False),
-                   ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"], False),
+                   (*kehadiran, False),
                    (f"Lembur ({_jam(slip['overtime_hours'])} jam)", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus Tambahan", slip["additional_bonus"], False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
                    ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
-                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + gapok_cut + jabatan_cut, True)])
-    ded = _shown([(f"Potongan Gaji Pokok ({alfa_izin})", gapok_cut, False),
-                  (f"Potongan Tunj. Jabatan ({alfa_izin})", jabatan_cut, False),
+                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + presensi + absensi, True)])
+    ded = _shown([("Potongan Presensi", presensi, False, _presence_detail(slip)),
+                  ("Potongan Absensi", absensi, False, _absence_detail(slip)),
                   ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
                   ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
                   (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
                     else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"], True),
                   ("Kasbon / Potongan Lain", slip["other_deductions"], False),
-                  ("TOTAL POTONGAN", slip["total_deductions"] + gapok_cut + jabatan_cut, True)])
+                  ("TOTAL POTONGAN", slip["total_deductions"] + presensi + absensi, True)])
     return earn, ded
 
 

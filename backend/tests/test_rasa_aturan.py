@@ -188,12 +188,11 @@ def test_payslip_layout():
     text, images = _pdf(_slip())
     assert images == 2                                            # RPI left, RUMAT right
     for label in ("Nama:", "NIK:", "Departemen:", "Periode:", "Status PTKP:", "Rekening:", "7123456789 (BSI)",
-                  "TOTAL DITERIMA", "Transport Homecare", "Potongan Gaji Pokok (1 hari alfa/izin)",
-                  "Potongan Tunj. Jabatan (1 hari alfa/izin)", "menghubungi Divisi HRD"):
+                  "TOTAL DITERIMA", "Transport Homecare", "Potongan Absensi", "1 hari izin", "menghubungi Divisi HRD"):
         assert label in text, label
     assert "PENDAPATAN" in text and "TOTAL PENDAPATAN" in text
     for gone in ("Status PTKP Efektif", "TAKE HOME PAY", "Kompensasi", "[NAMA_PERUSAHAAN]", "[NAMA_PENANDATANGAN]",
-                 "PENERIMAAN"):
+                 "PENERIMAAN", "Potongan Gaji Pokok", "Potongan Tunj. Jabatan", "Potongan Presensi"):
         assert gone not in text, gone
 
 
@@ -216,11 +215,35 @@ def test_old_snapshot_without_bank_code_falls_back_to_bank_name():
     assert "7123456789 (Bank Syariah Indonesia)" in text
 
 
-def test_alfa_izin_cuts_sit_under_potongan_and_totals_still_add_up():
+def test_presensi_and_absensi_split_adds_up_to_the_attendance_cut():
+    logs = [_day("hadir", minutes_late=75), _day("cuti", work_date="2026-10-02"), _day("sakit", work_date="2026-10-03")]
+    slip = compute_payslip(EMP, logs, CFG, {})
+    assert slip["presence_penalty_amount"] == 30000 and slip["absence_penalty_amount"] == 60000
+    assert slip["presence_penalty_amount"] + slip["absence_penalty_amount"] == slip["late_penalty_amount"]
+    capped = compute_payslip(EMP, [_day("hadir", minutes_late=75)] + [_day("cuti", work_date=f"2026-10-{d:02d}")
+                                                                       for d in range(2, 31)], CFG, {})
+    assert capped["absence_penalty_amount"] == 750000 and capped["presence_penalty_amount"] == 0
+
+
+def test_slip_shows_only_cuts_that_have_a_value():
+    earn, ded = payslip_lines(_slip())                           # 1 izin day, no lateness
+    labels = [k for k, _, _ in ded]
+    # izin (PPT): attendance 30.000 + gaji pokok 180.000 + jabatan 20.000, all under one Potongan Absensi line
+    assert ("Potongan Absensi", 230000, "1 hari izin") in ded
+    assert not any(k.startswith(("Potongan Presensi", "Potongan Gaji Pokok", "Potongan Tunj")) for k in labels)
+    assert ("Tunjangan Kehadiran", 750000, "") in earn           # in full; the cut sits under POTONGAN
+    logs = [_day("hadir", minutes_late=75), _day("alfa", work_date="2026-10-02"), _day("alfa", work_date="2026-10-03"),
+            _day("cuti", work_date="2026-10-04")]
+    s = {**compute_payslip(EMP, logs, CFG, {}), "employee": _slip()["employee"]}
+    _, ded = payslip_lines(s)
+    assert ("Potongan Presensi", 30000, "1x telat/pulang cepat min. 60 mnt") in ded
+    assert [d for k, _, d in ded if k == "Potongan Absensi"] == ["2 hari alfa, 1 hari cuti tahunan"]
+
+
+def test_all_cuts_sit_under_potongan_and_totals_still_add_up():
     s = _slip()
     earn, ded = payslip_lines(s)
-    assert not any(k.startswith("Potongan") for k, _ in earn)
-    assert ded[:2] == [("Potongan Gaji Pokok (1 hari alfa/izin)", 180000), ("Potongan Tunj. Jabatan (1 hari alfa/izin)", 20000)]
-    assert sum(v for _, v in earn[:-1]) == earn[-1][1]          # TOTAL PENDAPATAN = its rows
-    assert sum(v for _, v in ded[:-1]) == ded[-1][1]            # TOTAL POTONGAN = its rows
+    assert not any(k.startswith("Potongan") for k, _, _ in earn)
+    assert sum(v for _, v, _ in earn[:-1]) == earn[-1][1]       # TOTAL PENDAPATAN = its rows
+    assert sum(v for _, v, _ in ded[:-1]) == ded[-1][1]         # TOTAL POTONGAN = its rows
     assert earn[-1][1] - ded[-1][1] == s["take_home_pay"]       # = TOTAL DITERIMA

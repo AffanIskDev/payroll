@@ -216,6 +216,10 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         # Poin Presensi + Poin Absensi each cost 1/wd of the attendance allowance
         penalty_days = min(disc["total_points"] + disc["absence_points"], wd)
         penalty_amount = round(penalty_days / wd * att)
+        # split for the slip (Potongan Absensi / Potongan Presensi); absence days first, presensi takes the rest,
+        # so the two always add up to penalty_amount even when the month is capped
+        absence_penalty = min(round(min(disc["absence_points"], wd) / wd * att), penalty_amount)
+        presence_penalty = penalty_amount - absence_penalty
         # alfa/izin days cost gapok and jabatan too, capped at 100% (a month of alfa must not yield negative pay)
         cut_days = min(disc["basic_cut_days"], wd)
         absent_deduction = round(cut_days / wd * basic)
@@ -223,7 +227,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     else:
         penalty_days = wd
         penalty_amount = round(att)
-        absent_deduction = position_deduction = 0
+        absent_deduction = position_deduction = absence_penalty = presence_penalty = 0
     attendance_net = round(att - penalty_amount)
 
     bp = calc_bpjs(emp, cfg) if not unpaid else calc_bpjs({}, {})
@@ -265,6 +269,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "gross_earnings": gross, "taxable_gross": taxable,
         "late_penalty_points": disc["total_points"], "late_penalty_days": penalty_days,
         "late_penalty_amount": penalty_amount, "absence_points": disc["absence_points"], "work_days": wd,
+        "presence_penalty_amount": presence_penalty, "absence_penalty_amount": absence_penalty,
         "absent_days": disc["basic_cut_days"], "absent_deduction_amount": absent_deduction,
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
         "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
