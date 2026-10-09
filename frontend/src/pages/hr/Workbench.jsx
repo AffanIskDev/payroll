@@ -117,7 +117,7 @@ export default function Workbench() {
         <div className="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2.5" data-testid="unpaid-leave-notice">Cuti di luar tanggungan: upah & tunjangan Rp 0. Iuran BPJS ditalangi perusahaan (kasbon) sebesar <b className="num">{rp(calc.bpjs_company_advance)}</b>.</div>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Panel title="Penerimaan" right={<span className="num text-sm font-bold">{rp(calc.gross_earnings)}</span>}>
+        <Panel title="Pendapatan" right={<span className="num text-sm font-bold">{rp(calc.gross_earnings)}</span>}>
           <div className="px-5 py-2">
             <Row label="Gaji Pokok" hint={calc.wage_multiplier !== 1 ? `Pengali upah ${calc.wage_multiplier * 100}% dari ${rp(calc.basic_salary_contract)}` : null} value={rp(calc.basic_salary)} testId="earn-basic" />
             {calc.absent_deduction_amount > 0 && <Row label="Potongan Gaji Pokok (alfa/izin)" hint={`${calc.absent_days} hari × 1/${wd} gaji pokok`} value={`- ${rp(calc.absent_deduction_amount)}`} tone="text-rose-600" testId="earn-absent-deduction" />}
@@ -183,7 +183,7 @@ export default function Workbench() {
       <div className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-t-2 border-emerald-500 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center gap-3">
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Total Diterima · Penerimaan {rp(calc.gross_earnings)} − Potongan {rp(calc.total_deductions)}</div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500">Total Diterima · Pendapatan {rp(calc.gross_earnings)} − Potongan {rp(calc.total_deductions)}</div>
             <div className="num text-2xl font-black text-emerald-600" data-testid="sticky-thp">{rp(calc.take_home_pay)}</div>
             <div className="text-xs italic text-slate-500 truncate" data-testid="sticky-terbilang">{calc.terbilang}</div>
           </div>

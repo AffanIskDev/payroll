@@ -191,7 +191,9 @@ def test_payslip_layout():
                   "TOTAL DITERIMA", "Transport Homecare", "Potongan Gaji Pokok (1 hari alfa/izin)",
                   "Potongan Tunj. Jabatan (1 hari alfa/izin)", "menghubungi Divisi HRD"):
         assert label in text, label
-    for gone in ("Status PTKP Efektif", "TAKE HOME PAY", "Kompensasi", "[NAMA_PERUSAHAAN]", "[NAMA_PENANDATANGAN]"):
+    assert "PENDAPATAN" in text and "TOTAL PENDAPATAN" in text
+    for gone in ("Status PTKP Efektif", "TAKE HOME PAY", "Kompensasi", "[NAMA_PERUSAHAAN]", "[NAMA_PENANDATANGAN]",
+                 "PENERIMAAN"):
         assert gone not in text, gone
 
 
@@ -219,6 +221,6 @@ def test_gapok_cut_sits_under_potongan_and_totals_still_add_up():
     earn, ded = payslip_lines(s)
     assert not any(k.startswith("Potongan Gaji Pokok") for k, _ in earn)
     assert ded[0] == ("Potongan Gaji Pokok (1 hari alfa/izin)", 180000)
-    assert sum(v for _, v in earn[:-1]) == earn[-1][1]          # TOTAL PENERIMAAN = its rows
+    assert sum(v for _, v in earn[:-1]) == earn[-1][1]          # TOTAL PENDAPATAN = its rows
     assert sum(v for _, v in ded[:-1]) == ded[-1][1]            # TOTAL POTONGAN = its rows
     assert earn[-1][1] - ded[-1][1] == s["take_home_pay"]       # = TOTAL DITERIMA

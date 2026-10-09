@@ -64,8 +64,8 @@ def _jam(h) -> str:
 
 
 def payslip_lines(slip: dict) -> tuple:
-    """PENERIMAAN and POTONGAN rows as printed. The alfa/izin cut of gaji pokok is shown under POTONGAN
-    (user request 9 Oct), so both totals carry it and TOTAL PENERIMAAN - TOTAL POTONGAN = TOTAL DITERIMA."""
+    """PENDAPATAN and POTONGAN rows as printed. The alfa/izin cut of gaji pokok is shown under POTONGAN
+    (user request 9 Oct), so both totals carry it and TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
     alfa_izin = f"{slip.get('absent_days', 0)} hari alfa/izin"
     gapok_cut = slip["absent_deduction_amount"]
     earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
@@ -77,7 +77,7 @@ def payslip_lines(slip: dict) -> tuple:
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus Tambahan", slip["additional_bonus"], False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
                    ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
-                   ("TOTAL PENERIMAAN", slip["gross_earnings"] + gapok_cut, True)])
+                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + gapok_cut, True)])
     ded = _shown([(f"Potongan Gaji Pokok ({alfa_izin})", gapok_cut, False),
                   ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
                   ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
@@ -103,7 +103,7 @@ def render_payslip(slip: dict, period: dict) -> bytes:
                              ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
     els = [kop, Spacer(1, 20), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18)]
-    # 5 kolom = garis tabel di bawahnya: kiri sejajar PENERIMAAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
+    # 5 kolom = garis tabel di bawahnya: kiri sejajar PENDAPATAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
     info = [["NIK:", emp["nik"], "", "Periode:", period["period_name"]],
             ["Nama:", emp["name"], "", "Status PTKP:", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
             ["Departemen:", emp.get("department") or "-", "", "Rekening:", _rekening(emp)]]
@@ -114,9 +114,9 @@ def render_payslip(slip: dict, period: dict) -> bytes:
                             ("ALIGN", (4, 0), (4, -1), "RIGHT")]))
     els += [it, Spacer(1, 8)]
     earn, ded = payslip_lines(slip)
-    two = Table([[_col(earn, "PENERIMAAN"), _col(ded, "POTONGAN")]], colWidths=[90 * mm, 90 * mm])
+    two = Table([[_col(earn, "PENDAPATAN"), _col(ded, "POTONGAN")]], colWidths=[90 * mm, 90 * mm])
     two.hAlign = "LEFT"
-    # tanpa padding pembungkus: tepi tabel PENERIMAAN/POTONGAN tepat di 0, 90, 166 mm (garis acuan blok identitas & total)
+    # tanpa padding pembungkus: tepi tabel PENDAPATAN/POTONGAN tepat di 0, 90, 166 mm (garis acuan blok identitas & total)
     two.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
                              ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
     els += [two, Spacer(1, 10)]
