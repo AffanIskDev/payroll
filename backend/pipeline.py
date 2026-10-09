@@ -4,12 +4,13 @@ from pathlib import Path
 from typing import Optional
 from fastapi import HTTPException
 
-from core import db, now_iso, get_configs
+from core import db, now_iso, get_configs, actor
 from engine import compute_payslip
 from pdf_service import save_encrypted
 
-ADJ_KEYS = ("overtime_hours", "kpi_incentive", "additional_bonus", "late_penalty_compensation", "other_deductions")
-EMP_SNAPSHOT = ("id", "nik", "name", "email", "department", "birth_date", "bank_name", "bank_account_number", "gender")
+ADJ_KEYS = ("overtime_hours", "kpi_incentive", "additional_bonus", "other_deductions")
+EMP_SNAPSHOT = ("id", "nik", "name", "email", "department", "birth_date", "bank_name", "bank_code", "bank_account_number",
+                "gender")
 
 
 async def period_logs(emp_id: str, period: dict) -> list:
@@ -64,10 +65,18 @@ async def overtime_hours(period: dict, emp_id: str, logs: list) -> float:
     return sum(float(lg.get("overtime_hours") or 0) for lg in logs)
 
 
+async def transport_homecare(period: dict, emp_id: str) -> float:
+    """ROSY's monthly Transport Rumat Kita for this period, synced into period_components."""
+    docs = await db.period_components.find({"payroll_period_id": period["id"], "employee_id": emp_id,
+                                            "kode": "TRANSPORT_HOMECARE"}, {"_id": 0, "nominal": 1}).to_list(10)
+    return sum(float(d["nominal"]) for d in docs)
+
+
 async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = None) -> dict:
     cfg = cfg or await get_configs()
     logs = await period_logs(emp["id"], period)
-    adj = {**adj, "overtime_hours": await overtime_hours(period, emp["id"], logs)}
+    adj = {**adj, "overtime_hours": await overtime_hours(period, emp["id"], logs),
+           "transport_homecare": await transport_homecare(period, emp["id"])}
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     return calc
@@ -96,8 +105,9 @@ async def recalc_and_save(period: dict, emp: dict, adj: dict, notes: Optional[st
 async def process_period(period: dict) -> int:
     cfg = await get_configs()
     count = 0
-    q = {"id": {"$in": period["employee_ids"]}} if period.get("employee_ids") else {}
-    async for emp in db.employees.find(q, {"_id": 0}):
+    if not period.get("employee_ids"):
+        return 0  # not synced yet: never fall back to every employee in the database
+    async for emp in db.employees.find({"id": {"$in": period["employee_ids"]}}, {"_id": 0}):
         existing = await db.payslips.find_one({"payroll_period_id": period["id"], "employee_id": emp["id"]},
                                               {"_id": 0})
         adj = {k: (existing or {}).get(k, 0) for k in ADJ_KEYS}
@@ -108,12 +118,12 @@ async def process_period(period: dict) -> int:
 
 async def approve_slip(slip: dict, period: dict, user: dict) -> dict:
     path = save_encrypted(slip, period, await get_configs())
-    upd = {"status": "approved", "pdf_path": path, "approved_by": user["email"], "approved_at": now_iso()}
+    upd = {"status": "approved", "pdf_path": path, "approved_by": actor(user), "approved_at": now_iso()}
     await db.payslips.update_one({"id": slip["id"]}, {"$set": upd})
     remaining = await db.payslips.count_documents({"payroll_period_id": period["id"], "status": {"$ne": "approved"}})
     if remaining == 0:
         await db.payroll_periods.update_one({"id": period["id"]}, {"$set": {
-            "status": "approved", "approved_by": user["email"], "approved_at": now_iso()}})
+            "status": "approved", "approved_by": actor(user), "approved_at": now_iso()}})
         await queue_delivery(period["id"])
     return {**slip, **upd}
 

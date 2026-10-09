@@ -76,8 +76,8 @@ def test_ptkp_from_ham_wins_over_marital_fields():
 @pytest.mark.parametrize("status,expected", [
     ("hadir", "present"), ("dinas", "official_duty"), ("izin", "permission_leave"),
     ("sakit", "sick_with_certificate"), ("cuti", "annual_leave"), ("khusus", "statutory_leave"),
-    ("melahirkan", "maternity_leave"), ("ibadah", "permission_leave"), ("alfa", "alpha"),
-    ("dispensasi", "statutory_leave"), ("libur", "day_off"),
+    ("melahirkan", "maternity_leave"), ("ibadah", "religious_leave"), ("alfa", "alpha"),
+    ("dispensasi", "dispensation"), ("libur", "day_off"),
 ])
 def test_leave_map_covers_every_ham_status(status, expected):
     assert integrations.normalize_attendance(_harian(status))["leave_type"] == expected
@@ -98,10 +98,10 @@ def test_official_duty_and_permission_rules():
     logs = [integrations.normalize_attendance(_harian("dinas", minutes_late=90)),
             integrations.normalize_attendance(_harian("izin", work_date="2026-09-02"))]
     disc = calc_discipline(logs)
-    # dinas: never penalised even with check-in minutes; izin: cuts attendance allowance by one day
+    # dinas: never penalised even with check-in minutes; izin (PPT): unpaid like alfa — attendance, gapok, jabatan
     assert disc["total_points"] == 0
     assert disc["attendance_cut_days"] == 1
-    assert disc["basic_cut_days"] == 0
+    assert disc["basic_cut_days"] == 1
 
 
 def test_attendance_exempt_employee_has_no_penalty():

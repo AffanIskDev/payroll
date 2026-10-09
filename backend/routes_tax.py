@@ -7,10 +7,11 @@ from fastapi.responses import Response
 
 from tax_forms import list_1721a1, render_1721a1
 
-from core import db, now_iso, require_hr, get_configs, csv_delimiter
+from core import db, now_iso, require_manager, get_configs, csv_delimiter
 from pipeline import get_period
 
-router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_hr)])
+# Pajak (saldo awal YTD, 1721-A1) and the BSI transfer export are Manager HRD only (user decision 9 Oct 2026)
+router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_manager)])
 
 YTD_COLUMNS = ["nik", "tax_year", "cutoff_month", "ptkp_status", "gross_income_ytd", "employee_jht_jp_ytd",
                "biaya_jabatan_ytd", "pph21_paid_ytd", "notes"]

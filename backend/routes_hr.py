@@ -1,26 +1,27 @@
 import re
-import secrets
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
+from pymongo.errors import DuplicateKeyError
 
-from core import db, now_iso, require_hr, require_manager, hash_password, get_configs, DEFAULT_CONFIGS
+from core import db, now_iso, require_hr, require_manager, actor, get_configs, DEFAULT_CONFIGS
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
+from periods import payroll_month, period_name_for, validate_dates, overlaps
 import integrations
 
 router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_hr)])
 
 
 class PeriodIn(BaseModel):
-    period_name: str
+    period_name: Optional[str] = None  # ignored when the period lies within one month (auto "Oktober 2026")
     start_date: str
     end_date: str
     payment_date: Optional[str] = None
@@ -30,7 +31,6 @@ class AdjustIn(BaseModel):
     overtime_hours: float = 0
     kpi_incentive: float = 0
     additional_bonus: float = 0
-    late_penalty_compensation: float = 0
     other_deductions: float = 0
     adjustment_notes: str = ""
 
@@ -59,7 +59,8 @@ async def notifications(user: dict = Depends(require_hr)):
         q, kind = {"status": "revision"}, "rejected"
     periods = await db.payroll_periods.find(q, {"_id": 0}).sort("start_date", -1).to_list(100)
     return [{"kind": kind, "period_id": p["id"], "period_name": p["period_name"],
-             "by": p.get("submitted_by") if kind == "submitted" else p.get("rejected_by"),
+             "by": (p.get("submitted_by_name") or p.get("submitted_by")) if kind == "submitted"
+             else (p.get("rejected_by_name") or p.get("rejected_by")),
              "at": p.get("submitted_at") if kind == "submitted" else p.get("rejected_at"),
              "reason": p.get("rejection_reason") if kind == "rejected" else None} for p in periods]
 
@@ -69,7 +70,7 @@ async def list_configs():
     return await db.payroll_configs.find({}, {"_id": 0}).sort("config_key", 1).to_list(100)
 
 
-@router.put("/configs")
+@router.put("/configs", dependencies=[Depends(require_manager)])
 async def update_configs(body: dict):
     for k, v in body.items():
         if k not in DEFAULT_CONFIGS:
@@ -78,11 +79,6 @@ async def update_configs(body: dict):
             raise HTTPException(400, "Pemisah CSV harus , ; | atau tab")
         await db.payroll_configs.update_one({"config_key": k}, {"$set": {"config_value": str(v)}})
     return await list_configs()
-
-
-@router.get("/integrations")
-async def integration_status():
-    return {s.lower(): {"mode": integrations.mode(s)} for s in ("ROSY", "RUMATKU")}
 
 
 @router.get("/employees")
@@ -99,7 +95,6 @@ async def sync_employees(periode: str) -> tuple:
         rows, meta = await integrations.fetch_employees(periode)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data karyawan dari ROSY: {e}")
-    live = integrations.mode("ROSY") == "live"
     ids = []
     for r in rows:
         existing = await db.employees.find_one({"rosy_employee_id": r["rosy_employee_id"]}, {"_id": 0, "id": 1}) or \
@@ -108,12 +103,6 @@ async def sync_employees(periode: str) -> tuple:
         await db.employees.update_one({"id": eid}, {"$set": {**r, "source": "rosy", "in_rosy": True,
                                                             "synced_at": now_iso()},
                                                    "$setOnInsert": {"created_at": now_iso()}}, upsert=True)
-        # Real employees read their slips in the RUMATKU app; local login accounts exist only for the simulation
-        if not live and r["email"] and not await db.users.find_one({"$or": [{"employee_id": eid}, {"email": r["email"]}]}):
-            await db.users.insert_one({"id": str(uuid.uuid4()), "role": "employee", "employee_id": eid,
-                                       "email": r["email"], "nik": r["nik"], "name": r["name"],
-                                       "password_hash": hash_password(secrets.token_urlsafe(16)),
-                                       "created_at": now_iso()})
         ids.append(eid)
     # Employees ROSY no longer returns (resigned, moved company, lost their salary contract) stay for history
     # but are flagged, so the list never silently mixes them with the current payroll population
@@ -158,43 +147,97 @@ async def list_periods():
 
 @router.post("/periods")
 async def create_period(body: PeriodIn):
-    ids, meta = await sync_employees(body.start_date[:7])
+    """Creates the period and immediately syncs everything from ROSY, so the slips are there at once.
+    One period per month (ROSY pays 1 slip per employee per month); dates may not overlap another period."""
+    validate_dates(body.start_date, body.end_date)
+    name = period_name_for(body.start_date, body.end_date) or (body.period_name or "").strip()
+    if not name:
+        raise HTTPException(400, "Periode lintas bulan wajib diberi nama")
+    bulan = payroll_month(body.start_date)
+    async for other in db.payroll_periods.find({}, {"_id": 0, "period_name": 1, "bulan": 1, "start_date": 1,
+                                                    "end_date": 1}):
+        if other.get("bulan") == bulan:
+            raise HTTPException(409, f"Periode {other['period_name']} sudah ada — satu bulan hanya satu periode")
+        if overlaps(body.start_date, body.end_date, other):
+            raise HTTPException(409, f"Tanggal bertumpuk dengan periode {other['period_name']}")
     data = body.model_dump()
-    data.update(id=str(uuid.uuid4()), status="draft", approved_by=None, approved_at=None, created_at=now_iso(),
-                employee_ids=ids, employee_count=len(ids), employees_synced_at=now_iso(),
-                employees_source=integrations.mode("ROSY"), employees_skipped=meta.get("dilewati") or [],
-                company=meta.get("company"), attendance_synced_at=None)
-    await db.payroll_periods.insert_one({**data})
-    data.pop("_id", None)
-    return data
+    data.update(id=str(uuid.uuid4()), period_name=name, bulan=bulan, status="draft", approved_by=None,
+                approved_at=None, created_at=now_iso(), employee_ids=[], employee_count=0, attendance_synced_at=None)
+    try:
+        await db.payroll_periods.insert_one({**data})
+    except DuplicateKeyError:
+        raise HTTPException(409, f"Periode {name} sudah ada — satu bulan hanya satu periode")
+    try:
+        result = await sync_period(data["id"])
+    except HTTPException as e:
+        # the draft stays; "Sinkron dari ROSY" retries
+        return {**await get_period(data["id"]), "sync_error": e.detail}
+    return {**await get_period(data["id"]), "sync": result}
+
+
+SYNC_STALE = timedelta(minutes=10)
 
 
 @router.post("/periods/{pid}/fetch-attendance")
-async def fetch_attendance(pid: str):
+async def sync_now(pid: str):
+    """Button "Sinkron dari ROSY": employees & salary, attendance, overtime and Transport Homecare."""
+    return await sync_period(pid)
+
+
+async def sync_period(pid: str) -> dict:
     period = await get_period(pid)
     if period["status"] not in EDITABLE_STATUSES:
         raise HTTPException(400, "Periode sedang direview Manager atau sudah dikunci")
+    now = datetime.now(timezone.utc)
+    lock = await db.payroll_periods.update_one(
+        {"id": pid, "$or": [{"sync_running_since": None}, {"sync_running_since": {"$exists": False}},
+                            {"sync_running_since": {"$lt": (now - SYNC_STALE).isoformat()}}]},
+        {"$set": {"sync_running_since": now.isoformat()}})
+    if not lock.modified_count:
+        raise HTTPException(409, "Sinkron periode ini sedang berjalan. Tunggu sebentar lalu muat ulang")
+    try:
+        result = await _sync(pid)
+    except HTTPException as e:
+        await db.payroll_periods.update_one({"id": pid}, {"$set": {"last_sync_error": e.detail, "last_sync_at": now_iso()}})
+        raise
+    finally:
+        await db.payroll_periods.update_one({"id": pid}, {"$set": {"sync_running_since": None}})
+    await db.payroll_periods.update_one({"id": pid}, {"$set": {"last_sync_at": now_iso()}, "$unset": {"last_sync_error": ""}})
+    return result
+
+
+async def _sync(pid: str) -> dict:
+    period = await get_period(pid)
     # One button pulls everything fresh from ROSY: salary, overtime rate and population can change in HAM
     # after the period was created (e.g. HRD fills in an overtime rate), and the slips must follow
-    ids, emp_meta = await sync_employees(period["start_date"][:7])
-    await db.payroll_periods.update_one({"id": pid}, {"$set": {
-        "employee_ids": ids, "employee_count": len(ids), "employees_synced_at": now_iso(),
-        "employees_source": integrations.mode("ROSY"), "employees_skipped": emp_meta.get("dilewati") or []}})
-    # draft slips of people who dropped out of the population (resigned, no salary contract) must not linger
-    await db.payslips.delete_many({"payroll_period_id": pid, "employee_id": {"$nin": ids}, "status": {"$ne": "approved"}})
-    period = await get_period(pid)
-    q = {"id": {"$in": period["employee_ids"]}} if period.get("employee_ids") else {}
+    ids, emp_meta = await sync_employees(payroll_month(period["start_date"]))
+    q = {"id": {"$in": ids}}
     emps = await db.employees.find(q, {"_id": 0}).to_list(5000)
     by_rosy = {e["rosy_employee_id"]: e["id"] for e in emps if e.get("rosy_employee_id")}
     by_nik = {e["nik"]: e["id"] for e in emps}
+    # every HAM read happens before anything of this period is deleted
     try:
         rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
     try:
-        overtime = await integrations.fetch_overtime(period["start_date"][:7])
+        overtime = await integrations.fetch_overtime(payroll_month(period["start_date"]))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data lembur dari ROSY: {e}")
+    await db.payroll_periods.update_one({"id": pid}, {"$set": {
+        "employee_ids": ids, "employee_count": len(ids), "employees_synced_at": now_iso(),
+        "employees_source": integrations.mode("ROSY"), "employees_skipped": emp_meta.get("dilewati") or [],
+        "company": emp_meta.get("company")}})
+    # draft slips of people who dropped out of the population (resigned, no salary contract) must not linger
+    await db.payslips.delete_many({"payroll_period_id": pid, "employee_id": {"$nin": ids}, "status": {"$ne": "approved"}})
+    # Transport Homecare (ROSY Tambahan Bulanan "Transport Rumat Kita") for this month
+    comp_docs = [{"id": str(uuid.uuid4()), "payroll_period_id": pid, "employee_id": by_rosy[rid],
+                  "kode": "TRANSPORT_HOMECARE", "component_id": integrations.TRANSPORT_COMPONENT,
+                  "nominal": nominal, "synced_at": now_iso()}
+                 for rid, nominal in (emp_meta.get("transport") or {}).items() if rid in by_rosy]
+    await db.period_components.delete_many({"payroll_period_id": pid})
+    if comp_docs:
+        await db.period_components.insert_many(comp_docs)
     await db.attendance_daily_logs.delete_many({"employee_id": {"$in": [e["id"] for e in emps]},
                                                 "work_date": {"$gte": period["start_date"], "$lte": period["end_date"]}})
     # Approved overtime claims paid in this period (live only): the slip uses these, the daily log only shows them
@@ -241,28 +284,38 @@ async def fetch_attendance(pid: str):
     await db.payroll_periods.update_one({"id": pid}, {"$set": {
         "attendance_synced_at": now_iso(), "attendance_count": len(docs),
         "attendance_source": integrations.mode("RUMATKU"), "attendance_unlinked": unlinked,
-        "attendance_missing": missing, "attendance_unknown": sorted(unknown)}})
+        "attendance_missing": missing, "attendance_unknown": sorted(unknown),
+        "components_summary": {"transport_employees": len(comp_docs),
+                               "transport_total": sum(d["nominal"] for d in comp_docs)}}})
     processed = await process_period(await get_period(pid))
     return {"logs": len(docs), "processed": processed, "unknown_niks": sorted(unknown),
-            "unlinked": unlinked, "missing": missing}
+            "unlinked": unlinked, "missing": missing, "transport_employees": len(comp_docs)}
 
 
 @router.get("/periods/{pid}")
 async def period_detail(pid: str):
     period = await get_period(pid)
-    slips = await db.payslips.find({"payroll_period_id": pid}, {"_id": 0, "discipline": 0, "bpjs": 0}) \
+    slips = await db.payslips.find({"payroll_period_id": pid}, {"_id": 0, "bpjs": 0}) \
         .sort("employee.nik", 1).to_list(2000)
+    for s in slips:
+        # slips calculated before Poin Absensi existed keep their absence days in the discipline breakdown
+        disc = s.pop("discipline", None) or {}
+        s.setdefault("absence_points", disc.get("attendance_cut_days", 0))
     return {"period": period, "payslips": slips}
 
 
 @router.delete("/periods/{pid}")
-async def delete_period(pid: str):
+async def delete_period(pid: str, user: dict = Depends(require_hr)):
     period = await get_period(pid)
+    manager = user["role"] == "manager_hrd"
+    if period["status"] == "pending_approval" and not manager:
+        raise HTTPException(403, "Periode yang sudah diajukan hanya dapat dihapus Manager HRD")
     if period["status"] not in EDITABLE_STATUSES + ("pending_approval",) or \
             await db.payslips.count_documents({"payroll_period_id": pid, "status": "approved"}):
         raise HTTPException(400, "Hanya periode yang belum memiliki slip approved yang dapat dihapus")
     res = await db.payslips.delete_many({"payroll_period_id": pid})
     await db.overtime_claims.delete_many({"payroll_period_id": pid})
+    await db.period_components.delete_many({"payroll_period_id": pid})
     await db.payroll_periods.delete_one({"id": pid})
     return {"ok": True, "deleted_payslips": res.deleted_count}
 
@@ -271,7 +324,7 @@ EDITABLE_STATUSES = ("draft", "revision")
 
 
 async def _log(pid: str, action: str, user: dict, reason: str = "", extra: Optional[dict] = None):
-    entry = {"action": action, "by": user["email"], "by_name": user.get("name"), "at": now_iso(), "reason": reason}
+    entry = {"action": action, "by": actor(user), "by_name": user.get("name"), "at": now_iso(), "reason": reason}
     await db.payroll_periods.update_one({"id": pid}, {"$set": extra or {}, "$push": {"review_history": entry}})
 
 
@@ -293,10 +346,12 @@ async def submit_period(pid: str, user: dict = Depends(require_hr)):
     period = await get_period(pid)
     if period["status"] not in EDITABLE_STATUSES:
         raise HTTPException(400, "Hanya periode draft / revisi yang dapat diajukan")
+    if period.get("last_sync_error") or not period.get("attendance_synced_at"):
+        raise HTTPException(400, "Sinkron dari ROSY belum berhasil. Klik \"Sinkron dari ROSY\" sebelum mengajukan")
     if not await db.payslips.count_documents({"payroll_period_id": pid}):
         raise HTTPException(400, "Belum ada slip. Jalankan proses payroll terlebih dahulu")
-    await _log(pid, "submitted", user, extra={"status": "pending_approval", "submitted_by": user["email"],
-                                              "submitted_at": now_iso()})
+    await _log(pid, "submitted", user, extra={"status": "pending_approval", "submitted_by": actor(user),
+                                              "submitted_by_name": user.get("name"), "submitted_at": now_iso()})
     return await get_period(pid)
 
 
@@ -311,7 +366,8 @@ async def reject_period(pid: str, body: RejectIn, user: dict = Depends(require_m
     if await db.payslips.count_documents({"payroll_period_id": pid, "status": "approved"}):
         raise HTTPException(400, "Sebagian slip sudah di-approve; tidak dapat ditolak")
     await _log(pid, "rejected", user, reason, {"status": "revision", "rejection_reason": reason,
-                                               "rejected_by": user["email"], "rejected_at": now_iso()})
+                                               "rejected_by": actor(user), "rejected_by_name": user.get("name"),
+                                               "rejected_at": now_iso()})
     return await get_period(pid)
 
 
@@ -382,7 +438,7 @@ async def _locked(pid: str) -> dict:
     return period
 
 
-@router.post("/periods/{pid}/resend-failed")
+@router.post("/periods/{pid}/resend-failed", dependencies=[Depends(require_manager)])
 async def resend_failed(pid: str):
     await _locked(pid)
     n = await queue_delivery(pid, {"delivery_status": "failed"}, attempts=1)
@@ -391,7 +447,7 @@ async def resend_failed(pid: str):
     return {"queued": n}
 
 
-@router.post("/periods/{pid}/employees/{eid}/resend")
+@router.post("/periods/{pid}/employees/{eid}/resend", dependencies=[Depends(require_manager)])
 async def resend_one(pid: str, eid: str):
     await _locked(pid)
     slip = await _slip(pid, eid)

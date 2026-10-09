@@ -40,7 +40,10 @@ async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
     sm = lambda f: sum(f(s) for s in slips)  # noqa: E731
     it = {
         "i1": sm(lambda s: s["basic_salary"] - s["absent_deduction_amount"]), "i2": 0,
-        "i3": sm(lambda s: s["position_allowance"] + s["attendance_allowance"] + s["overtime_pay"]), "i4": 0,
+        # tunjangan lainnya: jabatan net of the alfa/izin cut, attendance, overtime, Transport Homecare
+        # (.get: slips approved before these fields existed)
+        "i3": sm(lambda s: s["position_allowance"] - s.get("position_deduction_amount", 0) + s["attendance_allowance"]
+                 + s["overtime_pay"] + s.get("transport_homecare", 0)), "i4": 0,
         "i5": sm(lambda s: s["tunjangan_bpjs_kes"] + s["bpjs"]["jkk"] + s["bpjs"]["jkm"]), "i6": 0,
         "i7": sm(lambda s: s["kpi_incentive"] + s["additional_bonus"]),
         "i7a": float((init or {}).get("gross_income_ytd") or 0),

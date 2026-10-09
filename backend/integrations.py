@@ -4,29 +4,63 @@ from RUMATKU check-in data). Live mode when HAM_API_URL is set, otherwise MOCK (
 Live endpoints (HAM, header X-Integrasi-Key, caller RASA, read-only):
   GET {HAM_API_URL}/api/ham/v2/payroll-feed/karyawan?payroll_company_id=&periode=YYYY-MM
   GET {HAM_API_URL}/api/ham/v2/payroll-feed/presensi?payroll_company_id=&start=&end=
+  POST {HAM_API_URL}/api/ham/v2/payroll-feed/auth/login?payroll_company_id=  (verifies a ROSY login, writes nothing)
 Payslip delivery still uses the legacy RUMATKU contract (RUMATKU_API_URL), mock until HAM's slip
 endpoint exists."""
 import hashlib
+import logging
 import os
 from datetime import date, timedelta
 
 import httpx
 
+from fastapi import HTTPException
+
 from engine import resolve_ptkp
-from seed import EMPLOYEES, BUDI_MARCH
 
 LEAVE_TYPES = {"present", "sick_with_certificate", "annual_leave", "statutory_leave", "maternity_leave",
-               "menstrual_leave", "approved_unpaid_leave", "alpha", "day_off", "permission_leave", "official_duty"}
+               "menstrual_leave", "approved_unpaid_leave", "alpha", "day_off", "permission_leave", "official_duty",
+               "religious_leave", "dispensation"}
 
-# status_ham (HAM AbsensiModules::harianBatch) -> leave_type. Initial proposal; must be signed off by HRD
-# (Rencana Setting Payroll section B). "ibadah" follows current HAM behaviour (1 point/day, like izin).
+# status_ham (HAM AbsensiModules::harianBatch) -> leave_type, per the PPT "Review Ketentuan dan Perhitungan
+# Payroll Karyawan" (user decision 9 Oct 2026): izin is unpaid like alfa; ibadah only cuts the attendance
+# allowance; dispensasi is not a leave type (an approved attendance correction) so it is never cut. Cuti
+# bersama arrives as cuti (tahunan) — HRD records it against the annual leave quota.
 LEAVE_MAP = {
     "hadir": "present", "dinas": "official_duty", "izin": "permission_leave", "sakit": "sick_with_certificate",
     "cuti": "annual_leave", "khusus": "statutory_leave", "melahirkan": "maternity_leave",
-    "ibadah": "permission_leave", "alfa": "alpha", "dispensasi": "statutory_leave", "libur": "day_off",
+    "ibadah": "religious_leave", "alfa": "alpha", "dispensasi": "dispensation", "libur": "day_off",
 }
 
+# Monthly ROSY component RASA pays (HAM "Transport Rumat Kita", shown on the slip as Transport Homecare).
+# Other monthly components (e.g. KOMP-00023 Lembur) are ignored: overtime is paid from the HAM claims.
+TRANSPORT_COMPONENT = "KOMP-00022"
+
+# Simulation sample (mock mode only)
+EMPLOYEES = [
+    {"nik": "EMP-001", "name": "Budi Santoso", "email": "budi@rumatku.id", "department": "Staff Finance",
+     "birth_date": "1995-08-15", "gender": "L", "marital_status": "K", "dependents_count": 1,
+     "has_husband_certificate": False, "payroll_status": "active", "basic_salary": 6000000,
+     "position_allowance": 1200000, "monthly_attendance_allowance": 1000000, "overtime_hourly_rate": 50000,
+     "bank_name": "BSI", "bank_account_number": "7123456789"},
+    {"nik": "EMP-002", "name": "Siti Aminah", "email": "siti@rumatku.id", "department": "Junior Nurse",
+     "birth_date": "1998-04-22", "gender": "P", "marital_status": "K", "dependents_count": 1,
+     "has_husband_certificate": False, "payroll_status": "active", "basic_salary": 4500000,
+     "position_allowance": 500000, "monthly_attendance_allowance": 750000, "overtime_hourly_rate": 0,
+     "bank_name": "BSI", "bank_account_number": "7198765432"},
+    {"nik": "EMP-003", "name": "Dimas Pratama", "email": "dimas@rumatku.id", "department": "General Affairs",
+     "birth_date": "1992-01-10", "gender": "L", "marital_status": "TK", "dependents_count": 0,
+     "has_husband_certificate": False, "payroll_status": "unpaid_leave", "basic_salary": 5500000,
+     "position_allowance": 800000, "monthly_attendance_allowance": 0, "overtime_hourly_rate": 0,
+     "bank_name": "BSI", "bank_account_number": ""},
+]
+
+BUDI_MARCH = [(1, 1, 17), (2, 4, 0), (3, 5, 0), (4, 7, 0), (5, 15, 0), (6, 16, 0), (12, 4, 0), (13, 5, 0),
+              (16, 6, 0), (17, 2, 0), (18, 4, 20), (20, 18, 0), (22, 6, 0), (23, 3, 0), (25, 0, 15), (27, 3, 0),
+              (29, 61, 0), (31, 17, 0)]
+
 FEED = "/api/ham/v2/payroll-feed"
+logger = logging.getLogger("integrations")
 
 
 def mode(system: str) -> str:
@@ -50,6 +84,34 @@ async def _get(path: str, params: dict) -> dict:
     if r.status_code != 200:
         raise RuntimeError(f"HAM {r.status_code}: {body.get('message') or r.text[:200]}")
     return body
+
+
+async def verify_rosy_login(username: str, password: str, client_ip: str = "") -> dict:
+    """Checks a ROSY username/password through HAM (verify-only: HAM writes nothing and issues no ROSY token,
+    so the user's ROSY session is untouched). Returns the account facts incl. jabatan; raises HTTPException."""
+    if mode("ROSY") != "live":
+        raise HTTPException(503, "Login ROSY belum tersedia: HAM_API_URL belum diatur")
+    url = os.environ["HAM_API_URL"].rstrip("/") + FEED + "/auth/login"
+    headers = {"X-Integrasi-Key": os.environ.get("HAM_INTEGRASI_KEY", ""), "Accept": "application/json",
+               "X-Rasa-Client-Ip": client_ip}
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.post(url, headers=headers, params={"payroll_company_id": company_id()},
+                             json={"username": username, "password": password})
+        body = r.json()
+    except (httpx.HTTPError, ValueError):
+        logger.exception("HAM auth/login tidak dapat dihubungi")
+        raise HTTPException(503, "Tidak dapat menghubungi ROSY. Coba lagi beberapa saat")
+    code = body.get("code") if isinstance(body, dict) else None
+    if r.status_code == 200:
+        return body.get("data") or {}
+    if r.status_code == 401 and code == "kredensial_salah":
+        raise HTTPException(401, "Username atau password ROSY salah")
+    if r.status_code in (403, 429) and code:
+        raise HTTPException(r.status_code, body.get("message") or "Login ditolak ROSY")
+    # 401 without a code = HAM refused RASA's integration key: a configuration fault, not the user's
+    logger.error("HAM auth/login %s: %s", r.status_code, str(body.get("message") if isinstance(body, dict) else "")[:200])
+    raise HTTPException(503, "Login ROSY sedang bermasalah. Hubungi IT")
 
 
 def _mock_rosy() -> list:
@@ -106,7 +168,14 @@ async def fetch_employees(periode: str) -> tuple:
         raw, meta = body.get("data") or [], body.get("meta") or {}
     else:
         raw, meta = _mock_rosy(), {"dilewati": [], "company": None}
+    # Monthly values belong to this periode only, so they never go onto the employee record
+    meta["transport"] = {str(r["employee_id"]): transport_of(r) for r in raw if transport_of(r)}
     return [normalize_employee(r) for r in raw], meta
+
+
+def transport_of(r: dict) -> float:
+    return sum(float(k.get("nominal") or 0) for k in r.get("komponen_bulanan") or []
+               if k.get("component_id") == TRANSPORT_COMPONENT)
 
 
 def _hhmm(m: int) -> str:

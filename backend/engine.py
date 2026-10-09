@@ -26,8 +26,12 @@ TER_C = [(6600000, 0), (6950000, 0.25), (7350000, 0.5), (7800000, 0.75), (885000
          (463000000, 29), (561000000, 30), (709000000, 31), (965000000, 32), (1419000000, 33)]
 TER_TABLES = {"A": TER_A, "B": TER_B, "C": TER_C}
 
-ATT_CUT_LEAVES = ("sick_with_certificate", "annual_leave", "permission_leave")
-FULL_CUT_LEAVES = ("alpha", "approved_unpaid_leave")
+# PPT "Review Ketentuan dan Perhitungan Payroll Karyawan" (slide 4): which pay parts an absence day costs.
+# Cut only the attendance allowance (gapok & jabatan paid): cuti tahunan (incl. cuti bersama), sakit,
+# cuti khusus, cuti melahirkan, ibadah. Cut gapok + jabatan + attendance: alfa/mangkir, izin, unpaid leave.
+# Never cut: present, dinas, dispensasi, libur.
+ATT_CUT_LEAVES = ("sick_with_certificate", "annual_leave", "statutory_leave", "maternity_leave", "religious_leave")
+FULL_CUT_LEAVES = ("alpha", "permission_leave", "approved_unpaid_leave")
 BPJS_TK_PROGRAMS = ("jkk", "jkm", "jht", "jp")
 
 
@@ -60,17 +64,16 @@ def ter_rate(category: str, gross: float) -> float:
 
 
 def calc_discipline(logs: list) -> dict:
-    """Waterfall non-duplikasi Rule 1-4 + hitung hari absen pemotong."""
+    """Poin Presensi (waterfall non-duplikasi Rule 1-4) + Poin Absensi (hari tidak hadir pemotong, PPT)."""
     r1 = r2 = small_minutes = att_days = basic_days = 0
-    mid = []
+    mid, by_type = [], {}
     for log in sorted(logs, key=lambda x: x["work_date"]):
         lt = log.get("leave_type", "present")
-        if lt in ATT_CUT_LEAVES:
+        if lt in ATT_CUT_LEAVES or lt in FULL_CUT_LEAVES:
             att_days += 1
-            continue
-        if lt in FULL_CUT_LEAVES:
-            att_days += 1
-            basic_days += 1
+            by_type[lt] = by_type.get(lt, 0) + 1
+            if lt in FULL_CUT_LEAVES:
+                basic_days += 1
             continue
         if lt != "present":
             continue
@@ -100,6 +103,7 @@ def calc_discipline(logs: list) -> dict:
         "rule3_carried_minutes": carried, "rule4_minutes": r4_minutes, "rule4_points": r4,
         "rule4_forfeited_minutes": r4_minutes % 60, "small_minutes": small_minutes,
         "total_points": r1 + r2 + r3 + r4, "attendance_cut_days": att_days, "basic_cut_days": basic_days,
+        "absence_points": att_days, "absence_by_type": by_type,
     }
 
 
@@ -202,21 +206,25 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     kpi = 0 if unpaid else round(float(adj.get("kpi_incentive") or 0))
     bonus = 0 if unpaid else round(float(adj.get("additional_bonus") or 0))
     kasbon = round(float(adj.get("other_deductions") or 0))
+    transport = 0 if unpaid else round(float(adj.get("transport_homecare") or 0))
     overtime_pay = round(hours * float(emp.get("overtime_hourly_rate") or 0))
 
     basic_paid = round(basic * mult)
-    position_paid = round(float(emp.get("position_allowance") or 0) * mult)
+    # PPT: during prolonged illness only gapok is paid (100/75/50/25%); jabatan and attendance are not
+    position_paid = 0 if status == "prolonged_illness" else round(float(emp.get("position_allowance") or 0) * mult)
     if status == "active":
-        penalty_days = min(disc["total_points"] + disc["attendance_cut_days"], wd)
+        # Poin Presensi + Poin Absensi each cost 1/wd of the attendance allowance
+        penalty_days = min(disc["total_points"] + disc["absence_points"], wd)
         penalty_amount = round(penalty_days / wd * att)
-        # capped at 100% of basic salary (Rencana Setting Payroll D3): a month of alpha must not yield negative pay
-        absent_deduction = round(min(disc["basic_cut_days"], wd) / wd * basic)
+        # alfa/izin days cost gapok and jabatan too, capped at 100% (a month of alfa must not yield negative pay)
+        cut_days = min(disc["basic_cut_days"], wd)
+        absent_deduction = round(cut_days / wd * basic)
+        position_deduction = round(cut_days / wd * position_paid)
     else:
         penalty_days = wd
         penalty_amount = round(att)
-        absent_deduction = 0
-    compensation = min(round(float(adj.get("late_penalty_compensation") or 0)), penalty_amount)
-    attendance_net = round(att - penalty_amount + compensation)
+        absent_deduction = position_deduction = 0
+    attendance_net = round(att - penalty_amount)
 
     bp = calc_bpjs(emp, cfg) if not unpaid else calc_bpjs({}, {})
     bpjs_advance = 0
@@ -227,7 +235,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     tunj_kes = bp["kes_company"]
     tunj_tk = bp["jkk"] + bp["jkm"] + bp["jht_company"] + bp["jp_company"]
 
-    base_earn = basic_paid - absent_deduction + position_paid + attendance_net + overtime_pay + kpi + bonus
+    base_earn = (basic_paid - absent_deduction + position_paid - position_deduction + attendance_net + overtime_pay
+                 + transport + kpi + bonus)
     gross = base_earn + tunj_kes + tunj_tk
     taxable = base_earn + bp["kes_company"] + bp["jkk"] + bp["jkm"]
 
@@ -248,14 +257,14 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     return {
         "payroll_status": status, "wage_multiplier": mult,
         "basic_salary": basic_paid, "basic_salary_contract": round(basic),
-        "position_allowance": position_paid,
+        "position_allowance": position_paid, "position_deduction_amount": position_deduction,
         "attendance_allowance_base": round(att), "attendance_allowance": attendance_net,
-        "overtime_hours": hours, "overtime_pay": overtime_pay,
+        "overtime_hours": hours, "overtime_pay": overtime_pay, "transport_homecare": transport,
         "kpi_incentive": kpi, "additional_bonus": bonus,
         "tunjangan_bpjs_kes": tunj_kes, "tunjangan_bpjs_tk": tunj_tk,
         "gross_earnings": gross, "taxable_gross": taxable,
         "late_penalty_points": disc["total_points"], "late_penalty_days": penalty_days,
-        "late_penalty_amount": penalty_amount, "late_penalty_compensation": compensation,
+        "late_penalty_amount": penalty_amount, "absence_points": disc["absence_points"], "work_days": wd,
         "absent_days": disc["basic_cut_days"], "absent_deduction_amount": absent_deduction,
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
         "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
