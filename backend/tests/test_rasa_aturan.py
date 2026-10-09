@@ -216,11 +216,11 @@ def test_old_snapshot_without_bank_code_falls_back_to_bank_name():
     assert "7123456789 (Bank Syariah Indonesia)" in text
 
 
-def test_gapok_cut_sits_under_potongan_and_totals_still_add_up():
+def test_alfa_izin_cuts_sit_under_potongan_and_totals_still_add_up():
     s = _slip()
     earn, ded = payslip_lines(s)
-    assert not any(k.startswith("Potongan Gaji Pokok") for k, _ in earn)
-    assert ded[0] == ("Potongan Gaji Pokok (1 hari alfa/izin)", 180000)
+    assert not any(k.startswith("Potongan") for k, _ in earn)
+    assert ded[:2] == [("Potongan Gaji Pokok (1 hari alfa/izin)", 180000), ("Potongan Tunj. Jabatan (1 hari alfa/izin)", 20000)]
     assert sum(v for _, v in earn[:-1]) == earn[-1][1]          # TOTAL PENDAPATAN = its rows
     assert sum(v for _, v in ded[:-1]) == ded[-1][1]            # TOTAL POTONGAN = its rows
     assert earn[-1][1] - ded[-1][1] == s["take_home_pay"]       # = TOTAL DITERIMA

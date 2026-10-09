@@ -64,27 +64,29 @@ def _jam(h) -> str:
 
 
 def payslip_lines(slip: dict) -> tuple:
-    """PENDAPATAN and POTONGAN rows as printed. The alfa/izin cut of gaji pokok is shown under POTONGAN
-    (user request 9 Oct), so both totals carry it and TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
+    """PENDAPATAN and POTONGAN rows as printed. The alfa/izin cuts of gaji pokok and tunjangan jabatan are
+    shown under POTONGAN (user request 9 Oct), so both totals carry them and
+    TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
     alfa_izin = f"{slip.get('absent_days', 0)} hari alfa/izin"
     gapok_cut = slip["absent_deduction_amount"]
+    jabatan_cut = slip.get("position_deduction_amount", 0)  # absent on slips approved before 9 Oct
     earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
                    ("Tunjangan Jabatan", slip["position_allowance"], False),
-                   (f"Potongan Tunj. Jabatan ({alfa_izin})", -slip.get("position_deduction_amount", 0), False),
                    ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"], False),
                    (f"Lembur ({_jam(slip['overtime_hours'])} jam)", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus Tambahan", slip["additional_bonus"], False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
                    ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
-                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + gapok_cut, True)])
+                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + gapok_cut + jabatan_cut, True)])
     ded = _shown([(f"Potongan Gaji Pokok ({alfa_izin})", gapok_cut, False),
+                  (f"Potongan Tunj. Jabatan ({alfa_izin})", jabatan_cut, False),
                   ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
                   ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
                   (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
                     else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"], True),
                   ("Kasbon / Potongan Lain", slip["other_deductions"], False),
-                  ("TOTAL POTONGAN", slip["total_deductions"] + gapok_cut, True)])
+                  ("TOTAL POTONGAN", slip["total_deductions"] + gapok_cut + jabatan_cut, True)])
     return earn, ded
 
 
