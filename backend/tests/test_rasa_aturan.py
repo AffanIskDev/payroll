@@ -18,7 +18,7 @@ from pypdf import PdfReader  # noqa: E402
 import integrations  # noqa: E402
 from access import role_for  # noqa: E402
 from engine import calc_discipline, compute_payslip  # noqa: E402
-from pdf_service import render_payslip  # noqa: E402
+from pdf_service import payslip_lines, render_payslip  # noqa: E402
 from periods import overlaps, payroll_month, period_name_for, validate_dates  # noqa: E402
 
 CFG = {"UMK_BEKASI_REGENCY": "5219263", "BPJS_JP_MAX_WAGE": "10042300", "BPJS_KES_MAX_WAGE": "12000000",
@@ -165,6 +165,9 @@ def test_transport_is_read_from_rosy_monthly_components():
 
 
 # ---------------------------------------------------------------- payslip PDF
+SIGNER = {"id": "SIGN-00001", "nama": "Meliawasni", "jabatan": "Manager HRD"}  # ROSY Document Signer (payroll)
+
+
 def _slip(**kw):
     s = compute_payslip(EMP, [_day("izin")], CFG, {"transport_homecare": 1250000})
     s["employee"] = {"nik": "2016008", "name": "Contoh Karyawan", "department": "Perawat",
@@ -175,7 +178,7 @@ def _slip(**kw):
 
 
 def _pdf(slip):
-    reader = PdfReader(io.BytesIO(render_payslip(slip, {"period_name": "Oktober 2026"}, {})))
+    reader = PdfReader(io.BytesIO(render_payslip(slip, {"period_name": "Oktober 2026", "signer": SIGNER})))
     page = reader.pages[0]
     images = [o for o in page["/Resources"]["/XObject"].values() if o.get_object()["/Subtype"] == "/Image"]
     return page.extract_text(), len(images)
@@ -184,12 +187,17 @@ def _pdf(slip):
 def test_payslip_layout():
     text, images = _pdf(_slip())
     assert images == 2                                            # RPI left, RUMAT right
-    for label in ("Nama:", "NIK:", "Departemen:", "Periode:", "Status PTKP:", "Rekening:", "BSI 7123456789",
+    for label in ("Nama:", "NIK:", "Departemen:", "Periode:", "Status PTKP:", "Rekening:", "7123456789 (BSI)",
                   "TOTAL DITERIMA", "Transport Homecare", "Potongan Gaji Pokok (1 hari alfa/izin)",
                   "Potongan Tunj. Jabatan (1 hari alfa/izin)", "menghubungi Divisi HRD"):
         assert label in text, label
-    for gone in ("Status PTKP Efektif", "TAKE HOME PAY", "Kompensasi", "[NAMA_PERUSAHAAN]"):
+    for gone in ("Status PTKP Efektif", "TAKE HOME PAY", "Kompensasi", "[NAMA_PERUSAHAAN]", "[NAMA_PENANDATANGAN]"):
         assert gone not in text, gone
+
+
+def test_payslip_signer_comes_from_rosy():
+    text, _ = _pdf(_slip())
+    assert "Meliawasni" in text and "Manager HRD" in text
 
 
 def test_payslip_hides_zero_rows_but_always_shows_pph21():
@@ -203,4 +211,14 @@ def test_old_snapshot_without_bank_code_falls_back_to_bank_name():
     s = _slip()
     s["employee"].pop("bank_code")
     text, _ = _pdf(s)
-    assert "Bank Syariah Indonesia 7123456789" in text
+    assert "7123456789 (Bank Syariah Indonesia)" in text
+
+
+def test_gapok_cut_sits_under_potongan_and_totals_still_add_up():
+    s = _slip()
+    earn, ded = payslip_lines(s)
+    assert not any(k.startswith("Potongan Gaji Pokok") for k, _ in earn)
+    assert ded[0] == ("Potongan Gaji Pokok (1 hari alfa/izin)", 180000)
+    assert sum(v for _, v in earn[:-1]) == earn[-1][1]          # TOTAL PENERIMAAN = its rows
+    assert sum(v for _, v in ded[:-1]) == ded[-1][1]            # TOTAL POTONGAN = its rows
+    assert earn[-1][1] - ded[-1][1] == s["take_home_pay"]       # = TOTAL DITERIMA

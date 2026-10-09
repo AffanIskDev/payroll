@@ -117,7 +117,7 @@ async def process_period(period: dict) -> int:
 
 
 async def approve_slip(slip: dict, period: dict, user: dict) -> dict:
-    path = save_encrypted(slip, period, await get_configs())
+    path = save_encrypted(slip, period)
     upd = {"status": "approved", "pdf_path": path, "approved_by": actor(user), "approved_at": now_iso()}
     await db.payslips.update_one({"id": slip["id"]}, {"$set": upd})
     remaining = await db.payslips.count_documents({"payroll_period_id": period["id"], "status": {"$ne": "approved"}})
@@ -131,7 +131,7 @@ async def approve_slip(slip: dict, period: dict, user: dict) -> dict:
 async def deliver_slip(slip: dict, period: dict, attempts: int = 3) -> str:
     path = slip.get("pdf_path")
     if not path or not Path(path).exists():
-        path = save_encrypted(slip, period, await get_configs())
+        path = save_encrypted(slip, period)
     import integrations
     upd, err, n = {}, "", 0
     for n in range(1, attempts + 1):

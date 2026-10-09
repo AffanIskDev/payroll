@@ -72,8 +72,6 @@ DEFAULT_CONFIGS = {
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
     "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Nama pemotong pajak (1721-A1)"),
     "COMPANY_ADDRESS": ("[ALAMAT_PERUSAHAAN]", "Alamat perusahaan (1721-A1; kop slip gaji memakai logo RPI & RUMAT)"),
-    "PAYSLIP_SIGNATORY_NAME": ("[NAMA_PENANDATANGAN]", "Nama pejabat penandatangan slip gaji"),
-    "PAYSLIP_SIGNATORY_TITLE": ("Manager HRD", "Jabatan pejabat penandatangan slip gaji"),
     "CSV_DELIMITER": (",", "Pemisah kolom ekspor CSV: , atau ; atau | atau tab"),
     "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "NPWP pemotong pajak (1721-A1)"),
     "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),

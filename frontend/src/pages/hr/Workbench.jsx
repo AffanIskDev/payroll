@@ -107,7 +107,7 @@ export default function Workbench() {
         </div>
         <Info k="Status Payroll" v={PAYROLL_STATUS_LABELS[emp.payroll_status]} />
         <Info k="Status PTKP" v={`${calc.ptkp_status} · TER ${calc.ter_category}`} testId="workbench-ptkp" />
-        <Info k="Rekening" v={`${(emp.bank_code || emp.bank_name || "").toUpperCase()} ${emp.bank_account_number || "-"}`} />
+        <Info k="Rekening" v={`${emp.bank_account_number || "-"} (${(emp.bank_code || emp.bank_name || "-").toUpperCase()})`} />
         <div className="ml-auto"><StatusBadge map={SLIP_STATUS} status={payslip.status} testId="workbench-slip-status" /></div>
       </div>
       {emp.gender === "P" && emp.marital_status === "K" && !emp.has_husband_certificate && (

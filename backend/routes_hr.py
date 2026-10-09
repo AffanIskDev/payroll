@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from core import db, now_iso, require_hr, require_manager, actor, get_configs, DEFAULT_CONFIGS
+from core import db, now_iso, require_hr, require_manager, actor, DEFAULT_CONFIGS
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
@@ -227,7 +227,9 @@ async def _sync(pid: str) -> dict:
     await db.payroll_periods.update_one({"id": pid}, {"$set": {
         "employee_ids": ids, "employee_count": len(ids), "employees_synced_at": now_iso(),
         "employees_source": integrations.mode("ROSY"), "employees_skipped": emp_meta.get("dilewati") or [],
-        "company": emp_meta.get("company")}})
+        "company": emp_meta.get("company"),
+        # slip signer = ROSY's payroll Document Signer for this company (same as ROSY's own slips)
+        "signer": emp_meta.get("penandatangan")}})
     # draft slips of people who dropped out of the population (resigned, no salary contract) must not linger
     await db.payslips.delete_many({"payroll_period_id": pid, "employee_id": {"$nin": ids}, "status": {"$ne": "approved"}})
     # Transport Homecare (ROSY Tambahan Bulanan "Transport Rumat Kita") for this month
@@ -462,5 +464,5 @@ async def resend_one(pid: str, eid: str):
 async def preview_pdf(pid: str, eid: str):
     period = await get_period(pid)
     slip = await _slip(pid, eid)
-    return Response(render_payslip(slip, period, await get_configs()), media_type="application/pdf",
+    return Response(render_payslip(slip, period), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="preview-{slip["employee"]["nik"]}.pdf"'})

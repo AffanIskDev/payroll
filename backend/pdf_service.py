@@ -53,15 +53,42 @@ def _logo(name: str, max_w: float) -> Image:
 
 
 def _rekening(emp: dict) -> str:
+    """'3324259820 (BSI)': account number, then the bank's short code."""
     bank = (emp.get("bank_code") or "").strip().upper() or emp.get("bank_name") or ""
-    return " ".join(v for v in (bank, emp.get("bank_account_number")) if v) or "-"
+    norek = emp.get("bank_account_number") or ""
+    return (f"{norek} ({bank})" if bank else norek) if norek else (bank or "-")
 
 
 def _jam(h) -> str:
     return f"{float(h or 0):g}".replace(".", ",")
 
 
-def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
+def payslip_lines(slip: dict) -> tuple:
+    """PENERIMAAN and POTONGAN rows as printed. The alfa/izin cut of gaji pokok is shown under POTONGAN
+    (user request 9 Oct), so both totals carry it and TOTAL PENERIMAAN - TOTAL POTONGAN = TOTAL DITERIMA."""
+    alfa_izin = f"{slip.get('absent_days', 0)} hari alfa/izin"
+    gapok_cut = slip["absent_deduction_amount"]
+    earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
+                   ("Tunjangan Jabatan", slip["position_allowance"], False),
+                   (f"Potongan Tunj. Jabatan ({alfa_izin})", -slip.get("position_deduction_amount", 0), False),
+                   ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"], False),
+                   (f"Lembur ({_jam(slip['overtime_hours'])} jam)", slip["overtime_pay"], False),
+                   ("Transport Homecare", slip.get("transport_homecare", 0), False),
+                   ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus Tambahan", slip["additional_bonus"], False),
+                   ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
+                   ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
+                   ("TOTAL PENERIMAAN", slip["gross_earnings"] + gapok_cut, True)])
+    ded = _shown([(f"Potongan Gaji Pokok ({alfa_izin})", gapok_cut, False),
+                  ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
+                  ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
+                  (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
+                    else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"], True),
+                  ("Kasbon / Potongan Lain", slip["other_deductions"], False),
+                  ("TOTAL POTONGAN", slip["total_deductions"] + gapok_cut, True)])
+    return earn, ded
+
+
+def render_payslip(slip: dict, period: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=12 * mm)
     ss = getSampleStyleSheet()
@@ -75,7 +102,7 @@ def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
     kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                              ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    els = [kop, Spacer(1, 6), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 6)]
+    els = [kop, Spacer(1, 20), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18)]
     # 5 kolom = garis tabel di bawahnya: kiri sejajar PENERIMAAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
     info = [["NIK:", emp["nik"], "", "Periode:", period["period_name"]],
             ["Nama:", emp["name"], "", "Status PTKP:", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
@@ -86,24 +113,7 @@ def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
                             ("FONTNAME", (3, 0), (3, -1), "Helvetica-Bold"), ("FONTNAME", (1, 1), (1, 1), "Helvetica-Bold"),
                             ("ALIGN", (4, 0), (4, -1), "RIGHT")]))
     els += [it, Spacer(1, 8)]
-    alfa_izin = f"{slip.get('absent_days', 0)} hari alfa/izin"
-    earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
-                   (f"Potongan Gaji Pokok ({alfa_izin})", -slip["absent_deduction_amount"], False),
-                   ("Tunjangan Jabatan", slip["position_allowance"], False),
-                   (f"Potongan Tunj. Jabatan ({alfa_izin})", -slip.get("position_deduction_amount", 0), False),
-                   ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"], False),
-                   (f"Lembur ({_jam(slip['overtime_hours'])} jam)", slip["overtime_pay"], False),
-                   ("Transport Homecare", slip.get("transport_homecare", 0), False),
-                   ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus Tambahan", slip["additional_bonus"], False),
-                   ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
-                   ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
-                   ("TOTAL PENERIMAAN", slip["gross_earnings"], True)])
-    ded = _shown([("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
-                  ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
-                  (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
-                    else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"], True),
-                  ("Kasbon / Potongan Lain", slip["other_deductions"], False),
-                  ("TOTAL POTONGAN", slip["total_deductions"], True)])
+    earn, ded = payslip_lines(slip)
     two = Table([[_col(earn, "PENERIMAAN"), _col(ded, "POTONGAN")]], colWidths=[90 * mm, 90 * mm])
     two.hAlign = "LEFT"
     # tanpa padding pembungkus: tepi tabel PENERIMAAN/POTONGAN tepat di 0, 90, 166 mm (garis acuan blok identitas & total)
@@ -123,15 +133,20 @@ def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
                                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                                ("TOPPADDING", (0, 0), (-1, 0), 7), ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
                                ("TOPPADDING", (0, 1), (-1, 1), 0), ("BOTTOMPADDING", (0, 1), (-1, 1), 7)]))
-    note = ParagraphStyle("n", parent=small, fontName="Helvetica-Oblique", textColor=colors.HexColor("#475569"))
+    note = ParagraphStyle("n", parent=small, textColor=colors.black)
     disclaimer = Table([[Paragraph("Apabila terdapat ketidaksesuaian pada rincian gaji ini, mohon segera menghubungi "
                                    "Divisi HRD untuk dilakukan pengecekan dan perbaikan.", note)]],
                        colWidths=[166 * mm])  # selebar kotak total
     disclaimer.hAlign = "LEFT"
-    disclaimer.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
-    els += [total, Spacer(1, 2), disclaimer, Spacer(1, 12)]
-    sign = Table([["", "Disetujui oleh,"], ["", ""], ["", cfg.get("PAYSLIP_SIGNATORY_NAME", "")],
-                  ["", cfg.get("PAYSLIP_SIGNATORY_TITLE", "")]], colWidths=[106 * mm, 60 * mm],
+    disclaimer.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FEE2E2")),
+                                    ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#DC2626")),
+                                    ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                                    ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    els += [total, Spacer(1, 6), disclaimer, Spacer(1, 12)]
+    # Penandatangan = Document Signer payroll di ROSY (disimpan di periode saat sinkron); kosong bila belum ada
+    signer = period.get("signer") or {}
+    sign = Table([["", "Disetujui oleh,"], ["", ""], ["", signer.get("nama") or ""],
+                  ["", signer.get("jabatan") or ""]], colWidths=[106 * mm, 60 * mm],
                  rowHeights=[5 * mm, 14 * mm, 5 * mm, 5 * mm])
     sign.hAlign = "LEFT"
     sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 0), (1, -1), "CENTER"),
@@ -153,8 +168,8 @@ def encrypt_pdf(pdf: bytes, password: str) -> bytes:
     return out.getvalue()
 
 
-def save_encrypted(slip: dict, period: dict, cfg: dict) -> str:
-    data = encrypt_pdf(render_payslip(slip, period, cfg), birth_password(slip["employee"]["birth_date"]))
+def save_encrypted(slip: dict, period: dict) -> str:
+    data = encrypt_pdf(render_payslip(slip, period), birth_password(slip["employee"]["birth_date"]))
     path = STORAGE / f"{slip['id']}.pdf"
     path.write_bytes(data)
     return str(path)
