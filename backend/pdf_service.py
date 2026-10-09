@@ -16,6 +16,7 @@ STORAGE = Path(__file__).parent / "storage" / "payslips"
 STORAGE.mkdir(parents=True, exist_ok=True)
 ASSETS = Path(__file__).parent / "assets"
 LOGO_H = 14 * mm  # same height as the e-recruitment offering letter header
+LINE = 12  # one blank line (pt) at the slip's body text size
 NAVY = colors.HexColor("#0F172A")
 
 
@@ -145,7 +146,8 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                              ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    els = [kop, Spacer(1, 20), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18)]
+    # jarak lega (A4 masih luas): +3 baris di bawah logo dan di bawah judul (permintaan 9 Okt)
+    els = [kop, Spacer(1, 20 + 3 * LINE), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18 + 3 * LINE)]
     # 5 kolom = garis tabel di bawahnya: kiri sejajar PENDAPATAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
     info = [["NIK:", emp["nik"], "", "Periode:", period["period_name"]],
             ["Nama:", emp["name"], "", "Status PTKP:", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
