@@ -6,6 +6,7 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
@@ -25,7 +26,7 @@ def birth_password(birth_date: str) -> str:
 
 def _col(rows, title):
     data = [[title, ""]] + [[k, rp(v)] for k, v in rows]
-    t = Table(data, colWidths=[52 * mm, 34 * mm])
+    t = Table(data, colWidths=[46 * mm, 30 * mm])
     t.setStyle(TableStyle([
         ("SPAN", (0, 0), (1, 0)), ("BACKGROUND", (0, 0), (-1, 0), NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -43,16 +44,20 @@ def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
     small = ParagraphStyle("s", parent=ss["Normal"], fontSize=8, leading=10)
     emp = slip["employee"]
     head = ParagraphStyle("co", parent=ss["Normal"], fontSize=9, leading=11, textColor=NAVY)
+    title = ParagraphStyle("t", parent=ss["Title"], fontSize=ss["Title"].fontSize * 0.7,
+                           leading=ss["Title"].leading * 0.7)
     els = [Paragraph(f"<b>{cfg.get('COMPANY_NAME', '')}</b><br/>{cfg.get('COMPANY_ADDRESS', '')}", head),
-           Spacer(1, 4), Paragraph("<b>SLIP GAJI KARYAWAN</b>", ss["Title"]),
-           Paragraph(f"Periode: <b>{period['period_name']}</b> ({period['start_date']} s/d {period['end_date']}) "
-                     f"— Tanggal Bayar: {period.get('payment_date') or '-'}", small), Spacer(1, 6)]
-    info = [["NIK", emp["nik"], "Status PTKP Efektif", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
-            ["Nama", emp["name"], "Bank", emp.get("bank_name") or "-"],
-            ["Departemen", emp.get("department") or "-", "No. Rekening", emp.get("bank_account_number") or "-"]]
-    it = Table(info, colWidths=[25 * mm, 55 * mm, 35 * mm, 55 * mm])
+           Spacer(1, 4), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 6)]
+    rekening = " ".join(v for v in (emp.get("bank_name"), emp.get("bank_account_number")) if v) or "-"
+    # 5 kolom = garis tabel di bawahnya: kiri sejajar PENERIMAAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
+    info = [["NIK", emp["nik"], "", "Periode", period["period_name"]],
+            ["Nama", emp["name"], "", "Status PTKP Efektif", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
+            ["Departemen", emp.get("department") or "-", "", "Rekening", rekening]]
+    it = Table(info, colWidths=[25 * mm, 51 * mm, 14 * mm, 33 * mm, 43 * mm])
+    it.hAlign = "LEFT"
     it.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                            ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold")]))
+                            ("FONTNAME", (3, 0), (3, -1), "Helvetica-Bold"), ("FONTNAME", (1, 1), (1, 1), "Helvetica-Bold"),
+                            ("ALIGN", (4, 0), (4, -1), "RIGHT")]))
     els += [it, Spacer(1, 8)]
     earn = [("Gaji Pokok", slip["basic_salary"]), ("Potongan Mangkir", -slip["absent_deduction_amount"]),
             ("Tunjangan Jabatan", slip["position_allowance"]),
@@ -66,21 +71,31 @@ def render_payslip(slip: dict, period: dict, cfg: dict) -> bytes:
              else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"]),
            ("Kasbon / Potongan Lain", slip["other_deductions"]), ("TOTAL POTONGAN", slip["total_deductions"])]
     two = Table([[_col(earn, "PENERIMAAN"), _col(ded, "POTONGAN")]], colWidths=[90 * mm, 90 * mm])
-    two.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    two.hAlign = "LEFT"
+    # tanpa padding pembungkus: tepi tabel PENERIMAAN/POTONGAN tepat di 0, 90, 166 mm (garis acuan blok identitas & THP)
+    two.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                             ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
     els += [two, Spacer(1, 10)]
-    thp = Table([["TAKE HOME PAY", rp(slip["take_home_pay"])], [slip["terbilang"], ""]],
-                colWidths=[110 * mm, 70 * mm])
+    green = colors.HexColor("#047857")
+    words = ParagraphStyle("tb", parent=ss["Normal"], fontName="Helvetica-Oblique", fontSize=8, leading=10,
+                           textColor=green, alignment=TA_RIGHT)
+    # terbilang tepat DI BAWAH nominal, rata kanan dengan angkanya
+    thp = Table([["TAKE HOME PAY", rp(slip["take_home_pay"])], ["", Paragraph(slip["terbilang"], words)]],
+                colWidths=[70 * mm, 96 * mm])  # = tepi kanan tabel POTONGAN (90 + 76 mm)
     thp.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ECFDF5")),
-                             ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#047857")),
-                             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 13),
-                             ("FONTSIZE", (0, 1), (-1, 1), 8), ("SPAN", (0, 1), (1, 1)),
-                             ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
-    d = slip["discipline"]
-    els += [thp, Spacer(1, 8), Paragraph(
-        f"Denda disiplin: Rule1 {d['rule1_points']} + Rule2 {d['rule2_points']} + Rule3 {d['rule3_points']} + "
-        f"Rule4 {d['rule4_points']} = {d['total_points']} poin; hari potong kehadiran {slip['late_penalty_days']}/25; "
-        f"potongan {rp(slip['late_penalty_amount'])}, kompensasi {rp(slip['late_penalty_compensation'])}.", small),
-        Spacer(1, 14)]
+                             ("TEXTCOLOR", (0, 0), (-1, -1), green), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 13 * 0.8),
+                             ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                             ("TOPPADDING", (0, 0), (-1, 0), 7), ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
+                             ("TOPPADDING", (0, 1), (-1, 1), 0), ("BOTTOMPADDING", (0, 1), (-1, 1), 7)]))
+    thp.hAlign = "LEFT"
+    thp.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ECFDF5")),
+                             ("TEXTCOLOR", (0, 0), (-1, -1), green), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                             ("FONTNAME", (0, 0), (0, 0), "Helvetica-Bold"), ("FONTNAME", (2, 0), (2, 0), "Helvetica-Bold"),
+                             ("FONTSIZE", (0, 0), (0, 0), 13 * 0.8), ("FONTSIZE", (2, 0), (2, 0), 13 * 0.8),
+                             ("ALIGN", (2, 0), (2, 0), "RIGHT"),
+                             ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    els += [thp, Spacer(1, 18)]
     sign = Table([["", "Disetujui oleh,"], ["", ""], ["", cfg.get("PAYSLIP_SIGNATORY_NAME", "")],
                   ["", cfg.get("PAYSLIP_SIGNATORY_TITLE", "")]], colWidths=[120 * mm, 60 * mm],
                  rowHeights=[5 * mm, 14 * mm, 5 * mm, 5 * mm])
