@@ -7,7 +7,9 @@ import { rp, SLIP_STATUS, PAYROLL_STATUS_LABELS, LEAVE_LABELS } from "@/lib/form
 import { Panel, StatusBadge, Btn } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 
-const ADJ = ["overtime_hours", "kpi_incentive", "additional_bonus", "late_penalty_compensation", "other_deductions"];
+const ADJ = ["overtime_hours", "kpi_incentive", "additional_bonus", "other_deductions"];
+// PPT: jenis ketidakhadiran yang ikut memotong gaji pokok & tunjangan jabatan (selain tunjangan kehadiran)
+const FULL_CUT = ["alpha", "permission_leave", "approved_unpaid_leave"];
 
 const Row = ({ label, value, hint, tone = "", testId }) => (
   <div className="flex items-start justify-between gap-4 py-2 border-b border-dashed border-slate-200 last:border-0">
@@ -19,7 +21,10 @@ const Row = ({ label, value, hint, tone = "", testId }) => (
   </div>
 );
 
-const Edit = ({ label, hint, value, onChange, disabled, testId, suffix }) => (
+// Saat slip/periode terkunci, isian tampil seperti baris biasa: tanpa label EDITABLE dan tanpa warna kuning
+const Edit = ({ label, hint, value, onChange, disabled, testId, suffix }) => disabled ? (
+  <Row label={label} hint={hint} value={rp(value)} testId={testId} />
+) : (
   <div className="flex items-center justify-between gap-4 py-2 border-b border-dashed border-slate-200">
     <div>
       <div className="text-sm text-slate-800 font-medium flex items-center gap-1.5">{label}<span className="text-[9px] font-bold tracking-wider text-amber-700 bg-amber-100 border border-amber-300 px-1 rounded">EDITABLE</span></div>
@@ -89,6 +94,8 @@ export default function Workbench() {
   const locked = payslip.status === "approved" || (!isManager && !(["draft", "revision"].includes(period.status)));
   const dc = calc.discipline || payslip.discipline;
   const bp = calc.bpjs || payslip.bpjs;
+  const wd = calc.work_days || 25;
+  const absence = Object.entries(dc.absence_by_type || {});
 
   return (
     <div className="pb-36" data-testid="workbench-page">
@@ -99,8 +106,8 @@ export default function Workbench() {
           <h1 className="text-2xl font-bold tracking-tight" data-testid="workbench-employee-name">{emp.name}</h1>
         </div>
         <Info k="Status Payroll" v={PAYROLL_STATUS_LABELS[emp.payroll_status]} />
-        <Info k="PTKP Efektif" v={`${calc.ptkp_status} · TER ${calc.ter_category}`} testId="workbench-ptkp" />
-        <Info k="Rekening" v={`${emp.bank_name} ${emp.bank_account_number || "-"}`} />
+        <Info k="Status PTKP" v={`${calc.ptkp_status} · TER ${calc.ter_category}`} testId="workbench-ptkp" />
+        <Info k="Rekening" v={`${(emp.bank_code || emp.bank_name || "").toUpperCase()} ${emp.bank_account_number || "-"}`} />
         <div className="ml-auto"><StatusBadge map={SLIP_STATUS} status={payslip.status} testId="workbench-slip-status" /></div>
       </div>
       {emp.gender === "P" && emp.marital_status === "K" && !emp.has_husband_certificate && (
@@ -113,13 +120,14 @@ export default function Workbench() {
         <Panel title="Penerimaan" right={<span className="num text-sm font-bold">{rp(calc.gross_earnings)}</span>}>
           <div className="px-5 py-2">
             <Row label="Gaji Pokok" hint={calc.wage_multiplier !== 1 ? `Pengali upah ${calc.wage_multiplier * 100}% dari ${rp(calc.basic_salary_contract)}` : null} value={rp(calc.basic_salary)} testId="earn-basic" />
-            {calc.absent_deduction_amount > 0 && <Row label="Potongan Mangkir / Tanpa Upah" hint={`${calc.absent_days} hari × 1/25 gaji pokok`} value={`- ${rp(calc.absent_deduction_amount)}`} tone="text-rose-600" testId="earn-absent-deduction" />}
+            {calc.absent_deduction_amount > 0 && <Row label="Potongan Gaji Pokok (alfa/izin)" hint={`${calc.absent_days} hari × 1/${wd} gaji pokok`} value={`- ${rp(calc.absent_deduction_amount)}`} tone="text-rose-600" testId="earn-absent-deduction" />}
             <Row label="Tunjangan Jabatan" value={rp(calc.position_allowance)} testId="earn-position" />
+            {calc.position_deduction_amount > 0 && <Row label="Potongan Tunj. Jabatan (alfa/izin)" hint={`${calc.absent_days} hari × 1/${wd} tunjangan jabatan`} value={`- ${rp(calc.position_deduction_amount)}`} tone="text-rose-600" testId="earn-position-deduction" />}
             <Row label="Tunjangan Kehadiran Bulanan" value={rp(calc.attendance_allowance_base)} />
-            <Row label="Potongan Denda Kehadiran" hint={`${calc.late_penalty_days} hari / 25 (poin disiplin ${calc.late_penalty_points} + hari absen ${dc.attendance_cut_days})`} value={`- ${rp(calc.late_penalty_amount)}`} tone="text-rose-600" testId="earn-late-penalty" />
-            <Edit label="Kompensasi Denda Keterlambatan" hint="Mengembalikan sebagian/seluruh denda (Rp)" value={adj.late_penalty_compensation} onChange={set("late_penalty_compensation")} disabled={locked} testId="input-penalty-compensation" />
+            <Row label="Potongan Tunjangan Kehadiran" hint={`${calc.late_penalty_days} hari / ${wd} (Poin Presensi ${calc.late_penalty_points} + Poin Absensi ${calc.absence_points ?? dc.attendance_cut_days})`} value={`- ${rp(calc.late_penalty_amount)}`} tone="text-rose-600" testId="earn-late-penalty" />
             <Row label="Tunjangan Kehadiran Bersih" value={rp(calc.attendance_allowance)} tone="font-semibold" testId="earn-attendance-net" />
             <Row label={`Lembur (${calc.overtime_hours} jam dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />
+            <Row label="Transport Homecare" hint="Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)" value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
             <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />
             <Edit label="Bonus Tambahan" value={adj.additional_bonus} onChange={set("additional_bonus")} disabled={locked} testId="input-additional-bonus" />
             <Row label="Tunjangan BPJS Kesehatan (4%)" hint={`Basis ${rp(bp.kes_base)} (max gaji pokok, UMK Bekasi)`} value={rp(calc.tunjangan_bpjs_kes)} testId="earn-bpjs-kes" />
@@ -141,13 +149,21 @@ export default function Workbench() {
             </div>
           </Panel>
           {calc.tax_reconciliation && <Recon r={calc.tax_reconciliation} ptkp={calc.ptkp_status} />}
-          <Panel title="Waterfall Denda Disiplin">
+          <Panel title="Poin Presensi (Rule 1–4)">
             <div className="grid grid-cols-4 divide-x divide-slate-200 text-center" data-testid="waterfall-summary">
               {[["Rule 1", dc.rule1_points, "Lupa tap"], ["Rule 2", dc.rule2_points, "≥ 60 m"], ["Rule 3", dc.rule3_points, `${dc.rule3_events} × 15–59 m`], ["Rule 4", dc.rule4_points, `${dc.rule4_minutes} m akumulasi`]].map(([k, v, h]) => (
                 <div key={k} className="py-4"><div className="text-[11px] uppercase tracking-wider text-slate-500">{k}</div><div className="num text-2xl font-bold text-rose-600" data-testid={`waterfall-${k.replace(" ", "").toLowerCase()}`}>{v}</div><div className="text-[11px] text-slate-400">{h}</div></div>
               ))}
             </div>
             <div className="px-5 py-3 border-t border-slate-200 text-xs text-slate-600">Total <b className="num" data-testid="waterfall-total">{dc.total_points} poin</b>{dc.rule3_carried_minutes?.length ? ` · sisa Rule 3 diteruskan: ${dc.rule3_carried_minutes.join(", ")} m` : ""} · menit hangus {dc.rule4_forfeited_minutes} m</div>
+          </Panel>
+          <Panel title="Poin Absensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="absence-total">{calc.absence_points ?? dc.attendance_cut_days} hari</span>}>
+            <div className="px-5 py-2" data-testid="absence-breakdown">
+              {absence.map(([lt, n]) => (
+                <Row key={lt} label={LEAVE_LABELS[lt] || lt} hint={FULL_CUT.includes(lt) ? "Memotong gaji pokok, Tj. Jabatan & Tj. Kehadiran" : "Memotong Tj. Kehadiran"} value={`${n} hari`} />
+              ))}
+              {!absence.length && <div className="py-2 text-sm text-slate-500">Tidak ada ketidakhadiran yang memotong gaji.</div>}
+            </div>
           </Panel>
           <Panel title={`Log Presensi (${attendance.length})`}>
             <div className="max-h-56 overflow-y-auto text-xs">
@@ -167,7 +183,7 @@ export default function Workbench() {
       <div className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-t-2 border-emerald-500 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center gap-3">
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Take Home Pay · Bruto {rp(calc.gross_earnings)} − Potongan {rp(calc.total_deductions)}</div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500">Total Diterima · Penerimaan {rp(calc.gross_earnings)} − Potongan {rp(calc.total_deductions)}</div>
             <div className="num text-2xl font-black text-emerald-600" data-testid="sticky-thp">{rp(calc.take_home_pay)}</div>
             <div className="text-xs italic text-slate-500 truncate" data-testid="sticky-terbilang">{calc.terbilang}</div>
           </div>

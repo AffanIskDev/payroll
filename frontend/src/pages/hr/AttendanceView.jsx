@@ -4,7 +4,6 @@ import { api } from "@/lib/api";
 import { LEAVE_LABELS } from "@/lib/format";
 import { PageTitle, Panel } from "@/components/common";
 import { EmployeeSearch } from "@/components/EmployeeSearch";
-import { IntegrationBadge } from "@/components/IntegrationBadge";
 
 const inp = "border border-slate-300 rounded-md px-2.5 py-1.5 text-sm bg-white w-40";
 const Evidence = ({ photo, loc, tid }) => (
@@ -28,8 +27,7 @@ export default function AttendanceView() {
 
   return (
     <div>
-      <PageTitle title="Log Presensi Harian" subtitle="Hanya-lihat. Sumber: RUMATKU — diambil lewat tombol 'Ambil Data Absensi' di periode payroll">
-        <IntegrationBadge system="rumatku" />
+      <PageTitle title="Log Presensi Harian" subtitle="Hanya-lihat. Sumber: RUMATKU lewat ROSY — diperbarui dengan tombol 'Sinkron dari ROSY' di periode payroll">
         <EmployeeSearch employees={emps} value={eid} onChange={setEid} />
         <input data-testid="attendance-start-input" type="date" value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} className={inp} />
         <input data-testid="attendance-end-input" type="date" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} className={inp} />

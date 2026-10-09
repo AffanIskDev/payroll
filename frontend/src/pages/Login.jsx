@@ -1,36 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Building2, Lock, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth, isHr } from "@/context/AuthContext";
-import { api, errMsg } from "@/lib/api";
-
-const TESTERS = [
-  ["hrd", "Manager HRD", "Review, tolak & approve"],
-  ["staff", "Staff HR", "Proses & ajukan payroll"],
-  ["budi", "Budi (EMP-001)", "Karyawan · sandi PDF 150895"],
-  ["siti", "Siti (EMP-002)", "Karyawati · sandi PDF 220498"],
-  ["dimas", "Dimas (EMP-003)", "Unpaid leave · sandi PDF 100192"],
-];
+import { useAuth } from "@/context/AuthContext";
+import { errMsg } from "@/lib/api";
 
 export default function Login() {
-  const { login, demoLogin } = useAuth();
-  const [demo, setDemo] = useState(false);
-  useEffect(() => { api.get("/auth/demo-enabled").then((r) => setDemo(r.data.enabled)).catch(() => {}); }, []);
-
-  const tester = async (acc) => {
-    setBusy(true);
-    try {
-      const u = await demoLogin(acc);
-      nav(isHr(u) ? "/hr-manager" : "/me");
-    } catch (err) {
-      toast.error(errMsg(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { login } = useAuth();
   const nav = useNavigate();
-  const [identifier, setIdentifier] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -38,8 +16,8 @@ export default function Login() {
     e.preventDefault();
     setBusy(true);
     try {
-      const u = await login(identifier, password);
-      nav(isHr(u) ? "/hr-manager" : "/me");
+      await login(username, password);
+      nav("/hr-manager");
     } catch (err) {
       toast.error(errMsg(err));
     } finally {
@@ -76,34 +54,20 @@ export default function Login() {
         <form onSubmit={submit} className="w-full max-w-sm space-y-5 fade-up" data-testid="login-form">
           <div>
             <h2 className="text-2xl font-bold tracking-tight">Masuk</h2>
-            <p className="text-sm text-slate-500 mt-1">Portal Manager HRD (ROSY) & Karyawan (Rumatku)</p>
+            <p className="text-sm text-slate-500 mt-1">Khusus Manager HRD & Supervisor HRD. Gunakan akun ROSY Anda.</p>
           </div>
           <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Email atau NIK</span>
-            <input data-testid="login-identifier-input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" placeholder="hrd.manager@rumatku.id / EMP-001" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Username ROSY</span>
+            <input data-testid="login-username-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" autoFocus className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" placeholder="username ROSY" />
           </label>
           <label className="block space-y-1.5">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Password</span>
-            <input data-testid="login-password-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" />
+            <input data-testid="login-password-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" />
           </label>
           <button data-testid="login-submit-button" disabled={busy} className="w-full bg-blue-900 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-md flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
             <Lock className="h-4 w-4" /> {busy ? "Memproses..." : "Masuk"}
           </button>
-          <div className="flex items-center gap-2 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-600" /> Sesi terenkripsi, 5x gagal login = kunci 15 menit</div>
-          {demo && (
-            <div className="pt-4 border-t border-slate-200 space-y-2" data-testid="tester-login-section">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Masuk sebagai Tester</div>
-              <div className="grid grid-cols-2 gap-2">
-                {TESTERS.map(([k, label, hint]) => (
-                  <button type="button" key={k} disabled={busy} onClick={() => tester(k)} data-testid={`tester-login-${k}`}
-                    className={`text-left border rounded-md px-3 py-2 transition-colors disabled:opacity-60 ${["hrd", "staff"].includes(k) ? "border-blue-900 bg-blue-50 hover:bg-blue-100" : "border-teal-300 bg-teal-50 hover:bg-teal-100"}`}>
-                    <div className="text-sm font-semibold text-slate-800">{label}</div>
-                    <div className="text-[11px] text-slate-500">{hint}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-600" /> Password diperiksa langsung ke ROSY, tidak disimpan di RASA. 5x gagal = kunci 15 menit</div>
         </form>
       </div>
     </div>

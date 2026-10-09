@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthProvider, useAuth, isHr } from "@/context/AuthContext";
+import { AuthProvider, useAuth, isHr, isManager } from "@/context/AuthContext";
 import Login from "@/pages/Login";
 import HrLayout from "@/components/HrLayout";
 import Dashboard from "@/pages/hr/Dashboard";
@@ -11,23 +11,34 @@ import Employees from "@/pages/hr/EmployeesView";
 import Attendance from "@/pages/hr/AttendanceView";
 import Configs from "@/pages/hr/Configs";
 import { TaxPage, RecapPage } from "@/pages/hr/MergedPages";
-import EmployeeHome from "@/pages/employee/EmployeeHome";
-import PayslipDetail from "@/pages/employee/PayslipDetail";
 
-function Guard({ hr, children }) {
-  const { user } = useAuth();
+function Guard({ children }) {
+  const { user, logout } = useAuth();
   if (user === null) return <div className="p-10 text-sm text-slate-500" data-testid="auth-loading">Memuat...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (hr && !isHr(user)) return <Navigate to="/me" replace />;
-  if (!hr && isHr(user)) return <Navigate to="/hr-manager" replace />;
+  // jabatan di ROSY tidak lagi memenuhi syarat: sesi lama berhenti di sini
+  if (!isHr(user)) return (
+    <div className="min-h-screen grid place-items-center p-6 text-center" data-testid="no-access">
+      <div className="space-y-3">
+        <div className="text-lg font-semibold">Akun ROSY Anda tidak memiliki akses ke RASA</div>
+        <div className="text-sm text-slate-500">RASA khusus Manager HRD dan Supervisor HRD sesuai jabatan di ROSY.</div>
+        <button onClick={logout} className="text-sm font-semibold text-blue-900 underline">Keluar</button>
+      </div>
+    </div>
+  );
   return children;
+}
+
+// Pajak & Konfigurasi: khusus Manager HRD
+function ManagerOnly({ children }) {
+  const { user } = useAuth();
+  return isManager(user) ? children : <Navigate to="/hr-manager" replace />;
 }
 
 function Home() {
   const { user } = useAuth();
   if (user === null) return null;
-  if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={isHr(user) ? "/hr-manager" : "/me"} replace />;
+  return <Navigate to={user ? "/hr-manager" : "/login"} replace />;
 }
 
 export default function App() {
@@ -37,21 +48,19 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/hr-manager" element={<Guard hr><HrLayout /></Guard>}>
+          <Route path="/hr-manager" element={<Guard><HrLayout /></Guard>}>
             <Route index element={<Dashboard />} />
             <Route path="payroll" element={<Periods />} />
             <Route path="payroll/:pid" element={<PeriodDetail />} />
             <Route path="payroll/:pid/employee/:eid" element={<Workbench />} />
             <Route path="employees" element={<Employees />} />
             <Route path="attendance" element={<Attendance />} />
-            <Route path="config" element={<Configs />} />
-            <Route path="tax" element={<TaxPage />} />
+            <Route path="config" element={<ManagerOnly><Configs /></ManagerOnly>} />
+            <Route path="tax" element={<ManagerOnly><TaxPage /></ManagerOnly>} />
             <Route path="tax-forms" element={<Navigate to="/hr-manager/tax?tab=a1" replace />} />
             <Route path="recap" element={<RecapPage />} />
             <Route path="shift-recap" element={<Navigate to="/hr-manager/recap?tab=shift" replace />} />
           </Route>
-          <Route path="/me" element={<Guard><EmployeeHome /></Guard>} />
-          <Route path="/me/payslip/:sid" element={<Guard><PayslipDetail /></Guard>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

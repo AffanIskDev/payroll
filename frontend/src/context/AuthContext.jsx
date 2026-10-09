@@ -10,15 +10,9 @@ export function AuthProvider({ children }) {
     api.get("/auth/me").then((r) => setUser(r.data)).catch(() => setUser(false));
   }, []);
 
-  const login = async (identifier, password) => {
-    const { data } = await api.post("/auth/login", { identifier, password });
-    localStorage.setItem("payroll_token", data.token);
-    setUser(data.user);
-    return data.user;
-  };
-
-  const demoLogin = async (account) => {
-    const { data } = await api.post("/auth/demo-login", { account });
+  // username & password ROSY, diverifikasi HAM; peran mengikuti jabatan di ROSY
+  const login = async (username, password) => {
+    const { data } = await api.post("/auth/login", { username, password });
     localStorage.setItem("payroll_token", data.token);
     setUser(data.user);
     return data.user;
@@ -30,8 +24,10 @@ export function AuthProvider({ children }) {
     setUser(false);
   };
 
-  return <AuthCtx.Provider value={{ user, login, demoLogin, logout }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, login, logout }}>{children}</AuthCtx.Provider>;
 }
 
 export const useAuth = () => useContext(AuthCtx);
-export const isHr = (u) => u && ["manager_hrd", "admin_payroll"].includes(u.role);
+export const ROLE_LABELS = { manager_hrd: "Manager HRD", supervisor: "Supervisor HRD" };
+export const isHr = (u) => !!u && ["manager_hrd", "supervisor"].includes(u.role);
+export const isManager = (u) => !!u && u.role === "manager_hrd";

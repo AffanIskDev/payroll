@@ -4,15 +4,23 @@ export const LEAVE_LABELS = {
   present: "Hadir",
   sick_with_certificate: "Sakit (SKD)",
   annual_leave: "Cuti Tahunan",
-  statutory_leave: "Izin Normatif",
+  statutory_leave: "Cuti Khusus",
   maternity_leave: "Cuti Melahirkan",
+  religious_leave: "Cuti Ibadah",
   menstrual_leave: "Cuti Haid",
   approved_unpaid_leave: "Izin Tanpa Upah",
   permission_leave: "Izin",
   official_duty: "Dinas Luar",
+  dispensation: "Dispensasi",
   day_off: "Libur",
   alpha: "Mangkir (Alpha)",
 };
+
+// Nama periode otomatis bila mulai & selesai di bulan yang sama (aturan yang sama dengan backend periods.py)
+const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober",
+  "November", "Desember"];
+export const periodNameFor = (start, end) =>
+  start && end && start.slice(0, 7) === end.slice(0, 7) ? `${BULAN[Number(start.slice(5, 7)) - 1]} ${start.slice(0, 4)}` : null;
 
 // data_issues from HAM's payroll feed (PayrollFeedRules::masalahData)
 export const DATA_ISSUE_LABELS = {

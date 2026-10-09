@@ -52,7 +52,7 @@ export default function Dashboard() {
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         <Stat icon={Users} label="Karyawan" value={d.employees} testId="stat-employees" />
-        <Stat icon={Wallet} label="Total THP" value={rp(d.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />
+        <Stat icon={Wallet} label="Total Diterima" value={rp(d.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />
         <Stat icon={Receipt} label="Total PPh 21" value={rp(d.total_pph21)} testId="stat-total-pph21" />
         <Stat icon={Clock} label="Menunggu Review" value={`${d.pending ?? 0} slip`} tone="text-amber-600" testId="stat-pending" />
         <Stat icon={HeartPulse} label="Setoran BPJS Kesehatan" value={rp(d.total_bpjs_kes)} testId="stat-total-bpjs-kes" />

@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { rp, PAYROLL_STATUS_LABELS, DATA_ISSUE_LABELS } from "@/lib/format";
 import { PageTitle, Panel, Btn } from "@/components/common";
-import { IntegrationBadge } from "@/components/IntegrationBadge";
 
 const COLS = ["NIK", "Nama", "Dept", "L/P", "PTKP", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rate Lembur/Jam", "BPJS", "Rekening", "Sinkron"];
 const BPJS_LABELS = { kes: "Kes", jkk: "JKK", jkm: "JKM", jht: "JHT", jp: "JP" };
@@ -41,7 +40,6 @@ export default function EmployeesView() {
   return (
     <div>
       <PageTitle title="Data Karyawan & Gaji" subtitle="Hanya-lihat. Sumber data: ROSY (HAM) — sinkron lewat tombol, dan otomatis saat membuat periode payroll baru">
-        <IntegrationBadge system="rosy" />
         <Btn variant="outline" data-testid="sync-employees-button" disabled={busy} onClick={sync}><RefreshCw className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} /> {busy ? "Menyinkron..." : "Sinkron dari ROSY"}</Btn>
         <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 bg-white w-64">
           <Search className="h-4 w-4 text-slate-400" />
