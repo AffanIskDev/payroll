@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronLeft, Save, LockKeyhole, FileText, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronDown, Save, LockKeyhole, FileText, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, downloadBlob } from "@/lib/api";
 import { rp, SLIP_STATUS, PAYROLL_STATUS_LABELS, LEAVE_LABELS } from "@/lib/format";
@@ -44,6 +44,8 @@ export default function Workbench() {
   const [notes, setNotes] = useState("");
   const [calc, setCalc] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Log presensi dilipat secara bawaan supaya halaman review tidak terlalu panjang (permintaan user 10 Okt 2026)
+  const [logOpen, setLogOpen] = useState(false);
   const first = useRef(true);
   const { user } = useAuth();
   const isManager = user?.role === "manager_hrd";
@@ -161,21 +163,26 @@ export default function Workbench() {
             </div>
           </Panel>
           {calc.tax_reconciliation && <Recon r={calc.tax_reconciliation} ptkp={calc.ptkp_status} />}
-          <Panel title="Poin Presensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="presence-total">{calc.late_penalty_points} poin</span>}>
-            <div className="grid grid-cols-4 divide-x divide-slate-200 text-center" data-testid="waterfall-summary">
-              {[["Rule 1", dc.rule1_points, "Lupa tap"], ["Rule 2", dc.rule2_points, "≥ 60 m"], ["Rule 3", dc.rule3_points, `${dc.rule3_events} × 15–59 m`], ["Rule 4", dc.rule4_points, `${dc.rule4_minutes} m akumulasi`]].map(([k, v, h]) => (
-                <div key={k} className="py-4"><div className="text-[11px] uppercase tracking-wider text-slate-500">{k}</div><div className="num text-2xl font-bold text-rose-600" data-testid={`waterfall-${k.replace(" ", "").toLowerCase()}`}>{v}</div><div className="text-[11px] text-slate-400">{h}</div></div>
+          <textarea data-testid="adjustment-notes-input" disabled={locked} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Catatan penyesuaian manajerial..." className="w-full border border-slate-300 rounded-md p-3 text-sm min-h-[70px]" />
+        </div>
+      </div>
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <Panel title="Poin Presensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="presence-total">{calc.late_penalty_points} poin</span>}>
+          <div className="grid grid-cols-4 divide-x divide-slate-200 text-center" data-testid="waterfall-summary">
+            {[["Rule 1", dc.rule1_points, "Lupa tap"], ["Rule 2", dc.rule2_points, "≥ 60 m"], ["Rule 3", dc.rule3_points, `${dc.rule3_events} × 15–59 m`], ["Rule 4", dc.rule4_points, `${dc.rule4_minutes} m akumulasi`]].map(([k, v, h]) => (
+              <div key={k} className="py-4"><div className="text-[11px] uppercase tracking-wider text-slate-500">{k}</div><div className="num text-2xl font-bold text-rose-600" data-testid={`waterfall-${k.replace(" ", "").toLowerCase()}`}>{v}</div><div className="text-[11px] text-slate-400">{h}</div></div>
+            ))}
+          </div>
+          <div className="px-5 py-3 border-t border-slate-200 text-xs text-slate-600">Keterlambatan (Rule 1–4) <b className="num" data-testid="waterfall-total">{dc.total_points} poin</b>{dc.rule3_carried_minutes?.length ? ` · sisa Rule 3 diteruskan: ${dc.rule3_carried_minutes.join(", ")} m` : ""} · menit hangus {dc.rule4_forfeited_minutes} m</div>
+          {presenceLeave.length > 0 && (
+            <div className="px-5 py-2 border-t border-slate-200" data-testid="presence-leave-breakdown">
+              {presenceLeave.map(([lt, n]) => (
+                <Row key={lt} label={LEAVE_LABELS[lt] || lt} hint="1 poin per hari · memotong Tj. Kehadiran saja" value={`${n} poin`} />
               ))}
             </div>
-            <div className="px-5 py-3 border-t border-slate-200 text-xs text-slate-600">Keterlambatan (Rule 1–4) <b className="num" data-testid="waterfall-total">{dc.total_points} poin</b>{dc.rule3_carried_minutes?.length ? ` · sisa Rule 3 diteruskan: ${dc.rule3_carried_minutes.join(", ")} m` : ""} · menit hangus {dc.rule4_forfeited_minutes} m</div>
-            {presenceLeave.length > 0 && (
-              <div className="px-5 py-2 border-t border-slate-200" data-testid="presence-leave-breakdown">
-                {presenceLeave.map(([lt, n]) => (
-                  <Row key={lt} label={LEAVE_LABELS[lt] || lt} hint="1 poin per hari · memotong Tj. Kehadiran saja" value={`${n} poin`} />
-                ))}
-              </div>
-            )}
-          </Panel>
+          )}
+        </Panel>
+        <div className="space-y-6">
           <Panel title="Poin Absensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="absence-total">{calc.absence_points ?? dc.basic_cut_days ?? 0} hari</span>}>
             <div className="px-5 py-2" data-testid="absence-breakdown">
               {absence.map(([lt, n]) => (
@@ -184,19 +191,24 @@ export default function Workbench() {
               {!absence.length && <div className="py-2 text-sm text-slate-500">Tidak ada alfa/mangkir atau izin.</div>}
             </div>
           </Panel>
-          <Panel title={`Log Presensi (${attendance.length})`}>
-            <div className="max-h-56 overflow-y-auto text-xs">
-              {attendance.map((a) => (
-                <div key={a.id} className="flex justify-between px-5 py-1.5 border-b border-slate-100 num">
-                  <span>{a.work_date}</span><span className="text-slate-500">{LEAVE_LABELS[a.leave_type]}</span>
-                  <span className={a.minutes_late ? "text-rose-600" : ""}>telat {a.minutes_late || 0}m</span>
-                  <span className={a.minutes_early_leave ? "text-rose-600" : ""}>cepat {a.minutes_early_leave || 0}m</span>
-                </div>
-              ))}
-              {!attendance.length && <div className="px-5 py-4 text-slate-500">Tidak ada log (dianggap hadir penuh).</div>}
-            </div>
-          </Panel>
-          <textarea data-testid="adjustment-notes-input" disabled={locked} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Catatan penyesuaian manajerial..." className="w-full border border-slate-300 rounded-md p-3 text-sm min-h-[70px]" />
+          <section className="bg-white border border-slate-200 rounded-lg shadow-sm" data-testid="attendance-log">
+            <button type="button" onClick={() => setLogOpen(!logOpen)} aria-expanded={logOpen} data-testid="attendance-log-toggle" className={`w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-50 ${logOpen ? "rounded-t-lg border-b border-slate-200" : "rounded-lg"}`}>
+              <span className="text-sm font-semibold text-slate-800 uppercase tracking-wider">Log Presensi ({attendance.length})</span>
+              <span className="flex items-center gap-1 text-xs text-slate-500">{logOpen ? "Sembunyikan" : "Tampilkan"}<ChevronDown className={`h-4 w-4 transition-transform ${logOpen ? "rotate-180" : ""}`} /></span>
+            </button>
+            {logOpen && (
+              <div className="max-h-56 overflow-y-auto text-xs">
+                {attendance.map((a) => (
+                  <div key={a.id} className="flex justify-between px-5 py-1.5 border-b border-slate-100 num">
+                    <span>{a.work_date}</span><span className="text-slate-500">{LEAVE_LABELS[a.leave_type]}</span>
+                    <span className={a.minutes_late ? "text-rose-600" : ""}>telat {a.minutes_late || 0}m</span>
+                    <span className={a.minutes_early_leave ? "text-rose-600" : ""}>cepat {a.minutes_early_leave || 0}m</span>
+                  </div>
+                ))}
+                {!attendance.length && <div className="px-5 py-4 text-slate-500">Tidak ada log (dianggap hadir penuh).</div>}
+              </div>
+            )}
+          </section>
         </div>
       </div>
       <div className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-t-2 border-emerald-500 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
