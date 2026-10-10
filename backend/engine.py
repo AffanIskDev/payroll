@@ -64,16 +64,22 @@ def ter_rate(category: str, gross: float) -> float:
 
 
 def calc_discipline(logs: list) -> dict:
-    """Poin Presensi (waterfall non-duplikasi Rule 1-4) + Poin Absensi (hari tidak hadir pemotong, PPT)."""
+    """Poin Presensi = keterlambatan (waterfall non-duplikasi Rule 1-4) + hari tidak hadir yang hanya memotong
+    tunjangan kehadiran (sakit, cuti, ...). Poin Absensi = hari tidak hadir yang juga memotong gaji pokok
+    (alfa/mangkir, izin, cuti tanpa upah). Pembagian per permintaan user 9 Okt 2026; jumlah keduanya (dan
+    potongannya) sama dengan sebelumnya."""
     r1 = r2 = small_minutes = att_days = basic_days = 0
-    mid, by_type = [], {}
+    mid, absence_by_type, presence_by_type = [], {}, {}
     for log in sorted(logs, key=lambda x: x["work_date"]):
         lt = log.get("leave_type", "present")
-        if lt in ATT_CUT_LEAVES or lt in FULL_CUT_LEAVES:
+        if lt in FULL_CUT_LEAVES:
             att_days += 1
-            by_type[lt] = by_type.get(lt, 0) + 1
-            if lt in FULL_CUT_LEAVES:
-                basic_days += 1
+            basic_days += 1
+            absence_by_type[lt] = absence_by_type.get(lt, 0) + 1
+            continue
+        if lt in ATT_CUT_LEAVES:
+            att_days += 1
+            presence_by_type[lt] = presence_by_type.get(lt, 0) + 1
             continue
         if lt != "present":
             continue
@@ -98,12 +104,15 @@ def calc_discipline(logs: list) -> dict:
     carried = mid[len(mid) - rem:] if rem else []
     r4_minutes = small_minutes + sum(carried)
     r4 = r4_minutes // 60
+    late = r1 + r2 + r3 + r4
     return {
         "rule1_points": r1, "rule2_points": r2, "rule3_points": r3, "rule3_events": len(mid),
         "rule3_carried_minutes": carried, "rule4_minutes": r4_minutes, "rule4_points": r4,
         "rule4_forfeited_minutes": r4_minutes % 60, "small_minutes": small_minutes,
-        "total_points": r1 + r2 + r3 + r4, "attendance_cut_days": att_days, "basic_cut_days": basic_days,
-        "absence_points": att_days, "absence_by_type": by_type,
+        "total_points": late, "attendance_cut_days": att_days, "basic_cut_days": basic_days,
+        "presence_leave_days": att_days - basic_days, "presence_by_type": presence_by_type,
+        "presence_points": late + att_days - basic_days,
+        "absence_points": basic_days, "absence_by_type": absence_by_type,
     }
 
 
@@ -214,10 +223,10 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     position_paid = 0 if status == "prolonged_illness" else round(float(emp.get("position_allowance") or 0) * mult)
     if status == "active":
         # Poin Presensi + Poin Absensi each cost 1/wd of the attendance allowance
-        penalty_days = min(disc["total_points"] + disc["absence_points"], wd)
+        penalty_days = min(disc["presence_points"] + disc["absence_points"], wd)
         penalty_amount = round(penalty_days / wd * att)
-        # split for the slip (Potongan Absensi / Potongan Presensi); absence days first, presensi takes the rest,
-        # so the two always add up to penalty_amount even when the month is capped
+        # split for the slip (Potongan Absensi = alfa/izin days / Potongan Presensi = lateness + sakit/cuti days);
+        # absence days first, presensi takes the rest, so the two always add up to penalty_amount even when capped
         absence_penalty = min(round(min(disc["absence_points"], wd) / wd * att), penalty_amount)
         presence_penalty = penalty_amount - absence_penalty
         # alfa/izin days cost gapok and jabatan too, capped at 100% (a month of alfa must not yield negative pay)
@@ -267,7 +276,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "kpi_incentive": kpi, "additional_bonus": bonus,
         "tunjangan_bpjs_kes": tunj_kes, "tunjangan_bpjs_tk": tunj_tk,
         "gross_earnings": gross, "taxable_gross": taxable,
-        "late_penalty_points": disc["total_points"], "late_penalty_days": penalty_days,
+        # late_penalty_points = Poin Presensi as shown (lateness + sakit/cuti days); lateness alone = discipline.total_points
+        "late_penalty_points": disc["presence_points"], "late_penalty_days": penalty_days,
         "late_penalty_amount": penalty_amount, "absence_points": disc["absence_points"], "work_days": wd,
         "presence_penalty_amount": presence_penalty, "absence_penalty_amount": absence_penalty,
         "absent_days": disc["basic_cut_days"], "absent_deduction_amount": absent_deduction,

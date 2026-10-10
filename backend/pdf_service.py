@@ -58,7 +58,8 @@ def _shown(rows):
     return [(r[0], r[1], r[3] if len(r) > 3 else "") for r in rows if r[2] or round(r[1] or 0) != 0]
 
 
-# short names for the Potongan Absensi detail, in PPT order (alfa/izin also cost gaji pokok & tunjangan jabatan)
+# short names of absence days, in PPT order. alfa/izin/cuti tanpa upah (also cost gaji pokok & tunjangan jabatan)
+# are detailed under Potongan Absensi; the others only cut the attendance allowance and sit under Potongan Presensi
 ABSENCE_NAMES = {"alpha": "alfa", "permission_leave": "izin", "approved_unpaid_leave": "cuti tanpa upah",
                  "annual_leave": "cuti tahunan", "sick_with_certificate": "sakit", "statutory_leave": "cuti khusus",
                  "maternity_leave": "cuti melahirkan", "religious_leave": "cuti ibadah"}
@@ -78,9 +79,12 @@ PRESENCE_NAMES = (("rule1_points", "{}x lupa absen"), ("rule2_points", "{}x tela
 
 
 def _presence_detail(slip: dict) -> str:
+    """Poin Presensi: lateness (Rule 1-4) plus the days off that only cut the attendance allowance (sakit, cuti)."""
     d = slip.get("discipline") or {}
-    return (", ".join(fmt.format(d[k]) for k, fmt in PRESENCE_NAMES if d.get(k))
-            or f"{slip.get('late_penalty_points', 0)} poin")
+    late = [fmt.format(d[k]) for k, fmt in PRESENCE_NAMES if d.get(k)]
+    by_type = d.get("presence_by_type") or {}
+    days = [f"{by_type[t]} hari {name}" for t, name in ABSENCE_NAMES.items() if by_type.get(t)]
+    return ", ".join(late + days) or f"{slip.get('late_penalty_points', 0)} poin"
 
 
 def _logo(name: str, max_w: float) -> Image:
@@ -103,9 +107,10 @@ def _jam(h) -> str:
 
 def payslip_lines(slip: dict) -> tuple:
     """PENDAPATAN and POTONGAN rows as printed (user requests 9 Oct): allowances in full under PENDAPATAN; every
-    attendance-related cut under POTONGAN as just two lines — Potongan Presensi (lateness points) and Potongan
-    Absensi (absence days: the attendance-allowance cut plus, for alfa/izin, the gaji pokok and tunjangan jabatan
-    cuts of the PPT). Both totals carry the cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
+    attendance-related cut under POTONGAN as just two lines — Potongan Presensi (lateness points plus sakit/cuti
+    days, which only cut the attendance allowance) and Potongan Absensi (alfa/izin/cuti tanpa upah days: their
+    attendance-allowance cut plus the gaji pokok and tunjangan jabatan cuts of the PPT). Both totals carry the
+    cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
     split = "presence_penalty_amount" in slip  # slips calculated before 9 Oct only have the net allowance
     presensi = slip.get("presence_penalty_amount", 0)
     absensi = (slip.get("absence_penalty_amount", 0) + slip["absent_deduction_amount"]
@@ -117,7 +122,7 @@ def payslip_lines(slip: dict) -> tuple:
                    (*kehadiran, False),
                    (f"Lembur ({_jam(slip['overtime_hours'])} jam)", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
-                   ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus Tambahan", slip["additional_bonus"], False),
+                   ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus", slip["additional_bonus"], False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
                    ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
                    ("TOTAL PENDAPATAN", slip["gross_earnings"] + presensi + absensi, True)])
@@ -134,7 +139,9 @@ def payslip_lines(slip: dict) -> tuple:
 
 def render_payslip(slip: dict, period: dict) -> bytes:
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=12 * mm)
+    # margin 22 mm kiri-kanan: bidang tulis = lebar isi slip (166 mm), jadi isi di tengah halaman dan catatan
+    # CONFIDENTIAL tidak melebar melewati kotak-kotak di atasnya
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=22 * mm, rightMargin=22 * mm, topMargin=12 * mm)
     ss = getSampleStyleSheet()
     small = ParagraphStyle("s", parent=ss["Normal"], fontSize=8, leading=10)
     emp = slip["employee"]
@@ -146,8 +153,8 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                              ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    # jarak lega (A4 masih luas): +3 baris di bawah logo dan di bawah judul (permintaan 9 Okt)
-    els = [kop, Spacer(1, 20 + 3 * LINE), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18 + 3 * LINE)]
+    # jarak kop → judul → identitas: +1 baris di bawah logo (9 Okt pagi sempat +3 baris, dinilai terlalu jauh)
+    els = [kop, Spacer(1, 20 + LINE), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18)]
     # 5 kolom = garis tabel di bawahnya: kiri sejajar PENDAPATAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
     info = [["NIK:", emp["nik"], "", "Periode:", period["period_name"]],
             ["Nama:", emp["name"], "", "Status PTKP:", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
@@ -179,8 +186,11 @@ def render_payslip(slip: dict, period: dict) -> bytes:
                                ("TOPPADDING", (0, 0), (-1, 0), 7), ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
                                ("TOPPADDING", (0, 1), (-1, 1), 0), ("BOTTOMPADDING", (0, 1), (-1, 1), 7)]))
     note = ParagraphStyle("n", parent=small, textColor=colors.black)
-    disclaimer = Table([[Paragraph("Apabila terdapat ketidaksesuaian pada rincian gaji ini, mohon segera menghubungi "
-                                   "Divisi HRD untuk dilakukan pengecekan dan perbaikan.", note)]],
+    # teks disclaimer dari user 9 Okt 2026
+    disclaimer = Table([[Paragraph("<b>Catatan:</b> Slip gaji ini dibuat berdasarkan data yang tersedia pada saat proses "
+                                   "payroll dilakukan. Apabila di kemudian hari ditemukan adanya kesalahan perhitungan, "
+                                   "perusahaan berhak melakukan koreksi dan penyesuaian sesuai ketentuan yang berlaku.",
+                                   note)]],
                        colWidths=[166 * mm])  # selebar kotak total
     disclaimer.hAlign = "LEFT"
     disclaimer.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FEE2E2")),
@@ -192,13 +202,15 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     signer = period.get("signer") or {}
     sign = Table([["", "Disetujui oleh,"], ["", ""], ["", signer.get("nama") or ""],
                   ["", signer.get("jabatan") or ""]], colWidths=[106 * mm, 60 * mm],
-                 rowHeights=[5 * mm, 14 * mm, 5 * mm, 5 * mm])
+                 rowHeights=[5 * mm, 14 * mm, 5 * mm, 7 * mm])  # baris jabatan 7 mm: ada jarak di bawah garis
     sign.hAlign = "LEFT"
     sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 0), (1, -1), "CENTER"),
                               ("FONTNAME", (1, 2), (1, 2), "Helvetica-Bold"),
                               ("LINEBELOW", (1, 2), (1, 2), 0.5, NAVY)]))
+    # 7 pt: satu baris (154 mm) di dalam lebar isi 166 mm — pada 8 pt sisa "tanpa izin HRD." turun sendirian
+    confidential = ParagraphStyle("c", parent=small, fontSize=7, leading=9)
     els += [sign, Spacer(1, 10), Paragraph("<b>CONFIDENTIAL</b> — Dokumen ini bersifat rahasia dan hanya untuk karyawan "
-                                           "yang bersangkutan. Dilarang menyebarluaskan tanpa izin HRD.", small)]
+                                           "yang bersangkutan. Dilarang menyebarluaskan tanpa izin HRD.", confidential)]
     doc.build(els)
     return buf.getvalue()
 

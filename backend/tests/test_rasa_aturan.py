@@ -108,14 +108,18 @@ def test_dispensasi_correction_row_earns_no_presence_point():
 
 
 def test_poin_presensi_and_poin_absensi_are_separate():
+    # user 9 Okt: Poin Absensi = only the days that also cut gaji pokok (alfa/izin); sakit/cuti count as Poin Presensi
     logs = [_day("hadir", minutes_late=75), _day("cuti", work_date="2026-10-02"),
             _day("izin", work_date="2026-10-03")]
     disc = calc_discipline(logs)
-    assert disc["total_points"] == 1                     # Poin Presensi: late >= 60 min
-    assert disc["absence_points"] == 2                   # Poin Absensi: cuti + izin
-    assert disc["absence_by_type"] == {"annual_leave": 1, "permission_leave": 1}
+    assert disc["total_points"] == 1                     # lateness: late >= 60 min
+    assert disc["presence_points"] == 2                  # Poin Presensi: lateness 1 + cuti 1
+    assert disc["presence_by_type"] == {"annual_leave": 1}
+    assert disc["absence_points"] == 1                   # Poin Absensi: izin
+    assert disc["absence_by_type"] == {"permission_leave": 1}
     slip = compute_payslip(EMP, logs, CFG, {})
-    assert slip["late_penalty_amount"] == 3 * 30000     # (1 + 2) / 25 of the attendance allowance
+    assert (slip["late_penalty_points"], slip["absence_points"]) == (2, 1)
+    assert slip["late_penalty_amount"] == 3 * 30000     # (2 + 1) / 25 of the attendance allowance — unchanged total
 
 
 def test_a_month_of_alfa_never_exceeds_100_percent():
@@ -188,8 +192,12 @@ def test_payslip_layout():
     text, images = _pdf(_slip())
     assert images == 2                                            # RPI left, RUMAT right
     for label in ("Nama:", "NIK:", "Departemen:", "Periode:", "Status PTKP:", "Rekening:", "7123456789 (BSI)",
-                  "TOTAL DITERIMA", "Transport Homecare", "Potongan Absensi", "1 hari izin", "menghubungi Divisi HRD"):
+                  "TOTAL DITERIMA", "Transport Homecare", "Potongan Absensi", "1 hari izin"):
         assert label in text, label
+    flat = " ".join(text.split())                                 # the disclaimer wraps over lines
+    assert "Catatan: Slip gaji ini dibuat berdasarkan data yang tersedia" in flat
+    assert "perusahaan berhak melakukan koreksi dan penyesuaian sesuai ketentuan yang berlaku." in flat
+    assert "menghubungi Divisi HRD" not in flat
     assert "PENDAPATAN" in text and "TOTAL PENDAPATAN" in text
     for gone in ("Status PTKP Efektif", "TAKE HOME PAY", "Kompensasi", "[NAMA_PERUSAHAAN]", "[NAMA_PENANDATANGAN]",
                  "PENERIMAAN", "Potongan Gaji Pokok", "Potongan Tunj. Jabatan", "Potongan Presensi"):
@@ -204,8 +212,13 @@ def test_payslip_signer_comes_from_rosy():
 def test_payslip_hides_zero_rows_but_always_shows_pph21():
     text, _ = _pdf(_slip(pph21_amount=0, ter_rate=0))
     assert "PPh 21 TER A (0%)" in text and "Rp 0" in text        # PPh 21 = 0 is still printed
-    for zero in ("Insentif KPI", "Bonus Tambahan", "Kasbon", "Lembur"):
+    for zero in ("Insentif KPI", "Bonus", "Kasbon", "Lembur"):
         assert zero not in text, zero
+
+
+def test_payslip_bonus_label():
+    earn, _ = payslip_lines(_slip(additional_bonus=500000))
+    assert ("Bonus", 500000, "") in earn and not any(r[0] == "Bonus Tambahan" for r in earn)
 
 
 def test_old_snapshot_without_bank_code_falls_back_to_bank_name():
@@ -218,9 +231,13 @@ def test_old_snapshot_without_bank_code_falls_back_to_bank_name():
 def test_presensi_and_absensi_split_adds_up_to_the_attendance_cut():
     logs = [_day("hadir", minutes_late=75), _day("cuti", work_date="2026-10-02"), _day("sakit", work_date="2026-10-03")]
     slip = compute_payslip(EMP, logs, CFG, {})
-    assert slip["presence_penalty_amount"] == 30000 and slip["absence_penalty_amount"] == 60000
+    # lateness + cuti + sakit are all Poin Presensi now; no alfa/izin → nothing under Potongan Absensi
+    assert slip["presence_penalty_amount"] == 90000 and slip["absence_penalty_amount"] == 0
     assert slip["presence_penalty_amount"] + slip["absence_penalty_amount"] == slip["late_penalty_amount"]
-    capped = compute_payslip(EMP, [_day("hadir", minutes_late=75)] + [_day("cuti", work_date=f"2026-10-{d:02d}")
+    mixed = compute_payslip(EMP, [_day("hadir", minutes_late=75), _day("sakit", work_date="2026-10-02"),
+                                  _day("alfa", work_date="2026-10-03")], CFG, {})
+    assert mixed["presence_penalty_amount"] == 60000 and mixed["absence_penalty_amount"] == 30000
+    capped = compute_payslip(EMP, [_day("hadir", minutes_late=75)] + [_day("alfa", work_date=f"2026-10-{d:02d}")
                                                                        for d in range(2, 31)], CFG, {})
     assert capped["absence_penalty_amount"] == 750000 and capped["presence_penalty_amount"] == 0
 
@@ -236,8 +253,9 @@ def test_slip_shows_only_cuts_that_have_a_value():
             _day("cuti", work_date="2026-10-04")]
     s = {**compute_payslip(EMP, logs, CFG, {}), "employee": _slip()["employee"]}
     _, ded = payslip_lines(s)
-    assert ("Potongan Presensi", 30000, "1x telat/pulang cepat min. 60 mnt") in ded
-    assert [d for k, _, d in ded if k == "Potongan Absensi"] == ["2 hari alfa, 1 hari cuti tahunan"]
+    # cuti only cuts the attendance allowance → Potongan Presensi; alfa also cuts gapok & jabatan → Potongan Absensi
+    assert ("Potongan Presensi", 60000, "1x telat/pulang cepat min. 60 mnt, 1 hari cuti tahunan") in ded
+    assert ("Potongan Absensi", 60000 + 360000 + 40000, "2 hari alfa") in ded
 
 
 def test_all_cuts_sit_under_potongan_and_totals_still_add_up():

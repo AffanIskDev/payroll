@@ -95,7 +95,21 @@ export default function Workbench() {
   const dc = calc.discipline || payslip.discipline;
   const bp = calc.bpjs || payslip.bpjs;
   const wd = calc.work_days || 25;
+  // Poin Absensi = hanya hari yang juga memotong gaji pokok (alfa/izin); sakit, cuti dll masuk Poin Presensi
   const absence = Object.entries(dc.absence_by_type || {});
+  const presenceLeave = Object.entries(dc.presence_by_type || {});
+  // Susunan sama dengan slip PDF (pdf_service.payslip_lines): tunjangan tampil penuh di Pendapatan, semua potongan
+  // karena kehadiran di Potongan. Kedua total ikut memuatnya, jadi Total Diterima & dasar PPh 21 tidak berubah.
+  const split = calc.presence_penalty_amount !== undefined; // slip lama hanya punya tunjangan kehadiran bersih
+  const presensi = calc.presence_penalty_amount || 0;
+  const absensi = (calc.absence_penalty_amount || 0) + (calc.absent_deduction_amount || 0) + (calc.position_deduction_amount || 0);
+  const totalPendapatan = calc.gross_earnings + presensi + absensi;
+  const totalPotongan = calc.total_deductions + presensi + absensi;
+  const absensiHint = [
+    calc.absence_penalty_amount > 0 && `Tj. Kehadiran ${rp(calc.absence_penalty_amount)}`,
+    calc.absent_deduction_amount > 0 && `Gaji Pokok ${rp(calc.absent_deduction_amount)}`,
+    calc.position_deduction_amount > 0 && `Tj. Jabatan ${rp(calc.position_deduction_amount)}`,
+  ].filter(Boolean).join(" · ");
 
   return (
     <div className="pb-36" data-testid="workbench-page">
@@ -117,27 +131,25 @@ export default function Workbench() {
         <div className="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2.5" data-testid="unpaid-leave-notice">Cuti di luar tanggungan: upah & tunjangan Rp 0. Iuran BPJS ditalangi perusahaan (kasbon) sebesar <b className="num">{rp(calc.bpjs_company_advance)}</b>.</div>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Panel title="Pendapatan" right={<span className="num text-sm font-bold">{rp(calc.gross_earnings)}</span>}>
+        <Panel title="Pendapatan" right={<span className="num text-sm font-bold">{rp(totalPendapatan)}</span>}>
           <div className="px-5 py-2">
             <Row label="Gaji Pokok" hint={calc.wage_multiplier !== 1 ? `Pengali upah ${calc.wage_multiplier * 100}% dari ${rp(calc.basic_salary_contract)}` : null} value={rp(calc.basic_salary)} testId="earn-basic" />
-            {calc.absent_deduction_amount > 0 && <Row label="Potongan Gaji Pokok (alfa/izin)" hint={`${calc.absent_days} hari × 1/${wd} gaji pokok`} value={`- ${rp(calc.absent_deduction_amount)}`} tone="text-rose-600" testId="earn-absent-deduction" />}
             <Row label="Tunjangan Jabatan" value={rp(calc.position_allowance)} testId="earn-position" />
-            {calc.position_deduction_amount > 0 && <Row label="Potongan Tunj. Jabatan (alfa/izin)" hint={`${calc.absent_days} hari × 1/${wd} tunjangan jabatan`} value={`- ${rp(calc.position_deduction_amount)}`} tone="text-rose-600" testId="earn-position-deduction" />}
-            <Row label="Tunjangan Kehadiran Bulanan" value={rp(calc.attendance_allowance_base)} />
-            <Row label="Potongan Tunjangan Kehadiran" hint={`${calc.late_penalty_days} hari / ${wd} (Poin Presensi ${calc.late_penalty_points} + Poin Absensi ${calc.absence_points ?? dc.attendance_cut_days})`} value={`- ${rp(calc.late_penalty_amount)}`} tone="text-rose-600" testId="earn-late-penalty" />
-            <Row label="Tunjangan Kehadiran Bersih" value={rp(calc.attendance_allowance)} tone="font-semibold" testId="earn-attendance-net" />
+            <Row label={split ? "Tunjangan Kehadiran" : "Tunjangan Kehadiran (bersih)"} value={rp(split ? calc.attendance_allowance_base : calc.attendance_allowance)} testId="earn-attendance" />
             <Row label={`Lembur (${calc.overtime_hours} jam dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />
             <Row label="Transport Homecare" hint="Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)" value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
             <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />
-            <Edit label="Bonus Tambahan" value={adj.additional_bonus} onChange={set("additional_bonus")} disabled={locked} testId="input-additional-bonus" />
+            <Edit label="Bonus" value={adj.additional_bonus} onChange={set("additional_bonus")} disabled={locked} testId="input-additional-bonus" />
             <Row label="Tunjangan BPJS Kesehatan (4%)" hint={`Basis ${rp(bp.kes_base)} (max gaji pokok, UMK Bekasi)`} value={rp(calc.tunjangan_bpjs_kes)} testId="earn-bpjs-kes" />
             <Row label="Tunjangan BPJS TK" hint={`JKK ${rp(bp.jkk)} · JKM ${rp(bp.jkm)} · JHT 3,7% ${rp(bp.jht_company)} · JP 2% ${rp(bp.jp_company)}`} value={rp(calc.tunjangan_bpjs_tk)} testId="earn-bpjs-tk" />
           </div>
-          <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex justify-between"><span>Bruto Objek Pajak (dasar TER, tanpa JHT & JP perusahaan)</span><b className="num text-slate-900" data-testid="taxable-gross">{rp(calc.taxable_gross)}</b></div>
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex items-center justify-between gap-4"><span title="Pendapatan − Potongan Presensi & Absensi − JHT & JP perusahaan">Bruto Objek Pajak (dasar TER)</span><b className="num text-slate-900 whitespace-nowrap" data-testid="taxable-gross">{rp(calc.taxable_gross)}</b></div>
         </Panel>
         <div className="space-y-6">
-          <Panel title="Potongan" right={<span className="num text-sm font-bold text-rose-600">{rp(calc.total_deductions)}</span>}>
+          <Panel title="Potongan" right={<span className="num text-sm font-bold text-rose-600">{rp(totalPotongan)}</span>}>
             <div className="px-5 py-2">
+              {split && <Row label="Potongan Presensi" hint={`${calc.late_penalty_points} poin presensi × 1/${wd} Tunjangan Kehadiran`} value={rp(presensi)} tone={presensi > 0 ? "text-rose-600" : ""} testId="ded-presensi" />}
+              <Row label="Potongan Absensi" hint={`${calc.absence_points ?? calc.absent_days ?? 0} hari alfa/izin${absensiHint ? ` — ${absensiHint}` : ""}`} value={rp(absensi)} tone={absensi > 0 ? "text-rose-600" : ""} testId="ded-absensi" />
               <Row label="Iuran BPJS Kesehatan (5%)" hint={`Perusahaan ${rp(bp.kes_company)} + Karyawan ${rp(bp.kes_employee)}`} value={rp(calc.iuran_bpjs_kes_total)} testId="ded-bpjs-kes" />
               <Row label="Iuran BPJS Ketenagakerjaan" hint={`JKK+JKM ${rp(bp.jkk + bp.jkm)} · JHT ${rp(bp.jht_company + bp.jht_employee)} · JP ${rp(bp.jp_company + bp.jp_employee)}`} value={rp(calc.iuran_bpjs_tk_total)} testId="ded-bpjs-tk" />
               {calc.tax_reconciliation ? (
@@ -149,20 +161,27 @@ export default function Workbench() {
             </div>
           </Panel>
           {calc.tax_reconciliation && <Recon r={calc.tax_reconciliation} ptkp={calc.ptkp_status} />}
-          <Panel title="Poin Presensi (Rule 1–4)">
+          <Panel title="Poin Presensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="presence-total">{calc.late_penalty_points} poin</span>}>
             <div className="grid grid-cols-4 divide-x divide-slate-200 text-center" data-testid="waterfall-summary">
               {[["Rule 1", dc.rule1_points, "Lupa tap"], ["Rule 2", dc.rule2_points, "≥ 60 m"], ["Rule 3", dc.rule3_points, `${dc.rule3_events} × 15–59 m`], ["Rule 4", dc.rule4_points, `${dc.rule4_minutes} m akumulasi`]].map(([k, v, h]) => (
                 <div key={k} className="py-4"><div className="text-[11px] uppercase tracking-wider text-slate-500">{k}</div><div className="num text-2xl font-bold text-rose-600" data-testid={`waterfall-${k.replace(" ", "").toLowerCase()}`}>{v}</div><div className="text-[11px] text-slate-400">{h}</div></div>
               ))}
             </div>
-            <div className="px-5 py-3 border-t border-slate-200 text-xs text-slate-600">Total <b className="num" data-testid="waterfall-total">{dc.total_points} poin</b>{dc.rule3_carried_minutes?.length ? ` · sisa Rule 3 diteruskan: ${dc.rule3_carried_minutes.join(", ")} m` : ""} · menit hangus {dc.rule4_forfeited_minutes} m</div>
+            <div className="px-5 py-3 border-t border-slate-200 text-xs text-slate-600">Keterlambatan (Rule 1–4) <b className="num" data-testid="waterfall-total">{dc.total_points} poin</b>{dc.rule3_carried_minutes?.length ? ` · sisa Rule 3 diteruskan: ${dc.rule3_carried_minutes.join(", ")} m` : ""} · menit hangus {dc.rule4_forfeited_minutes} m</div>
+            {presenceLeave.length > 0 && (
+              <div className="px-5 py-2 border-t border-slate-200" data-testid="presence-leave-breakdown">
+                {presenceLeave.map(([lt, n]) => (
+                  <Row key={lt} label={LEAVE_LABELS[lt] || lt} hint="1 poin per hari · memotong Tj. Kehadiran saja" value={`${n} poin`} />
+                ))}
+              </div>
+            )}
           </Panel>
-          <Panel title="Poin Absensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="absence-total">{calc.absence_points ?? dc.attendance_cut_days} hari</span>}>
+          <Panel title="Poin Absensi" right={<span className="num text-sm font-bold text-rose-600" data-testid="absence-total">{calc.absence_points ?? dc.basic_cut_days ?? 0} hari</span>}>
             <div className="px-5 py-2" data-testid="absence-breakdown">
               {absence.map(([lt, n]) => (
                 <Row key={lt} label={LEAVE_LABELS[lt] || lt} hint={FULL_CUT.includes(lt) ? "Memotong gaji pokok, Tj. Jabatan & Tj. Kehadiran" : "Memotong Tj. Kehadiran"} value={`${n} hari`} />
               ))}
-              {!absence.length && <div className="py-2 text-sm text-slate-500">Tidak ada ketidakhadiran yang memotong gaji.</div>}
+              {!absence.length && <div className="py-2 text-sm text-slate-500">Tidak ada alfa/mangkir atau izin.</div>}
             </div>
           </Panel>
           <Panel title={`Log Presensi (${attendance.length})`}>
@@ -183,7 +202,7 @@ export default function Workbench() {
       <div className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-t-2 border-emerald-500 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center gap-3">
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] uppercase tracking-wider text-slate-500">Total Diterima · Pendapatan {rp(calc.gross_earnings)} − Potongan {rp(calc.total_deductions)}</div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500">Total Diterima · Pendapatan {rp(totalPendapatan)} − Potongan {rp(totalPotongan)}</div>
             <div className="num text-2xl font-black text-emerald-600" data-testid="sticky-thp">{rp(calc.take_home_pay)}</div>
             <div className="text-xs italic text-slate-500 truncate" data-testid="sticky-terbilang">{calc.terbilang}</div>
           </div>

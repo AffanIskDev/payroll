@@ -300,9 +300,9 @@ async def period_detail(pid: str):
     slips = await db.payslips.find({"payroll_period_id": pid}, {"_id": 0, "bpjs": 0}) \
         .sort("employee.nik", 1).to_list(2000)
     for s in slips:
-        # slips calculated before Poin Absensi existed keep their absence days in the discipline breakdown
+        # slips calculated before Poin Absensi existed keep their alfa/izin days in the discipline breakdown
         disc = s.pop("discipline", None) or {}
-        s.setdefault("absence_points", disc.get("attendance_cut_days", 0))
+        s.setdefault("absence_points", disc.get("basic_cut_days", 0))
     return {"period": period, "payslips": slips}
 
 

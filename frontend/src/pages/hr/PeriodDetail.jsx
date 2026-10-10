@@ -8,7 +8,8 @@ import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-const COLS = ["NIK", "Nama", "PTKP", "Total Penghasilan", "PKP", "PPh 21", "Poin Presensi", "Poin Absensi", "Total Potongan", "Total BPJS Kesehatan", "Total BPJS TK", "Review"];
+// NIK & PTKP digabung ke kolom Karyawan (baris kedua) supaya tabel muat tanpa digeser ke samping
+const COLS = ["Karyawan", "Total Penghasilan", "PKP", "PPh 21", "Poin Presensi", "Poin Absensi", "Total Potongan", "Total BPJS Kesehatan", "Total BPJS TK", "Review"];
 
 const ACTIONS = { submitted: "Diajukan ke Manager", rejected: "Ditolak", approved: "Approve & Lock" };
 
@@ -145,16 +146,17 @@ export default function PeriodDetail() {
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
                 {COLS.map((h, i) => (
-                  <th key={h + i} className={`px-4 py-3 ${i > 2 && i < 11 ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={h + i} className={`px-4 py-3 ${i > 0 && i < COLS.length - 1 ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50" data-testid={`payslip-row-${s.employee.nik}`}>
-                  <td className="px-4 py-3 num text-slate-600">{s.employee.nik}</td>
-                  <td className="px-4 py-3 font-semibold">{s.employee.name}{s.is_manually_adjusted && <span className="ml-2 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">EDIT</span>}</td>
-                  <td className="px-4 py-3 num text-xs">{s.ptkp_status}</td>
+                  <td className="px-4 py-2.5 min-w-[11rem]">
+                    <div className="font-semibold leading-snug">{s.employee.name}{s.is_manually_adjusted && <span className="ml-2 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">EDIT</span>}</div>
+                    <div className="num text-xs text-slate-500 whitespace-nowrap">{s.employee.nik} · {s.ptkp_status}</div>
+                  </td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(s.gross_earnings)}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap text-slate-600">{rp(s.taxable_gross)}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(s.pph21_amount)}</td>
@@ -171,7 +173,7 @@ export default function PeriodDetail() {
             {!!rows.length && (
               <tfoot className="bg-slate-50 font-semibold">
                 <tr>
-                  <td colSpan={3} className="px-4 py-3 text-xs uppercase tracking-wider text-slate-500">Total {rows.length} karyawan</td>
+                  <td className="px-4 py-3 text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap">Total {rows.length} karyawan</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(sumRows("gross_earnings"))}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(sumRows("taxable_gross"))}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(sumRows("pph21_amount"))}</td>
