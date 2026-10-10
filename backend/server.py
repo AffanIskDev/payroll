@@ -99,7 +99,7 @@ if not _origins:
     logging.getLogger("server").warning("CORS_ORIGINS belum diatur: semua origin diizinkan")
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=_origins,
                    allow_origin_regex=None if _origins else ".*", allow_methods=["*"], allow_headers=["*"],
-                   expose_headers=["Content-Disposition", "X-Exported-Count", "X-Skipped-Niks"])
+                   expose_headers=["Content-Disposition", "X-Exported-Count", "X-Skipped-Niks", "X-Total-Amount"])
 
 
 @app.on_event("startup")

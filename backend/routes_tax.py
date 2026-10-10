@@ -1,13 +1,17 @@
 import csv
 import io
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from tax_forms import list_1721a1, render_1721a1
 
+import bank_batch
 from core import db, now_iso, require_manager, get_configs, csv_delimiter
+from periods import payroll_month
 from pipeline import get_period
 
 # Pajak (saldo awal YTD, 1721-A1) and the BSI transfer export are Manager HRD only (user decision 9 Oct 2026)
@@ -143,3 +147,37 @@ async def export_bsi(pid: str):
     return Response(buf.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": f'attachment; filename="{fname}"',
         "X-Exported-Count": str(len(slips) - len(skipped)), "X-Skipped-Niks": ",".join(skipped)})
+
+
+@router.post("/periods/{pid}/export-batch-bsi")
+async def export_batch_bsi(pid: str):
+    """Batch Payment BSI TXT (bank_batch), the file of ROSY's "Export Batch Payment". Amounts come from the period's
+    slips, bank data from the employee master as last synced from ROSY (as ROSY reads mt_employee at export), so an
+    account fixed in ROSY HRD reaches the file through "Sinkron dari ROSY" — also once the slips are approved & locked.
+
+    Draft slips are exported too, as in ROSY since 30 Sep 2026 (user 10 Oct 2026: "samakan dengan rosy dulu ... biar
+    bisa di test"). Restricting the file to approved & locked periods waits for the user's word."""
+    period = await get_period(pid)
+    # no length cap: a truncated list would silently leave people out of the transfer
+    slips = await db.payslips.find({"payroll_period_id": pid}, {
+        "_id": 0, "employee_id": 1, "employee": 1, "take_home_pay": 1, "payroll_status": 1}).to_list(None)
+    if not slips:
+        raise HTTPException(400, "Belum ada slip pada periode ini")
+    emps = {e["id"]: e async for e in db.employees.find(
+        {"id": {"$in": [s["employee_id"] for s in slips]}},
+        {"_id": 0, "id": 1, "name": 1, "bank_code": 1, "bank_name": 1, "bank_account_number": 1, "bank_account_name": 1})}
+    month = payroll_month(period["start_date"])
+    try:
+        res = bank_batch.build(slips, emps, month, datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    if res["problems"]:
+        return JSONResponse(status_code=422, content={
+            "detail": f"Berkas tidak dibuat: {len(res['problems'])} data harus dibetulkan dulu",
+            "problems": res["problems"], "slip_count": len(slips)})
+    if not res["count"]:
+        raise HTTPException(400, "Tidak ada yang ditransfer: seluruh slip periode ini Rp 0")
+    return Response(res["text"], media_type="text/plain", headers={
+        "Content-Disposition": f'attachment; filename="{bank_batch.file_name(period.get("company"), month)}"',
+        "X-Exported-Count": str(res["count"]), "X-Total-Amount": str(res["total"]),
+        "X-Skipped-Niks": ",".join(res["skipped"]), "Cache-Control": "no-store"})

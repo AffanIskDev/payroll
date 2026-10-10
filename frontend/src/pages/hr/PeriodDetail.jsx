@@ -25,6 +25,9 @@ export default function PeriodDetail() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [q, setQ] = useState("");
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchProblems, setBatchProblems] = useState(null);
   const { user } = useAuth();
   const isManager = user?.role === "manager_hrd";
   const load = useCallback(() => api.get(`/hr/periods/${pid}`).then((r) => setD(r.data)), [pid]);
@@ -60,6 +63,28 @@ export default function PeriodDetail() {
     } catch (e) { toast.error(await blobErrMsg(e)); }
   };
 
+  // Batch Payment BSI (TXT, format ROSY): the answer is either the file or the list of data to fix first — that list
+  // is the point of the all-or-nothing rule, so it gets its own dialog instead of a toast
+  const exportBatch = async () => {
+    setBatchBusy(true);
+    try {
+      const h = await saveFile("post", `/hr/periods/${pid}/export-batch-bsi`, "BatchPayment.txt");
+      const skippedNiks = (h["x-skipped-niks"] || "").split(",").filter(Boolean);
+      const skippedNames = d.payslips.filter((s) => skippedNiks.includes(s.employee.nik)).map((s) => s.employee.name);
+      setBatchOpen(false);
+      toast.success(`Berkas Batch Payment diunduh: ${h["x-exported-count"]} transfer, total ${rp(h["x-total-amount"])}${skippedNames.length ? ` · tidak ditransfer (cuti tanpa upah, Rp 0): ${skippedNames.join(", ")}` : ""}`);
+    } catch (e) {
+      let body = null;
+      if (e?.response?.data instanceof Blob) {
+        try { body = JSON.parse(await e.response.data.text()); } catch { body = null; }
+      }
+      if (body?.problems?.length) {
+        setBatchOpen(false);
+        setBatchProblems(body.problems);
+      } else toast.error(typeof body?.detail === "string" ? body.detail : errMsg(e));
+    } finally { setBatchBusy(false); }
+  };
+
   if (!d) return <div className="text-sm text-slate-500">Memuat...</div>;
   const { period, payslips } = d;
   const editable = ["draft", "revision"].includes(period.status);
@@ -75,6 +100,7 @@ export default function PeriodDetail() {
   const ot = period.overtime_summary;
   const otNoRate = ot?.without_rate || [];
   const transport = period.components_summary;
+  const batchGroups = (batchProblems || []).reduce((g, p) => ({ ...g, [p.kind]: [...(g[p.kind] || []), p] }), {});
 
   return (
     <div data-testid="period-detail-page">
@@ -86,6 +112,7 @@ export default function PeriodDetail() {
         {isManager && pending && <Btn variant="outline" data-testid="reject-period-button" disabled={busy} onClick={() => setRejectOpen(true)} className="!border-rose-300 !text-rose-700 hover:!bg-rose-50"><XCircle className="h-4 w-4" /> Tolak Draft</Btn>}
         {isManager && <Btn variant="success" data-testid="approve-all-button" disabled={busy || !pending} onClick={() => act("approve-all", "Semua slip di-approve & dikunci")} title={!pending ? "Periode harus diajukan dulu" : ""}><LockKeyhole className="h-4 w-4" /> Approve & Lock Semua</Btn>}
         {isManager && <Btn variant="primary" data-testid="export-bsi-button" disabled={!approvedCount} onClick={exportBsi} title="Hanya slip approved"><Landmark className="h-4 w-4" /> Ekspor BSI (CSV)</Btn>}
+        {isManager && <Btn variant="outline" data-testid="export-batch-bsi-button" disabled={!payslips.length} onClick={() => setBatchOpen(true)} title="Berkas TXT untuk diunggah ke Batch Payment BSI (format sama dengan ROSY); slip draft ikut diekspor" className="!border-emerald-300 !text-emerald-800 hover:!bg-emerald-50"><Landmark className="h-4 w-4" /> Batch Payment BSI (TXT)</Btn>}
       </PageTitle>
       {period.last_sync_error && (
         <div className="mb-4 flex gap-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-4 py-3 text-sm" data-testid="sync-error-banner">
@@ -214,6 +241,44 @@ export default function PeriodDetail() {
           <div className="flex justify-end gap-2">
             <Btn variant="outline" data-testid="reject-cancel-button" onClick={() => setRejectOpen(false)}>Batal</Btn>
             <Btn data-testid="reject-confirm-button" disabled={busy || reason.trim().length < 5} onClick={reject} className="!bg-rose-600 hover:!bg-rose-700"><XCircle className="h-4 w-4" /> Tolak & Kembalikan</Btn>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={batchOpen} onOpenChange={(o) => !batchBusy && setBatchOpen(o)}>
+        <DialogContent data-testid="batch-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle>Buat berkas Batch Payment BSI?</DialogTitle>
+            <DialogDescription>Periode <b>{period.period_name}</b> · <span className="num">{payslips.length}</span> slip · Total Diterima <b className="num whitespace-nowrap">{rp(payslips.reduce((a, s) => a + (s.take_home_pay || 0), 0))}</b></DialogDescription>
+          </DialogHeader>
+          <div className="text-sm text-slate-600 space-y-2">
+            <p>Berkas TXT ini diunggah ke Batch Payment BSI dan <b>memindahkan uang</b>. Nominal diambil dari slip periode ini; rekening dan nama dari data karyawan ROSY (sinkron terakhir).</p>
+            {payslips.length > approvedCount && <p className="bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2" data-testid="batch-draft-warning"><b className="num">{payslips.length - approvedCount}</b> dari <span className="num">{payslips.length}</span> slip belum di-approve dan <b>ikut diekspor</b>. Angkanya masih bisa berubah (sinkron ulang atau koreksi), jadi unduh berkas tepat sebelum diunggah ke bank.</p>}
+            <p>Hanya rekening <b>BSI</b>. Kalau ada satu saja data yang bermasalah, berkasnya tidak dibuat dan daftarnya ditampilkan.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Btn variant="outline" data-testid="batch-cancel-button" disabled={batchBusy} onClick={() => setBatchOpen(false)}>Batal</Btn>
+            <Btn variant="success" data-testid="batch-confirm-button" disabled={batchBusy} onClick={exportBatch}><Landmark className="h-4 w-4" /> {batchBusy ? "Menyiapkan berkas..." : "Ya, Buat Berkas"}</Btn>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!batchProblems} onOpenChange={(o) => !o && setBatchProblems(null)}>
+        <DialogContent className="max-w-2xl" data-testid="batch-problems-dialog">
+          <DialogHeader>
+            <DialogTitle>Ada {batchProblems?.length} data yang harus dibetulkan</DialogTitle>
+            <DialogDescription>Berkas <b>tidak dibuat</b>. Satu baris salah berarti uang masuk ke rekening yang keliru, jadi seluruh temuan harus dibereskan dulu: betulkan data karyawannya di ROSY HRD, klik "Sinkron dari ROSY" di menu Karyawan, lalu buat ulang berkasnya.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto text-sm space-y-3">
+            {Object.entries(batchGroups).map(([kind, list]) => (
+              <div key={kind}>
+                <div className="font-semibold">{kind} <span className="font-normal text-slate-400">({list.length})</span></div>
+                <ul className="list-disc pl-5 text-slate-700">
+                  {list.map((p, i) => <li key={i}>{p.name} <span className="num text-xs text-slate-400">{p.nik}</span> — {p.note}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Btn data-testid="batch-problems-close" onClick={() => setBatchProblems(null)}>Mengerti</Btn>
           </div>
         </DialogContent>
       </Dialog>
