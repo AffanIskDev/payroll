@@ -35,7 +35,7 @@ export default function Periods() {
     setSyncing(true);
     try {
       const { data } = await api.post("/hr/periods", f);
-      if (data.sync_error) toast.warning(`Periode ${data.period_name} dibuat, tetapi sinkron gagal: ${data.sync_error}. Klik "Sinkron dari ROSY" untuk mencoba lagi.`, { duration: 10000 });
+      if (data.sync_error) toast.warning(`Periode ${data.period_name} dibuat, tetapi sinkron gagal: ${data.sync_error}. Ulangi lewat "Sinkron dari ROSY" di Dashboard.`, { duration: 10000 });
       else toast.success(`Periode ${data.period_name} dibuat · ${data.employee_count} karyawan disinkron dari ROSY`);
       setOpen(false);
       setF(EMPTY);

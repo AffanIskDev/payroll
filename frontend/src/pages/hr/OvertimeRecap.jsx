@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { FileDown } from "lucide-react";
 import { api } from "@/lib/api";
-import { rp, SLIP_STATUS } from "@/lib/format";
+import { rp, SLIP_STATUS, jamMenit } from "@/lib/format";
 import { PageTitle, Panel, Btn, StatusBadge } from "@/components/common";
 
 const thisMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
@@ -14,8 +14,8 @@ export default function OvertimeRecap() {
   useEffect(() => { if (month) api.get("/hr/overtime-recap", { params: { month } }).then((r) => setD(r.data)); }, [month]);
 
   const exportCsv = () => {
-    const head = ["NIK", "Nama", "Departemen", "Periode", "Jam Lembur", "Rate (Rp/jam)", "Nominal Lembur", "Status Slip"];
-    const lines = d.rows.map((r) => [r.nik, r.name, r.department || "", r.period_name, r.overtime_hours, r.overtime_rate, r.overtime_pay, r.slip_status]);
+    const head = ["NIK", "Nama", "Departemen", "Periode", "Jam Lembur", "Menit Lembur", "Rate (Rp/jam)", "Nominal Lembur", "Status Slip"];
+    const lines = d.rows.map((r) => [r.nik, r.name, r.department || "", r.period_name, jamMenit(r.overtime_hours), Math.round((r.overtime_hours || 0) * 60), r.overtime_rate, r.overtime_pay, r.slip_status]);
     const csv = [head, ...lines].map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(delim)).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -40,7 +40,7 @@ export default function OvertimeRecap() {
                 <tr key={`${r.employee_id}-${r.period_name}`} data-testid={`ot-row-${r.nik}`} className="hover:bg-slate-50">
                   <td className="px-4 py-3"><div className="font-semibold">{r.name}</div><div className="text-xs text-slate-500 num">{r.nik} · {r.department}</div></td>
                   <td className="px-4 py-3">{r.period_name}</td>
-                  <td className={`px-4 py-3 num text-right ${!r.overtime_hours ? "text-slate-300" : ""}`}>{r.overtime_hours}</td>
+                  <td className={`px-4 py-3 num text-right ${!r.overtime_hours ? "text-slate-300" : ""}`}>{r.overtime_hours ? jamMenit(r.overtime_hours) : 0}</td>
                   <td className="px-4 py-3 num text-right">{rp(r.overtime_rate)}</td>
                   <td className="px-4 py-3 num text-right font-semibold">{rp(r.overtime_pay)}</td>
                   <td className="px-4 py-3"><StatusBadge map={SLIP_STATUS} status={r.slip_status} /></td>
@@ -52,7 +52,7 @@ export default function OvertimeRecap() {
               <tfoot className="bg-slate-50 font-semibold">
                 <tr>
                   <td colSpan={2} className="px-4 py-3 text-xs uppercase tracking-wider text-slate-500">Total</td>
-                  <td className="px-4 py-3 num text-right" data-testid="ot-total-hours">{d.total_hours}</td>
+                  <td className="px-4 py-3 num text-right" data-testid="ot-total-hours">{jamMenit(d.total_hours)}</td>
                   <td />
                   <td className="px-4 py-3 num text-right" data-testid="ot-total-pay">{rp(d.total_pay)}</td>
                   <td />

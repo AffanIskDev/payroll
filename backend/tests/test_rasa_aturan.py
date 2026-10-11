@@ -168,6 +168,31 @@ def test_transport_is_read_from_rosy_monthly_components():
     assert integrations.transport_of({}) == 0
 
 
+def test_bonus_and_target_deduction_come_from_rosy_like_transport():
+    # user 10 Okt: Bonus & Potongan Tidak Mencapai Target diambil dari Tambahan Bulanan ROSY, seperti Transport Homecare
+    row = {"komponen_bulanan": [
+        {"component_id": "KOMP-00022", "nama": "Transport Rumat Kita", "tipe": "pendapatan", "nominal": 1350000.0},
+        {"component_id": "KOMP-00005", "nama": "Bonus", "tipe": "pendapatan", "nominal": 3184400.0},
+        {"component_id": "KOMP-00015", "nama": "Potongan Tidak Mencapai Target", "tipe": "potongan", "nominal": 500000.0},
+        {"component_id": "KOMP-00023", "nama": "Lembur", "tipe": "pendapatan", "nominal": 90000.0}]}
+    assert integrations.monthly_components(row) == {"TRANSPORT_HOMECARE": 1350000.0, "BONUS": 3184400.0,
+                                                    "TARGET_DEDUCTION": 500000.0}
+    assert integrations.monthly_components({"komponen_bulanan": [{"component_id": "KOMP-00005", "nominal": 0}]}) == {}
+
+
+def test_target_deduction_cuts_take_home_pay_but_not_the_pph21_base():
+    base = compute_payslip(EMP, [], CFG, {})
+    slip = compute_payslip(EMP, [], CFG, {"target_deduction": 500000})
+    assert slip["target_deduction"] == 500000
+    # as in ROSY (brutoPajak counts only pendapatan): a potongan component never lowers the PPh 21 base
+    assert (slip["gross_earnings"], slip["taxable_gross"], slip["pph21_amount"]) == \
+        (base["gross_earnings"], base["taxable_gross"], base["pph21_amount"])
+    assert slip["total_deductions"] - base["total_deductions"] == 500000
+    assert base["take_home_pay"] - slip["take_home_pay"] == 500000
+    unpaid = compute_payslip({**EMP, "payroll_status": "unpaid_leave"}, [], CFG, {"target_deduction": 500000})
+    assert unpaid["target_deduction"] == 0
+
+
 # ---------------------------------------------------------------- payslip PDF
 SIGNER = {"id": "SIGN-00001", "nama": "Meliawasni", "jabatan": "Manager HRD"}  # ROSY Document Signer (payroll)
 
@@ -219,6 +244,13 @@ def test_payslip_hides_zero_rows_but_always_shows_pph21():
 def test_payslip_bonus_label():
     earn, _ = payslip_lines(_slip(additional_bonus=500000))
     assert ("Bonus", 500000, "") in earn and not any(r[0] == "Bonus Tambahan" for r in earn)
+
+
+def test_payslip_prints_target_deduction_only_when_set():
+    _, ded = payslip_lines(_slip(target_deduction=500000))
+    assert ("Potongan Tidak Mencapai Target", 500000, "") in ded
+    _, ded = payslip_lines(_slip())
+    assert not any(r[0] == "Potongan Tidak Mencapai Target" for r in ded)
 
 
 def test_old_snapshot_without_bank_code_falls_back_to_bank_name():

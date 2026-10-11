@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Camera, MapPin } from "lucide-react";
 import { api } from "@/lib/api";
-import { LEAVE_LABELS } from "@/lib/format";
+import { LEAVE_LABELS, jamMenit } from "@/lib/format";
 import { PageTitle, Panel } from "@/components/common";
 import { EmployeeSearch } from "@/components/EmployeeSearch";
 
@@ -27,12 +27,12 @@ export default function AttendanceView() {
 
   return (
     <div>
-      <PageTitle title="Log Presensi Harian" subtitle="Hanya-lihat. Sumber: RUMATKU lewat ROSY — diperbarui dengan tombol 'Sinkron dari ROSY' di periode payroll">
+      <PageTitle title="Log Presensi Harian" subtitle="Hanya-lihat. Sumber: RUMATKU lewat ROSY — diperbarui dengan tombol 'Sinkron dari ROSY' di Dashboard">
         <EmployeeSearch employees={emps} value={eid} onChange={setEid} />
         <input data-testid="attendance-start-input" type="date" value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} className={inp} />
         <input data-testid="attendance-end-input" type="date" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} className={inp} />
       </PageTitle>
-      <Panel title={`${logs.length} log · lembur ${sumOt} jam`}>
+      <Panel title={`${logs.length} log · lembur ${jamMenit(sumOt)}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="attendance-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
@@ -48,7 +48,7 @@ export default function AttendanceView() {
                   <td className={`px-4 py-2 ${l.minutes_late >= 60 ? "text-rose-600 font-bold" : l.minutes_late ? "text-rose-600" : ""}`}>{l.minutes_late || 0} m</td>
                   <td className={`px-4 py-2 ${l.minutes_early_leave ? "text-rose-600" : ""}`}>{l.minutes_early_leave || 0} m</td>
                   <td className="px-4 py-2 text-xs">{[l.is_missing_check_in && "IN", l.is_missing_check_out && "OUT"].filter(Boolean).join("/") || "-"}</td>
-                  <td className="px-4 py-2">{l.overtime_hours ? `${l.overtime_hours} j` : "-"}</td>
+                  <td className="px-4 py-2">{l.overtime_hours ? jamMenit(l.overtime_hours, true) : "-"}</td>
                   <td className="px-4 py-2 text-xs font-sans">{LEAVE_LABELS[l.leave_type] || l.leave_type}</td>
                 </tr>
               ))}

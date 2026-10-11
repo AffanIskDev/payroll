@@ -1,9 +1,9 @@
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export const TabbedPage = ({ tabs }) => {
+export const TabbedPage = ({ tabs, defaultTab }) => {
   const [params, setParams] = useSearchParams();
-  const active = params.get("tab") || tabs[0][0];
+  const active = params.get("tab") || defaultTab || tabs[0][0];
   return (
     <Tabs value={active} onValueChange={(v) => setParams({ tab: v })}>
       <TabsList className="mb-5 bg-slate-200/60">

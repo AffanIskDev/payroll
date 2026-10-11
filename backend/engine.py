@@ -215,6 +215,9 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     kpi = 0 if unpaid else round(float(adj.get("kpi_incentive") or 0))
     bonus = 0 if unpaid else round(float(adj.get("additional_bonus") or 0))
     kasbon = round(float(adj.get("other_deductions") or 0))
+    # ROSY "Potongan Tidak Mencapai Target" (Tambahan Bulanan, user 10 Oct 2026): off the take-home pay like kasbon;
+    # as in ROSY (PayrollModules::brutoPajak counts only pendapatan) it does not lower the PPh 21 base
+    target = 0 if unpaid else round(float(adj.get("target_deduction") or 0))
     transport = 0 if unpaid else round(float(adj.get("transport_homecare") or 0))
     overtime_pay = round(hours * float(emp.get("overtime_hourly_rate") or 0))
 
@@ -264,7 +267,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
 
     iuran_kes = bp["kes_company"] + bp["kes_employee"]
     iuran_tk = bp["jkk"] + bp["jkm"] + bp["jht_company"] + bp["jht_employee"] + bp["jp_company"] + bp["jp_employee"]
-    total_ded = iuran_kes + iuran_tk + pph21 + kasbon
+    total_ded = iuran_kes + iuran_tk + pph21 + kasbon + target
     thp = gross - total_ded
 
     return {
@@ -284,7 +287,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
         "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
         "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
-        "other_deductions": kasbon, "total_deductions": total_ded, "take_home_pay": thp,
+        "other_deductions": kasbon, "target_deduction": target, "total_deductions": total_ded, "take_home_pay": thp,
         "bpjs_company_advance": bpjs_advance,
         "discipline": disc, "bpjs": bp, "terbilang": terbilang(thp),
     }

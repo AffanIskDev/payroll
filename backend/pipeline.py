@@ -65,18 +65,24 @@ async def overtime_hours(period: dict, emp_id: str, logs: list) -> float:
     return sum(float(lg.get("overtime_hours") or 0) for lg in logs)
 
 
-async def transport_homecare(period: dict, emp_id: str) -> float:
-    """ROSY's monthly Transport Rumat Kita for this period, synced into period_components."""
-    docs = await db.period_components.find({"payroll_period_id": period["id"], "employee_id": emp_id,
-                                            "kode": "TRANSPORT_HOMECARE"}, {"_id": 0, "nominal": 1}).to_list(10)
-    return sum(float(d["nominal"]) for d in docs)
+async def period_components(period: dict, emp_id: str) -> dict:
+    """ROSY's monthly components for this period (Tambahan Bulanan, integrations.MONTHLY_COMPONENTS), synced into
+    period_components, as {kode: nominal}."""
+    out = {}
+    async for d in db.period_components.find({"payroll_period_id": period["id"], "employee_id": emp_id},
+                                             {"_id": 0, "kode": 1, "nominal": 1}):
+        out[d["kode"]] = out.get(d["kode"], 0) + float(d["nominal"])
+    return out
 
 
 async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = None) -> dict:
     cfg = cfg or await get_configs()
     logs = await period_logs(emp["id"], period)
+    comp = await period_components(period, emp["id"])
+    # Transport Homecare, Bonus and Potongan Tidak Mencapai Target come from ROSY only, never from the review page
     adj = {**adj, "overtime_hours": await overtime_hours(period, emp["id"], logs),
-           "transport_homecare": await transport_homecare(period, emp["id"])}
+           "transport_homecare": comp.get("TRANSPORT_HOMECARE", 0), "additional_bonus": comp.get("BONUS", 0),
+           "target_deduction": comp.get("TARGET_DEDUCTION", 0)}
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     return calc

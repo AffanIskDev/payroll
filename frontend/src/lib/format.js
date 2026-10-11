@@ -1,5 +1,15 @@
 export const rp = (v) => "Rp " + Math.round(Number(v) || 0).toLocaleString("id-ID");
 
+// Jam lembur desimal → "25 jam 58 menit" (short: "25 j 58 m"). Lembur dibayar per menit seperti rekap Excel
+// lembur driver (keputusan user 11 Okt 2026), jadi jamnya tidak lagi selalu .0/.5.
+export const jamMenit = (hours, short = false) => {
+  const total = Math.round((Number(hours) || 0) * 60);
+  const [j, m] = [Math.floor(total / 60), total % 60];
+  const [uj, um] = short ? ["j", "m"] : ["jam", "menit"];
+  if (j && m) return `${j} ${uj} ${m} ${um}`;
+  return j ? `${j} ${uj}` : `${m} ${um}`;
+};
+
 export const LEAVE_LABELS = {
   present: "Hadir",
   sick_with_certificate: "Sakit (SKD)",
@@ -21,6 +31,20 @@ const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "
   "November", "Desember"];
 export const periodNameFor = (start, end) =>
   start && end && start.slice(0, 7) === end.slice(0, 7) ? `${BULAN[Number(start.slice(5, 7)) - 1]} ${start.slice(0, 4)}` : null;
+
+// "2026-10-01" → "1 Oktober 2026"
+export const formatDate = (iso) =>
+  iso ? `${Number(iso.slice(8, 10))} ${BULAN[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}` : "-";
+
+// Rentang periode: "1–30 September 2026"; lintas bulan "26 Agustus – 25 September 2026"; lintas tahun lengkap keduanya
+export const formatDateRange = (start, end) => {
+  if (!start || !end) return "-";
+  if (start === end) return formatDate(start);
+  const month = BULAN[Number(start.slice(5, 7)) - 1];
+  if (start.slice(0, 7) === end.slice(0, 7)) return `${Number(start.slice(8, 10))}–${formatDate(end)}`;
+  if (start.slice(0, 4) === end.slice(0, 4)) return `${Number(start.slice(8, 10))} ${month} – ${formatDate(end)}`;
+  return `${formatDate(start)} – ${formatDate(end)}`;
+};
 
 // data_issues from HAM's payroll feed (PayrollFeedRules::masalahData)
 export const DATA_ISSUE_LABELS = {

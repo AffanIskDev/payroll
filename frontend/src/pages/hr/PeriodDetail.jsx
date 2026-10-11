@@ -1,17 +1,40 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Search, DownloadCloud, LockKeyhole, ChevronLeft, Landmark, Send, XCircle, AlertTriangle, History, Users, CalendarCheck, RotateCw, Smartphone, Car } from "lucide-react";
+import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronDown, Landmark, Send, XCircle, AlertTriangle, History, Users, UserX, Clock, Ban, Baby, Hourglass, RotateCw, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
-import { rp, PERIOD_STATUS } from "@/lib/format";
+import { rp, PERIOD_STATUS, formatDate, formatDateRange, jamMenit } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 // NIK & PTKP digabung ke kolom Karyawan (baris kedua) supaya tabel muat tanpa digeser ke samping
 const COLS = ["Karyawan", "Total Penghasilan", "PKP", "PPh 21", "Poin Presensi", "Poin Absensi", "Total Potongan", "Total BPJS Kesehatan", "Total BPJS TK", "Review"];
 
-const ACTIONS = { submitted: "Diajukan ke Manager", rejected: "Ditolak", approved: "Approve & Lock" };
+// Tombol "Sinkron dari ROSY" disembunyikan dulu (user 10 Okt 2026): pengambilan data akan dipindah ke Dashboard.
+const SYNC_BUTTON_VISIBLE = false;
+
+const ACTIONS = { submitted: "Diajukan ke Manager", rejected: "Ditolak", approved: "Lock & Approve" };
+
+// kartu ringkasan periode, sekaligus filter tabel slip (user 10 Okt 2026); kursor di atas kartu menampilkan namanya
+const SummaryCard = ({ icon: Icon, label, value, sub, names, warn, active, onClick, testId }) => {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag type={onClick ? "button" : undefined} onClick={onClick} aria-pressed={onClick ? !!active : undefined} data-testid={testId}
+      title={names?.length ? `${names.slice(0, 40).join(", ")}${names.length > 40 ? `, dan ${names.length - 40} lainnya` : ""}` : ""}
+      className={`text-left bg-white border rounded-lg px-4 py-3 shadow-sm transition-colors ${active ? "border-blue-900 ring-2 ring-blue-900/20" : "border-slate-200"} ${onClick ? "hover:border-blue-400" : "cursor-default"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
+        <Icon className={`h-4 w-4 ${active ? "text-blue-900" : "text-slate-400"}`} />
+      </div>
+      <div className={`num text-2xl font-bold mt-1 ${warn && value ? "text-amber-600" : "text-slate-900"}`}>{value}</div>
+      <div className="text-xs text-slate-500 truncate">{sub}</div>
+    </Tag>
+  );
+};
+
+const FILTER_LABELS = { overtime: "Lembur", unpaid: "Unpaid", maternity: "Cuti Melahirkan", partial: "Tidak Penuh" };
 
 const nameList = (rows) => {
   const names = rows.slice(0, 8).map((r) => r.name).join(", ");
@@ -23,8 +46,10 @@ export default function PeriodDetail() {
   const [d, setD] = useState(null);
   const [busy, setBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchProblems, setBatchProblems] = useState(null);
@@ -47,6 +72,9 @@ export default function PeriodDetail() {
       await load();
       return true;
     } catch (e) { toast.error(errMsg(e)); return false; } finally { setBusy(false); }
+  };
+  const approveAll = async () => {
+    if (await act("approve-all", "Semua slip dikunci & di-approve")) setApproveOpen(false);
   };
   const reject = async () => {
     if (await act("reject", "Draft dikembalikan ke Supervisor HRD untuk dikoreksi", { reason })) {
@@ -86,59 +114,91 @@ export default function PeriodDetail() {
   };
 
   if (!d) return <div className="text-sm text-slate-500">Memuat...</div>;
-  const { period, payslips } = d;
+  const { period, payslips, summary, signer_status: signerStatus } = d;
+  const noSignature = signerStatus && signerStatus !== "ada";
   const editable = ["draft", "revision"].includes(period.status);
   const pending = period.status === "pending_approval";
   const approvedCount = payslips.filter((s) => s.status === "approved").length;
   const failed = payslips.filter((s) => s.delivery_status === "failed").length;
   const sentCount = payslips.filter((s) => s.delivery_status === "sent").length;
-  const rows = payslips.filter((s) => (s.employee.name || "").toLowerCase().includes(q.trim().toLowerCase()));
+  const nameById = Object.fromEntries(payslips.map((s) => [s.employee_id, s.employee.name]));
+  const namesOf = (ids) => ids.map((id) => nameById[id] || id);
+  // a card filters the table to its employees; one with nobody in it is not clickable
+  const card = (key) => ({ active: filter === key, onClick: summary?.[key]?.length ? () => setFilter(filter === key ? null : key) : undefined });
+  const only = filter && summary ? new Set(summary[filter]) : null;
+  const rows = payslips.filter((s) => (!only || only.has(s.employee_id)) && (s.employee.name || "").toLowerCase().includes(q.trim().toLowerCase()));
   const sumRows = (k) => rows.reduce((a, s) => a + (s[k] || 0), 0);
   const missing = period.attendance_missing || [];
   const unlinked = period.attendance_unlinked || [];
-  const skipped = period.employees_skipped || [];
   const ot = period.overtime_summary;
   const otNoRate = ot?.without_rate || [];
-  const transport = period.components_summary;
   const batchGroups = (batchProblems || []).reduce((g, p) => ({ ...g, [p.kind]: [...(g[p.kind] || []), p] }), {});
 
   return (
     <div data-testid="period-detail-page">
       <Link to="/hr-manager/payroll" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-3"><ChevronLeft className="h-4 w-4" /> Semua periode</Link>
-      <PageTitle title={period.period_name} subtitle={`${period.start_date} → ${period.end_date} · Transfer ${period.payment_date || "-"}`}>
+      <PageTitle title={period.period_name} subtitle={<>
+        <span className="block" data-testid="period-range">{formatDateRange(period.start_date, period.end_date)}</span>
+        <span className="block" data-testid="period-transfer">Transfer: {formatDate(period.payment_date)}</span>
+      </>}>
         <StatusBadge map={PERIOD_STATUS} status={period.status} testId="period-status-badge" />
-        <Btn variant="outline" data-testid="fetch-attendance-button" disabled={busy || !editable} onClick={() => act("fetch-attendance", "Sinkron dari ROSY selesai & payroll dihitung ulang")} title="Karyawan & gaji, absensi, klaim lembur, dan Transport Homecare terbaru dari ROSY"><DownloadCloud className="h-4 w-4" /> {busy ? "Menyinkronkan..." : "Sinkron dari ROSY"}</Btn>
-        {editable && <Btn variant="primary" data-testid="submit-period-button" disabled={busy || !payslips.length} onClick={() => act("submit", "Draft payroll diajukan ke Manager HRD")}><Send className="h-4 w-4" /> Ajukan ke Manager</Btn>}
+        {SYNC_BUTTON_VISIBLE && <Btn variant="outline" data-testid="fetch-attendance-button" disabled={busy || !editable} onClick={() => act("fetch-attendance", "Sinkron dari ROSY selesai & payroll dihitung ulang")} title="Karyawan & gaji, absensi, klaim lembur, dan Transport Homecare terbaru dari ROSY"><DownloadCloud className="h-4 w-4" /> {busy ? "Menyinkronkan..." : "Sinkron dari ROSY"}</Btn>}
+        {!isManager && editable && <Btn variant="primary" data-testid="submit-period-button" disabled={busy || !payslips.length} onClick={() => act("submit", "Draft payroll diajukan ke Manager HRD")}><Send className="h-4 w-4" /> Ajukan ke Manager</Btn>}
         {isManager && pending && <Btn variant="outline" data-testid="reject-period-button" disabled={busy} onClick={() => setRejectOpen(true)} className="!border-rose-300 !text-rose-700 hover:!bg-rose-50"><XCircle className="h-4 w-4" /> Tolak Draft</Btn>}
-        {isManager && <Btn variant="success" data-testid="approve-all-button" disabled={busy || !pending} onClick={() => act("approve-all", "Semua slip di-approve & dikunci")} title={!pending ? "Periode harus diajukan dulu" : ""}><LockKeyhole className="h-4 w-4" /> Approve & Lock Semua</Btn>}
-        {isManager && <Btn variant="primary" data-testid="export-bsi-button" disabled={!approvedCount} onClick={exportBsi} title="Hanya slip approved"><Landmark className="h-4 w-4" /> Ekspor BSI (CSV)</Btn>}
-        {isManager && <Btn variant="outline" data-testid="export-batch-bsi-button" disabled={!payslips.length} onClick={() => setBatchOpen(true)} title="Berkas TXT untuk diunggah ke Batch Payment BSI (format sama dengan ROSY); slip draft ikut diekspor" className="!border-emerald-300 !text-emerald-800 hover:!bg-emerald-50"><Landmark className="h-4 w-4" /> Batch Payment BSI (TXT)</Btn>}
+        {isManager && (
+          // modal={false}: dialog Batch Payment dibuka dari menu ini; menu modal Radix bisa meninggalkan body tak bisa diklik
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger data-testid="export-bsi-menu" disabled={!payslips.length} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-50"><Landmark className="h-4 w-4" /> Export BSI <ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuItem data-testid="export-batch-bsi-button" onSelect={() => setBatchOpen(true)} className="flex-col items-start gap-0.5 cursor-pointer">
+                <span className="font-semibold">TXT — Batch Payment BSI</span>
+                <span className="text-xs text-slate-500">Format unggah BSI, sama dengan ROSY; slip draft ikut diekspor</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid="export-bsi-button" disabled={!approvedCount} onSelect={exportBsi} className="flex-col items-start gap-0.5 cursor-pointer">
+                <span className="font-semibold">CSV</span>
+                <span className="text-xs text-slate-500">{approvedCount ? "Hanya slip yang sudah di-approve" : "Hanya slip yang sudah di-approve — belum ada"}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {isManager && <Btn variant="success" data-testid="approve-all-button" disabled={busy || period.status === "approved"} onClick={() => setApproveOpen(true)} title={period.status === "approved" ? "Periode sudah dikunci & di-approve" : ""}><LockKeyhole className="h-4 w-4" /> Lock & Approve</Btn>}
       </PageTitle>
       {period.last_sync_error && (
         <div className="mb-4 flex gap-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-4 py-3 text-sm" data-testid="sync-error-banner">
           <AlertTriangle className="h-5 w-5 shrink-0" />
-          <span>Sinkron dari ROSY terakhir gagal: {period.last_sync_error}. Klik "Sinkron dari ROSY" untuk mencoba lagi — periode belum dapat diajukan sebelum sinkron berhasil.</span>
+          <span>Sinkron dari ROSY terakhir gagal: {period.last_sync_error}. Ulangi lewat tombol "Sinkron dari ROSY" di Dashboard — periode belum dapat diajukan sebelum sinkron berhasil.</span>
         </div>
       )}
-      <div className="mb-4 grid sm:grid-cols-3 gap-3 text-sm" data-testid="sync-status">
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-4 py-2.5"><Users className="h-4 w-4 text-blue-900" /> Karyawan dari ROSY: <b className="num" data-testid="sync-employee-count">{period.employee_count ?? payslips.length}</b><span className="text-xs text-slate-500 num ml-auto">{period.employees_synced_at ? new Date(period.employees_synced_at).toLocaleString("id-ID") : "-"}</span></div>
-        <div className={`flex items-center gap-2 border rounded-md px-4 py-2.5 ${period.attendance_synced_at ? "bg-white border-slate-200" : "bg-amber-50 border-amber-200 text-amber-900"}`}><CalendarCheck className="h-4 w-4 text-teal-700" /> {period.attendance_synced_at ? <>Absensi RUMATKU: <b className="num" data-testid="sync-attendance-count">{period.attendance_count} log</b><span className="text-xs text-slate-500 num ml-auto">{new Date(period.attendance_synced_at).toLocaleString("id-ID")}</span></> : <span data-testid="sync-attendance-pending">Absensi belum diambil — klik "Sinkron dari ROSY"</span>}</div>
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-4 py-2.5" data-testid="transport-summary"><Car className="h-4 w-4 text-blue-900" /> Transport Homecare: {transport ? <><b className="num">{transport.transport_employees}</b> karyawan<span className="num ml-auto font-semibold">{rp(transport.transport_total)}</span></> : <span className="text-slate-500">belum disinkron</span>}</div>
-      </div>
-      {ot && (
-        <div className={`mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border rounded-md px-4 py-2.5 text-sm ${ot.pending || otNoRate.length ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-white border-slate-200"}`} data-testid="overtime-summary">
-          <span>Lembur dari ROSY (dibayar periode <span className="num">{ot.periode_bayar}</span>): <b className="num">{ot.claims}</b> klaim disetujui · <b className="num">{(ot.minutes / 60).toLocaleString("id-ID")}</b> jam · <b className="num">{ot.employees}</b> karyawan</span>
-          {ot.pending > 0 && <span data-testid="overtime-pending">· <b className="num">{ot.pending}</b> klaim masih menunggu persetujuan HRD — belum masuk slip</span>}
-          {otNoRate.length > 0 && <span data-testid="overtime-no-rate">· {otNoRate.length} karyawan punya jam lembur tapi tarifnya kosong, sehingga tidak dibayar: {nameList(otNoRate)}. Isi tarifnya di ROSY HRD (Gaji Karyawan → Atur Kontrak), lalu klik "Sinkron dari ROSY".</span>}
+      {summary && (
+        <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3" data-testid="period-summary">
+          <SummaryCard icon={Users} label="Ikut Digaji" value={summary.included} sub="karyawan di periode ini" active={!filter} onClick={() => setFilter(null)} testId="sum-included" />
+          <SummaryCard icon={UserX} label="Tidak Ikut" value={summary.skipped.length} names={summary.skipped} sub="tidak masuk periode ini" warn testId="sum-skipped" />
+          <SummaryCard icon={Clock} label="Lembur" value={summary.overtime.length} names={namesOf(summary.overtime)} sub={`${jamMenit(summary.overtime_hours)} · ${rp(summary.overtime_pay)}`} {...card("overtime")} testId="sum-overtime" />
+          <SummaryCard icon={Ban} label="Unpaid" value={summary.unpaid.length} names={namesOf(summary.unpaid)} sub="cuti di luar tanggungan" warn {...card("unpaid")} testId="sum-unpaid" />
+          <SummaryCard icon={Baby} label="Cuti Melahirkan" value={summary.maternity.length} names={namesOf(summary.maternity)} sub="Tunj. Kehadiran terpotong" {...card("maternity")} testId="sum-maternity" />
+          <SummaryCard icon={Hourglass} label="Tidak Penuh" value={summary.partial.length} names={namesOf(summary.partial)} sub="gaji prorata" warn {...card("partial")} testId="sum-partial" />
         </div>
       )}
-      {(missing.length > 0 || unlinked.length > 0 || skipped.length > 0) && (
+      {!period.attendance_synced_at && <div className="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2.5" data-testid="sync-attendance-pending">Absensi belum diambil — jalankan "Sinkron dari ROSY" di Dashboard.</div>}
+      {noSignature && period.status !== "approved" && (
+        <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2.5 text-sm" data-testid="signer-missing-banner">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{signerStatus === "tanpa_penandatangan" ? "Belum ada penandatangan slip" : "Gambar tanda tangan penandatangan belum ada"} — slip yang di-approve akan terbit <b>tanpa tanda tangan</b>. Cek di Konfigurasi → Penandatangan Slip Gaji.</span>
+        </div>
+      )}
+      {(ot?.pending > 0 || otNoRate.length > 0) && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border rounded-md px-4 py-2.5 text-sm bg-amber-50 border-amber-200 text-amber-900" data-testid="overtime-summary">
+          <AlertTriangle className="h-4 w-4" />
+          {ot.pending > 0 && <span data-testid="overtime-pending"><b className="num">{ot.pending}</b> klaim masih menunggu persetujuan HRD — belum masuk slip</span>}
+          {otNoRate.length > 0 && <span data-testid="overtime-no-rate">{otNoRate.length} karyawan punya jam lembur tapi tarifnya kosong, sehingga tidak dibayar: {nameList(otNoRate)}. Isi tarifnya di ROSY HRD (Gaji Karyawan → Atur Kontrak), lalu jalankan "Sinkron dari ROSY" di Dashboard.</span>}
+        </div>
+      )}
+      {(missing.length > 0 || unlinked.length > 0) && (
         <div className="mb-4 flex gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-3" data-testid="sync-warning-banner">
           <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
           <div className="text-sm space-y-1">
             {missing.length > 0 && <div data-testid="attendance-missing"><b className="num">{missing.length}</b> karyawan tanpa data absensi, sehingga Tunjangan Kehadirannya tidak terpotong apa pun: {nameList(missing)}</div>}
             {unlinked.length > 0 && <div data-testid="attendance-unlinked"><b className="num">{unlinked.length}</b> karyawan belum tertaut ke akun RUMATKU di HAM, jadi absensinya tidak terbaca: {nameList(unlinked)}</div>}
-            {skipped.length > 0 && <div data-testid="employees-skipped"><b className="num">{skipped.length}</b> karyawan tidak ikut periode ini karena belum punya Kontrak Gaji di HAM: {nameList(skipped)}</div>}
           </div>
         </div>
       )}
@@ -160,15 +220,23 @@ export default function PeriodDetail() {
       )}
       {pending && (
         <div className="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2.5" data-testid="pending-banner">
-          Diajukan oleh {period.submitted_by_name || period.submitted_by}. {isManager ? "Silakan review, lalu Approve & Lock atau Tolak dengan alasan." : "Menunggu keputusan Manager HRD; data tidak dapat diubah."}
+          {(period.submitted_by_name || period.submitted_by) && <>Diajukan oleh {period.submitted_by_name || period.submitted_by}. </>}{isManager ? "Silakan review, lalu Lock & Approve atau Tolak dengan alasan." : "Menunggu keputusan Manager HRD; data tidak dapat diubah."}
         </div>
       )}
       <Panel>
         <div className="overflow-x-auto">
-          <label className="mb-3 flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 bg-white w-72">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input data-testid="payslip-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama karyawan" className="outline-none text-sm w-full" />
-          </label>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 bg-white w-72">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input data-testid="payslip-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama karyawan" className="outline-none text-sm w-full" />
+            </label>
+            {filter && (
+              <span className="inline-flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-3 py-1.5" data-testid="payslip-filter">
+                Filter: <b>{FILTER_LABELS[filter]}</b> · <span className="num">{only.size}</span> karyawan
+                <button type="button" onClick={() => setFilter(null)} className="text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="payslip-filter-clear"><XCircle className="h-4 w-4" /></button>
+              </span>
+            )}
+          </div>
           <table className="w-full text-sm" data-testid="payslips-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
@@ -195,7 +263,7 @@ export default function PeriodDetail() {
                   <td className="px-4 py-3 text-right"><Link to={`/hr-manager/payroll/${pid}/employee/${s.employee_id}`} data-testid={`review-${s.employee.nik}`} className="text-blue-900 font-semibold hover:underline whitespace-nowrap">Review</Link></td>
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={COLS.length} className="px-4 py-8 text-center text-slate-500">{payslips.length ? "Tidak ada nama yang cocok." : "Belum ada slip. Klik \"Sinkron dari ROSY\"."}</td></tr>}
+              {!rows.length && <tr><td colSpan={COLS.length} className="px-4 py-8 text-center text-slate-500">{payslips.length ? "Tidak ada nama yang cocok." : "Belum ada slip. Jalankan \"Sinkron dari ROSY\" di Dashboard."}</td></tr>}
             </tbody>
             {!!rows.length && (
               <tfoot className="bg-slate-50 font-semibold">
@@ -241,6 +309,23 @@ export default function PeriodDetail() {
           <div className="flex justify-end gap-2">
             <Btn variant="outline" data-testid="reject-cancel-button" onClick={() => setRejectOpen(false)}>Batal</Btn>
             <Btn data-testid="reject-confirm-button" disabled={busy || reason.trim().length < 5} onClick={reject} className="!bg-rose-600 hover:!bg-rose-700"><XCircle className="h-4 w-4" /> Tolak & Kembalikan</Btn>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={approveOpen} onOpenChange={(o) => !busy && setApproveOpen(o)}>
+        <DialogContent data-testid="approve-confirm-dialog">
+          <DialogHeader>
+            <DialogTitle>Lock & Approve semua slip {period.period_name}?</DialogTitle>
+            <DialogDescription><span className="num">{payslips.length}</span> slip · Total Diterima <b className="num whitespace-nowrap">{rp(payslips.reduce((a, s) => a + (s.take_home_pay || 0), 0))}</b></DialogDescription>
+          </DialogHeader>
+          <div className="text-sm text-slate-600 space-y-2">
+            {editable && <p className="bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2" data-testid="approve-direct-note">Periode ini belum diajukan Supervisor HRD — Anda meng-approve langsung dari draft.</p>}
+            {noSignature && <p className="bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-3 py-2" data-testid="approve-no-signature-note">Tanda tangan penandatangan belum ada — slip PDF akan terbit <b>tanpa tanda tangan</b>.</p>}
+            <p>Semua slip <b>dikunci dan tidak bisa diubah atau dibuka lagi</b>. Slip PDF otomatis dikirim ke aplikasi Rumatku karyawan.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Btn variant="outline" data-testid="approve-cancel-button" disabled={busy} onClick={() => setApproveOpen(false)}>Batal</Btn>
+            <Btn variant="success" data-testid="approve-confirm-button" disabled={busy} onClick={approveAll}><LockKeyhole className="h-4 w-4" /> {busy ? "Mengunci..." : "Ya, Lock & Approve"}</Btn>
           </div>
         </DialogContent>
       </Dialog>

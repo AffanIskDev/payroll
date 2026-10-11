@@ -5,6 +5,7 @@ Live endpoints (HAM, header X-Integrasi-Key, caller RASA, read-only):
   GET {HAM_API_URL}/api/ham/v2/payroll-feed/karyawan?payroll_company_id=&periode=YYYY-MM
   GET {HAM_API_URL}/api/ham/v2/payroll-feed/presensi?payroll_company_id=&start=&end=
   POST {HAM_API_URL}/api/ham/v2/payroll-feed/auth/login?payroll_company_id=  (verifies a ROSY login, writes nothing)
+  GET {HAM_API_URL}/api/ham/v2/payroll-feed/penandatangan[/foto]?payroll_company_id=  (slip signer + signature image)
 Payslip delivery still uses the legacy RUMATKU contract (RUMATKU_API_URL), mock until HAM's slip
 endpoint exists."""
 import hashlib
@@ -32,9 +33,13 @@ LEAVE_MAP = {
     "ibadah": "religious_leave", "alfa": "alpha", "dispensasi": "dispensation", "libur": "day_off",
 }
 
-# Monthly ROSY component RASA pays (HAM "Transport Rumat Kita", shown on the slip as Transport Homecare).
-# Other monthly components (e.g. KOMP-00023 Lembur) are ignored: overtime is paid from the HAM claims.
+# Monthly ROSY components RASA takes over (HAM Tambahan Bulanan), component id -> period_components kode:
+# "Transport Rumat Kita" (shown as Transport Homecare), "Bonus" and "Potongan Tidak Mencapai Target" — Bonus is no
+# longer typed in RASA, it is ROSY's like transport (user decision 10 Oct 2026). Other monthly components (e.g.
+# KOMP-00023 Lembur) are ignored: overtime is paid from the HAM claims.
 TRANSPORT_COMPONENT = "KOMP-00022"
+MONTHLY_COMPONENTS = {TRANSPORT_COMPONENT: "TRANSPORT_HOMECARE", "KOMP-00005": "BONUS",
+                      "KOMP-00015": "TARGET_DEDUCTION"}
 
 # Simulation sample (mock mode only)
 EMPLOYEES = [
@@ -161,6 +166,29 @@ def normalize_employee(r: dict) -> dict:
     }
 
 
+async def fetch_signer() -> tuple:
+    """(signer, company): this company's payroll Document Signer in ROSY — the same one ROSY's own slips use —
+    without pulling every employee. signer is None when ROSY has none (and always in mock mode)."""
+    if mode("ROSY") != "live":
+        return None, None
+    body = await _get("/penandatangan", {"payroll_company_id": company_id()})
+    return body.get("data"), (body.get("meta") or {}).get("company")
+
+
+async def fetch_signer_image():
+    """(image bytes, ttd_versi of the file actually sent) of the signer's signature, or None when ROSY has no
+    signature or cannot serve the file (404). Raises on any other failure."""
+    url = os.environ["HAM_API_URL"].rstrip("/") + FEED + "/penandatangan/foto"
+    headers = {"X-Integrasi-Key": os.environ.get("HAM_INTEGRASI_KEY", "")}
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.get(url, headers=headers, params={"payroll_company_id": company_id()})
+    if r.status_code == 404:
+        return None
+    if r.status_code != 200:
+        raise RuntimeError(f"HAM {r.status_code}")
+    return r.content, r.headers.get("x-ttd-versi")
+
+
 async def fetch_employees(periode: str) -> tuple:
     """Returns (employees, meta). periode = 'YYYY-MM'."""
     if mode("ROSY") == "live":
@@ -169,13 +197,22 @@ async def fetch_employees(periode: str) -> tuple:
     else:
         raw, meta = _mock_rosy(), {"dilewati": [], "company": None}
     # Monthly values belong to this periode only, so they never go onto the employee record
-    meta["transport"] = {str(r["employee_id"]): transport_of(r) for r in raw if transport_of(r)}
+    meta["components"] = {str(r["employee_id"]): c for r in raw if (c := monthly_components(r))}
     return [normalize_employee(r) for r in raw], meta
 
 
-def transport_of(r: dict) -> float:
+def component_total(r: dict, component_id: str) -> float:
     return sum(float(k.get("nominal") or 0) for k in r.get("komponen_bulanan") or []
-               if k.get("component_id") == TRANSPORT_COMPONENT)
+               if k.get("component_id") == component_id)
+
+
+def transport_of(r: dict) -> float:
+    return component_total(r, TRANSPORT_COMPONENT)
+
+
+def monthly_components(r: dict) -> dict:
+    """{kode: nominal} of the MONTHLY_COMPONENTS this employee has this month; zero ones are left out."""
+    return {kode: n for cid, kode in MONTHLY_COMPONENTS.items() if (n := component_total(r, cid))}
 
 
 def _hhmm(m: int) -> str:

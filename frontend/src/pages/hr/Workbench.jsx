@@ -3,11 +3,14 @@ import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, ChevronDown, Save, LockKeyhole, FileText, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, downloadBlob } from "@/lib/api";
-import { rp, SLIP_STATUS, PAYROLL_STATUS_LABELS, LEAVE_LABELS } from "@/lib/format";
+import { rp, SLIP_STATUS, PAYROLL_STATUS_LABELS, LEAVE_LABELS, jamMenit } from "@/lib/format";
 import { Panel, StatusBadge, Btn } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 
 const ADJ = ["overtime_hours", "kpi_incentive", "additional_bonus", "other_deductions"];
+// Insentif KPI disembunyikan dulu dari review (user 10 Okt 2026); barisnya tetap muncul bila slip sudah berisi nilai,
+// supaya Total Pendapatan tetap bisa ditelusuri. Ganti ke true untuk menampilkannya lagi.
+const KPI_VISIBLE = false;
 // PPT: jenis ketidakhadiran yang ikut memotong gaji pokok & tunjangan jabatan (selain tunjangan kehadiran)
 const FULL_CUT = ["alpha", "permission_leave", "approved_unpaid_leave"];
 
@@ -84,7 +87,7 @@ export default function Workbench() {
     try {
       await api.put(`/hr/periods/${pid}/employees/${eid}`, { ...numeric(adj), adjustment_notes: notes });
       await api.post(`/hr/periods/${pid}/employees/${eid}/approve`);
-      toast.success("Slip di-approve, dikunci & PDF terenkripsi dibuat");
+      toast.success("Slip dikunci & di-approve, PDF terenkripsi dibuat");
       await load();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
@@ -92,7 +95,6 @@ export default function Workbench() {
 
   if (!d || !calc) return <div className="text-sm text-slate-500">Memuat...</div>;
   const { employee: emp, period, payslip, attendance } = d;
-  const pending = period.status === "pending_approval";
   const locked = payslip.status === "approved" || (!isManager && !(["draft", "revision"].includes(period.status)));
   const dc = calc.discipline || payslip.discipline;
   const bp = calc.bpjs || payslip.bpjs;
@@ -138,10 +140,10 @@ export default function Workbench() {
             <Row label="Gaji Pokok" hint={calc.wage_multiplier !== 1 ? `Pengali upah ${calc.wage_multiplier * 100}% dari ${rp(calc.basic_salary_contract)}` : null} value={rp(calc.basic_salary)} testId="earn-basic" />
             <Row label="Tunjangan Jabatan" value={rp(calc.position_allowance)} testId="earn-position" />
             <Row label={split ? "Tunjangan Kehadiran" : "Tunjangan Kehadiran (bersih)"} value={rp(split ? calc.attendance_allowance_base : calc.attendance_allowance)} testId="earn-attendance" />
-            <Row label={`Lembur (${calc.overtime_hours} jam dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />
+            {(emp.overtime_access || calc.overtime_hours > 0 || calc.overtime_pay > 0) && <Row label={`Lembur (${jamMenit(calc.overtime_hours)} dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />}
             <Row label="Transport Homecare" hint="Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)" value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
-            <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />
-            <Edit label="Bonus" value={adj.additional_bonus} onChange={set("additional_bonus")} disabled={locked} testId="input-additional-bonus" />
+            {(KPI_VISIBLE || Number(adj.kpi_incentive) !== 0) && <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />}
+            <Row label="Bonus" hint="Dari ROSY (Tambahan Bulanan: Bonus)" value={rp(calc.additional_bonus || 0)} testId="earn-bonus" />
             <Row label="Tunjangan BPJS Kesehatan (4%)" hint={`Basis ${rp(bp.kes_base)} (max gaji pokok, UMK Bekasi)`} value={rp(calc.tunjangan_bpjs_kes)} testId="earn-bpjs-kes" />
             <Row label="Tunjangan BPJS TK" hint={`JKK ${rp(bp.jkk)} · JKM ${rp(bp.jkm)} · JHT 3,7% ${rp(bp.jht_company)} · JP 2% ${rp(bp.jp_company)}`} value={rp(calc.tunjangan_bpjs_tk)} testId="earn-bpjs-tk" />
           </div>
@@ -152,6 +154,7 @@ export default function Workbench() {
             <div className="px-5 py-2">
               {split && <Row label="Potongan Presensi" hint={`${calc.late_penalty_points} poin presensi × 1/${wd} Tunjangan Kehadiran`} value={rp(presensi)} tone={presensi > 0 ? "text-rose-600" : ""} testId="ded-presensi" />}
               <Row label="Potongan Absensi" hint={`${calc.absence_points ?? calc.absent_days ?? 0} hari alfa/izin${absensiHint ? ` — ${absensiHint}` : ""}`} value={rp(absensi)} tone={absensi > 0 ? "text-rose-600" : ""} testId="ded-absensi" />
+              {calc.target_deduction > 0 && <Row label="Potongan Tidak Mencapai Target" hint="Dari ROSY (Tambahan Bulanan: Potongan Tidak Mencapai Target)" value={rp(calc.target_deduction)} tone="text-rose-600" testId="ded-target" />}
               <Row label="Iuran BPJS Kesehatan (5%)" hint={`Perusahaan ${rp(bp.kes_company)} + Karyawan ${rp(bp.kes_employee)}`} value={rp(calc.iuran_bpjs_kes_total)} testId="ded-bpjs-kes" />
               <Row label="Iuran BPJS Ketenagakerjaan" hint={`JKK+JKM ${rp(bp.jkk + bp.jkm)} · JHT ${rp(bp.jht_company + bp.jht_employee)} · JP ${rp(bp.jp_company + bp.jp_employee)}`} value={rp(calc.iuran_bpjs_tk_total)} testId="ded-bpjs-tk" />
               {calc.tax_reconciliation ? (
@@ -221,7 +224,7 @@ export default function Workbench() {
           <div className="flex gap-2 flex-wrap">
             <Btn variant="outline" onClick={pdf} data-testid="preview-pdf-button"><FileText className="h-4 w-4" /> Preview PDF Slip</Btn>
             <Btn variant="primary" onClick={save} disabled={busy || locked} data-testid="save-draft-button"><Save className="h-4 w-4" /> Simpan Draft</Btn>
-            {isManager && <Btn variant="success" onClick={approve} disabled={busy || payslip.status === "approved" || !pending} title={!pending ? "Periode harus diajukan ke Manager dulu" : ""} data-testid="approve-lock-button"><LockKeyhole className="h-4 w-4" /> Approve & Lock</Btn>}
+            {isManager && <Btn variant="success" onClick={approve} disabled={busy || payslip.status === "approved"} title={payslip.status === "approved" ? "Slip sudah dikunci & di-approve" : ""} data-testid="approve-lock-button"><LockKeyhole className="h-4 w-4" /> Lock & Approve</Btn>}
           </div>
         </div>
       </div>

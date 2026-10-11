@@ -1,6 +1,8 @@
 import io
+import re
 import secrets
 from pathlib import Path
+from typing import Optional
 from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
@@ -14,8 +16,15 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 STORAGE = Path(__file__).parent / "storage" / "payslips"
 STORAGE.mkdir(parents=True, exist_ok=True)
+# Tanda tangan penandatangan slip dari ROSY, disimpan signer.py per versi berkas (ttd_versi HAM)
+SIGNATURES = Path(__file__).parent / "storage" / "signatures"
+SIGN_H = 13 * mm  # slip ROSY: 55 px (~14,5 mm); di sini muat di ruang tanda tangan 14 mm yang sudah ada
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 ASSETS = Path(__file__).parent / "assets"
 LOGO_H = 14 * mm  # same height as the e-recruitment offering letter header
+# logo RUMAT lebar (rasio 4:1): pada tinggi yang sama ia tiga kali luas logo RPI, jadi dibuat lebih pendek supaya
+# tidak terlalu dominan (permintaan user 10 Okt 2026)
+RUMAT_LOGO_H = 11 * mm
 LINE = 12  # one blank line (pt) at the slip's body text size
 NAVY = colors.HexColor("#0F172A")
 
@@ -87,10 +96,29 @@ def _presence_detail(slip: dict) -> str:
     return ", ".join(late + days) or f"{slip.get('late_penalty_points', 0)} poin"
 
 
-def _logo(name: str, max_w: float) -> Image:
+def _logo(name: str, max_w: float, logo_h: float = LOGO_H) -> Image:
     path = ASSETS / name
     w, h = ImageReader(str(path)).getSize()
-    height = LOGO_H if w * LOGO_H / h <= max_w else max_w * h / w
+    height = logo_h if w * logo_h / h <= max_w else max_w * h / w
+    return Image(str(path), width=w * height / h, height=height, mask="auto")
+
+
+def signature_path(signer: Optional[dict]) -> Optional[Path]:
+    """The cached signature image of this signer version, or None (no signer, no signature in ROSY, not fetched)."""
+    sid, ver = str((signer or {}).get("id") or ""), str((signer or {}).get("ttd_versi") or "")
+    if not (_SAFE_ID.match(sid) and _SAFE_ID.match(ver)):
+        return None
+    path = SIGNATURES / f"{sid}-{ver}.png"
+    return path if path.is_file() else None
+
+
+def _signature(signer: dict):
+    """The signer's signature image (as on ROSY's slip), or an empty cell for a wet signature."""
+    path = signature_path(signer)
+    if not path:
+        return ""
+    w, h = ImageReader(str(path)).getSize()
+    height = SIGN_H if w * SIGN_H / h <= 56 * mm else 56 * mm * h / w
     return Image(str(path), width=w * height / h, height=height, mask="auto")
 
 
@@ -101,8 +129,12 @@ def _rekening(emp: dict) -> str:
     return (f"{norek} ({bank})" if bank else norek) if norek else (bank or "-")
 
 
-def _jam(h) -> str:
-    return f"{float(h or 0):g}".replace(".", ",")
+def _jam_menit(h) -> str:
+    """Overtime hours as '25 jam 58 menit': paid per minute like the drivers' Excel recap (user 11 Oct 2026)."""
+    j, m = divmod(round(float(h or 0) * 60), 60)
+    if j and m:
+        return f"{j} jam {m} menit"
+    return f"{j} jam" if j else f"{m} menit"
 
 
 def payslip_lines(slip: dict) -> tuple:
@@ -120,7 +152,7 @@ def payslip_lines(slip: dict) -> tuple:
     earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
                    ("Tunjangan Jabatan", slip["position_allowance"], False),
                    (*kehadiran, False),
-                   (f"Lembur ({_jam(slip['overtime_hours'])} jam)", slip["overtime_pay"], False),
+                   (f"Lembur ({_jam_menit(slip['overtime_hours'])})", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus", slip["additional_bonus"], False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
@@ -128,6 +160,7 @@ def payslip_lines(slip: dict) -> tuple:
                    ("TOTAL PENDAPATAN", slip["gross_earnings"] + presensi + absensi, True)])
     ded = _shown([("Potongan Presensi", presensi, False, _presence_detail(slip)),
                   ("Potongan Absensi", absensi, False, _absence_detail(slip)),
+                  ("Potongan Tidak Mencapai Target", slip.get("target_deduction", 0), False),
                   ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
                   ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
                   (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
@@ -148,9 +181,11 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     title = ParagraphStyle("t", parent=ss["Title"], fontSize=ss["Title"].fontSize * 0.7,
                            leading=ss["Title"].leading * 0.7)
     # Kop like the e-recruitment offering letter: RPI (PT Rumah Perawatan Indonesia) left, RUMAT right
-    kop = Table([[_logo("logo-rpi.png", 58 * mm), _logo("logo-rumat.png", 58 * mm)]], colWidths=[83 * mm, 83 * mm])
+    kop = Table([[_logo("logo-rpi.png", 58 * mm), _logo("logo-rumat.png", 58 * mm, RUMAT_LOGO_H)]],
+                colWidths=[83 * mm, 83 * mm])
     kop.hAlign = "LEFT"
-    kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+    # MIDDLE: logo RUMAT yang lebih pendek berada di tengah tinggi logo RPI, bukan menempel di atas
+    kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                              ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
     # jarak kop → judul → identitas: +1 baris di bawah logo (9 Okt pagi sempat +3 baris, dinilai terlalu jauh)
@@ -198,13 +233,16 @@ def render_payslip(slip: dict, period: dict) -> bytes:
                                     ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                                     ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
     els += [total, Spacer(1, 6), disclaimer, Spacer(1, 12)]
-    # Penandatangan = Document Signer payroll di ROSY (disimpan di periode saat sinkron); kosong bila belum ada
+    # Penandatangan = Document Signer payroll di ROSY (disimpan di periode saat sinkron); kosong bila belum ada.
+    # Gambar tanda tangannya juga dari ROSY; tanpa gambar, ruangnya tetap kosong
     signer = period.get("signer") or {}
-    sign = Table([["", "Disetujui oleh,"], ["", ""], ["", signer.get("nama") or ""],
+    sign = Table([["", "Disetujui oleh,"], ["", _signature(signer)], ["", signer.get("nama") or ""],
                   ["", signer.get("jabatan") or ""]], colWidths=[106 * mm, 60 * mm],
                  rowHeights=[5 * mm, 14 * mm, 5 * mm, 7 * mm])  # baris jabatan 7 mm: ada jarak di bawah garis
     sign.hAlign = "LEFT"
     sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 0), (1, -1), "CENTER"),
+                              ("VALIGN", (1, 1), (1, 1), "MIDDLE"),
+                              ("TOPPADDING", (1, 1), (1, 1), 0), ("BOTTOMPADDING", (1, 1), (1, 1), 0),
                               ("FONTNAME", (1, 2), (1, 2), "Helvetica-Bold"),
                               ("LINEBELOW", (1, 2), (1, 2), 0.5, NAVY)]))
     # 7 pt: satu baris (154 mm) di dalam lebar isi 166 mm — pada 8 pt sisa "tanpa izin HRD." turun sendirian
