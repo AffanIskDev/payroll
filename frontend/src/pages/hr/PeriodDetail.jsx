@@ -11,6 +11,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 
 // NIK & PTKP digabung ke kolom Karyawan (baris kedua) supaya tabel muat tanpa digeser ke samping
 const COLS = ["Karyawan", "Total Penghasilan", "PKP", "PPh 21", "Poin Presensi", "Poin Absensi", "Total Potongan", "Total BPJS Kesehatan", "Total BPJS TK", "Review"];
+// kolom Karyawan menempel di kiri saat tabel digeser di HP/tablet (12 Okt 2026); garis tipis memisahkannya dari angka
+const STICKY = "sticky left-0 z-10 shadow-[1px_0_0_#e2e8f0]";
 
 // Tombol "Sinkron dari ROSY" disembunyikan dulu (user 10 Okt 2026): pengambilan data akan dipindah ke Dashboard.
 const SYNC_BUTTON_VISIBLE = false;
@@ -33,6 +35,8 @@ export default function PeriodDetail() {
   const [reason, setReason] = useState("");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState(null);
+  // nama yang tidak ikut digaji: di HP/tablet tidak ada hover, jadi kartunya bisa diketuk untuk membuka daftar
+  const [showSkipped, setShowSkipped] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchProblems, setBatchProblems] = useState(null);
@@ -119,7 +123,7 @@ export default function PeriodDetail() {
 
   return (
     <div data-testid="period-detail-page">
-      <Link to="/hr-manager/payroll" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-3"><ChevronLeft className="h-4 w-4" /> Semua periode</Link>
+      <Link to="/hr-manager/payroll" className="tap inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-3"><ChevronLeft className="h-4 w-4" /> Semua periode</Link>
       <PageTitle title={period.period_name} subtitle={<>
         <span className="block" data-testid="period-range">{formatDateRange(period.start_date, period.end_date)}</span>
         <span className="block" data-testid="period-transfer">Transfer: {formatDate(period.payment_date)}</span>
@@ -155,12 +159,19 @@ export default function PeriodDetail() {
       {summary && (
         <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3" data-testid="period-summary">
           <SummaryCard icon={Users} label="Ikut Digaji" value={summary.included} sub="karyawan di periode ini" active={!filter} onClick={() => setFilter(null)} testId="sum-included" />
-          <SummaryCard icon={UserX} label="Tidak Ikut" value={summary.skipped.length} names={summary.skipped} sub="tidak masuk periode ini" warn testId="sum-skipped" />
+          <SummaryCard icon={UserX} label="Tidak Ikut" value={summary.skipped.length} names={summary.skipped} sub="tidak masuk periode ini" warn
+            active={showSkipped} onClick={summary.skipped.length ? () => setShowSkipped(!showSkipped) : undefined} testId="sum-skipped" />
           <SummaryCard icon={Clock} label="Lembur" value={summary.overtime.length} names={namesOf(summary.overtime)} sub={`${jamMenit(summary.overtime_hours)} · ${rp(summary.overtime_pay)}`} {...card("overtime")} testId="sum-overtime" />
           <SummaryCard icon={Ban} label="Unpaid" value={summary.unpaid.length} names={namesOf(summary.unpaid)} sub="cuti di luar tanggungan" warn {...card("unpaid")} testId="sum-unpaid" />
           <SummaryCard icon={Baby} label="Cuti Melahirkan" value={summary.maternity.length} names={namesOf(summary.maternity)} sub="Tunj. Kehadiran terpotong" {...card("maternity")} testId="sum-maternity" />
           <SummaryCard icon={Hourglass} label="Tidak Penuh" value={summary.partial.length} names={namesOf(summary.partial)} sub="gaji prorata" warn {...card("partial")} testId="sum-partial" />
         </div>
+      )}
+      {showSkipped && summary?.skipped.length > 0 && (
+        <Panel title={`Tidak ikut periode ini · ${summary.skipped.length} karyawan`} className="mb-4"
+          right={<button type="button" onClick={() => setShowSkipped(false)} className="tap text-slate-400 hover:text-slate-700" title="Tutup"><XCircle className="h-4 w-4" /></button>}>
+          <div className="px-5 py-3 text-sm text-slate-700 max-h-60 overflow-y-auto" data-testid="period-skipped-list">{summary.skipped.join(" · ")}</div>
+        </Panel>
       )}
       {!period.attendance_synced_at && <div className="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-4 py-2.5" data-testid="sync-attendance-pending">Absensi belum diambil — jalankan "Sinkron dari ROSY" di Dashboard.</div>}
       {noSignature && period.status !== "approved" && (
@@ -216,7 +227,7 @@ export default function PeriodDetail() {
           {filter && (
             <span className="inline-flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-3 py-2" data-testid="payslip-filter">
               Filter: <b>{FILTER_LABELS[filter]}</b> · <span className="num">{only.size}</span> karyawan
-              <button type="button" onClick={() => setFilter(null)} className="text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="payslip-filter-clear"><XCircle className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setFilter(null)} className="tap text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="payslip-filter-clear"><XCircle className="h-4 w-4" /></button>
             </span>
           )}
         </div>
@@ -225,15 +236,18 @@ export default function PeriodDetail() {
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
                 {COLS.map((h, i) => (
-                  <th key={h + i} className={`px-4 py-3 ${i > 0 && i < COLS.length - 1 ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={h + i} className={`px-4 py-3 ${i > 0 && i < COLS.length - 1 ? "text-right" : "text-left"} ${i === 0 ? STICKY : ""} ${i === 0 ? "bg-slate-50" : ""}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50" data-testid={`payslip-row-${s.employee.nik}`}>
-                  <td className="px-4 py-2.5 min-w-[11rem]">
-                    <div className="font-semibold leading-snug">{s.employee.name}{s.is_manually_adjusted && <span className="ml-2 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">EDIT</span>}</div>
+                <tr key={s.id} className="group hover:bg-slate-50" data-testid={`payslip-row-${s.employee.nik}`}>
+                  <td className={`px-4 py-2.5 min-w-[11rem] bg-white group-hover:bg-slate-50 ${STICKY}`}>
+                    <div className="font-semibold leading-snug">
+                      <Link to={`/hr-manager/payroll/${pid}/employee/${s.employee_id}`} className="tap text-slate-900 hover:text-blue-900 hover:underline">{s.employee.name}</Link>
+                      {s.is_manually_adjusted && <span className="ml-2 text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">EDIT</span>}
+                    </div>
                     <div className="num text-xs text-slate-500 whitespace-nowrap">{s.employee.nik} · {s.ptkp_status}</div>
                   </td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(s.gross_earnings)}</td>
@@ -244,7 +258,7 @@ export default function PeriodDetail() {
                   <td className="px-4 py-3 num text-right whitespace-nowrap text-rose-600">{rp(s.total_deductions)}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(s.iuran_bpjs_kes_total)}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(s.iuran_bpjs_tk_total)}</td>
-                  <td className="px-4 py-3 text-right"><Link to={`/hr-manager/payroll/${pid}/employee/${s.employee_id}`} data-testid={`review-${s.employee.nik}`} className="text-blue-900 font-semibold hover:underline whitespace-nowrap">Review</Link></td>
+                  <td className="px-4 py-3 text-right"><Link to={`/hr-manager/payroll/${pid}/employee/${s.employee_id}`} data-testid={`review-${s.employee.nik}`} className="tap text-blue-900 font-semibold hover:underline whitespace-nowrap">Review</Link></td>
                 </tr>
               ))}
               {!rows.length && <tr><td colSpan={COLS.length} className="px-4 py-8 text-center text-slate-500">{payslips.length ? "Tidak ada nama yang cocok." : "Belum ada slip. Jalankan \"Sinkron dari ROSY\" di Dashboard."}</td></tr>}
@@ -252,7 +266,7 @@ export default function PeriodDetail() {
             {!!rows.length && (
               <tfoot className="bg-slate-50 font-semibold">
                 <tr>
-                  <td className="px-4 py-3 text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap">Total {rows.length} karyawan</td>
+                  <td className={`px-4 py-3 text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap bg-slate-50 ${STICKY}`}>Total {rows.length} karyawan</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(sumRows("gross_earnings"))}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(sumRows("taxable_gross"))}</td>
                   <td className="px-4 py-3 num text-right whitespace-nowrap">{rp(sumRows("pph21_amount"))}</td>

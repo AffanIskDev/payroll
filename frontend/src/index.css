@@ -4,12 +4,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Lintas perangkat & OS (12 Okt 2026):
+   - scrollbar-gutter: ruang scrollbar klasik Windows/Linux (±15px) selalu disediakan, jadi isi tidak bergeser saat
+     pindah antara halaman pendek dan panjang (scrollbar macOS & HP mengambang, tidak terpengaruh)
+   - text-size-adjust: Safari iOS tidak membesarkan teks sendiri saat HP dimiringkan */
+html {
+    scrollbar-gutter: stable;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body {
     margin: 0;
     font-family: "Plus Jakarta Sans", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     background: #F8FAFC;
     color: #0F172A;
+}
+
+/* Area sentuh ±40px untuk tautan/tombol kecil (Review di tabel, ikon hapus, tautan kembali) di layar sentuh, tanpa
+   mengubah tata letak; dengan mouse tidak berlaku */
+@media (pointer: coarse) {
+    .tap { position: relative; }
+    .tap::after { content: ""; position: absolute; inset: -10px -6px; }
 }
 
 .num {

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
-import { PERIOD_STATUS, periodNameFor, unfinishedSyncDay } from "@/lib/format";
+import { PERIOD_STATUS, periodNameFor, unfinishedSyncDay, formatDate, formatDateRange } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 import SyncTodayDialog from "@/components/SyncTodayDialog";
 import { useAuth, isManager } from "@/context/AuthContext";
@@ -66,27 +66,34 @@ export default function Periods() {
         <Btn data-testid="create-period-button" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Periode Baru</Btn>
       </PageTitle>
       <Panel>
-        <table className="w-full text-sm" data-testid="periods-table">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-            <tr><th className="text-left px-5 py-3">Periode</th><th className="text-left px-5 py-3">Rentang</th><th className="text-left px-5 py-3">Tgl Bayar</th><th className="text-left px-5 py-3">Status</th><th /></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {list.map((p) => (
-              <tr key={p.id} className="hover:bg-slate-50">
-                <td className="px-5 py-3 font-semibold">{p.period_name}</td>
-                <td className="px-5 py-3 num text-slate-600">{p.start_date} → {p.end_date}</td>
-                <td className="px-5 py-3 num text-slate-600">{p.payment_date || "-"}</td>
-                <td className="px-5 py-3"><StatusBadge map={PERIOD_STATUS} status={p.status} testId={`period-status-${p.id}`} /></td>
-                <td className="px-5 py-3 text-right whitespace-nowrap">
-                  <Link data-testid={`open-period-${p.id}`} to={`/hr-manager/payroll/${p.id}`} className="text-blue-900 font-semibold hover:underline">Buka</Link>
-                  {(["draft", "revision"].includes(p.status) || (p.status === "pending_approval" && isManager(user))) && (
-                    <button data-testid={`delete-period-${p.id}`} onClick={() => setDel(p)} className="ml-3 p-1 rounded text-rose-600 hover:bg-rose-50 align-middle" title="Hapus periode"><Trash2 className="h-4 w-4" /></button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* HP (user 12 Okt 2026): nama periode jadi tautannya, rentang & tanggal transfer turun ke bawah nama, sehingga
+            Status dan tombol hapus tetap terlihat tanpa menggeser tabel */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="periods-table">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+              <tr><th className="text-left px-3 sm:px-5 py-3">Periode</th><th className="hidden sm:table-cell text-left px-5 py-3">Rentang</th><th className="hidden sm:table-cell text-left px-5 py-3">Tgl Bayar</th><th className="text-left px-3 sm:px-5 py-3">Status</th><th /></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {list.map((p) => (
+                <tr key={p.id} className="hover:bg-slate-50">
+                  <td className="px-3 sm:px-5 py-3">
+                    <Link to={`/hr-manager/payroll/${p.id}`} className="tap font-semibold text-slate-900 hover:text-blue-900 hover:underline" data-testid={`period-name-${p.id}`}>{p.period_name}</Link>
+                    <div className="sm:hidden text-xs text-slate-500">{formatDateRange(p.start_date, p.end_date)}{p.payment_date ? ` · transfer ${formatDate(p.payment_date)}` : ""}</div>
+                  </td>
+                  <td className="hidden sm:table-cell px-5 py-3 text-slate-600 whitespace-nowrap">{formatDateRange(p.start_date, p.end_date)}</td>
+                  <td className="hidden sm:table-cell px-5 py-3 text-slate-600 whitespace-nowrap">{p.payment_date ? formatDate(p.payment_date) : "-"}</td>
+                  <td className="px-3 sm:px-5 py-3"><StatusBadge map={PERIOD_STATUS} status={p.status} testId={`period-status-${p.id}`} /></td>
+                  <td className="px-3 sm:px-5 py-3 text-right whitespace-nowrap">
+                    <Link data-testid={`open-period-${p.id}`} to={`/hr-manager/payroll/${p.id}`} className="tap hidden sm:inline text-blue-900 font-semibold hover:underline">Buka</Link>
+                    {(["draft", "revision"].includes(p.status) || (p.status === "pending_approval" && isManager(user))) && (
+                      <button data-testid={`delete-period-${p.id}`} onClick={() => setDel(p)} className="tap sm:ml-3 p-1 rounded text-rose-600 hover:bg-rose-50 align-middle" title="Hapus periode"><Trash2 className="h-4 w-4" /></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="create-period-dialog">

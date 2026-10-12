@@ -48,7 +48,7 @@ export default function TaxForms() {
                   <td className="px-3 py-3">
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${r.is_complete ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300"}`}>{r.is_complete ? "Final" : "Sementara"}</span>
                   </td>
-                  <td className="px-3 py-3"><button data-testid={`a1-download-${r.nik}`} onClick={() => pdf(r)} className="inline-flex items-center gap-1 text-blue-900 font-semibold hover:underline whitespace-nowrap"><FileDown className="h-4 w-4" /> PDF</button></td>
+                  <td className="px-3 py-3"><button data-testid={`a1-download-${r.nik}`} onClick={() => pdf(r)} className="tap inline-flex items-center gap-1 text-blue-900 font-semibold hover:underline whitespace-nowrap"><FileDown className="h-4 w-4" /> PDF</button></td>
                 </tr>
               ))}
               {rows && !rows.length && <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-500">Belum ada data pajak untuk tahun {year}.</td></tr>}

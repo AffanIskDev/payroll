@@ -66,7 +66,7 @@ const ReviewGroup = ({ g, pid, open, onToggle }) => {
                 <span className="font-medium text-slate-800">{it.name}</span> <span className="num text-xs text-slate-400">{it.nik}</span>
                 <div className="text-xs text-slate-500">{g.key === "data" ? (it.issues || []).map((x) => DATA_ISSUE_LABELS[x] || x).join(", ") : it.note}</div>
               </div>
-              {it.has_slip && <Link to={`/hr-manager/payroll/${pid}/employee/${it.employee_id}`} className="text-xs font-semibold text-blue-900 hover:underline whitespace-nowrap">Review</Link>}
+              {it.has_slip && <Link to={`/hr-manager/payroll/${pid}/employee/${it.employee_id}`} className="tap text-xs font-semibold text-blue-900 hover:underline whitespace-nowrap">Review</Link>}
             </div>
           ))}
           {!g.items.length && <div className="px-5 py-1.5 text-xs text-slate-400">Tidak ada.</div>}
@@ -154,7 +154,8 @@ export default function Dashboard() {
               <ReviewGroup key={g.key} g={g} pid={period.id} open={!!open[g.key]} onToggle={() => setOpen({ ...open, [g.key]: !open[g.key] })} />
             ))}
           </Panel>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+          {/* angka rupiah butuh lebar: satu kolom di HP supaya tidak meluber dari kartu (12 Okt 2026) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
             <Stat icon={Wallet} label="Total Diterima" compact value={rp(payroll.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />
             <Stat icon={Receipt} label="Total PPh 21" compact value={rp(payroll.total_pph21)} testId="stat-total-pph21" />
             <Stat icon={HeartPulse} label="Setoran BPJS Kesehatan" compact value={rp(payroll.total_bpjs_kes)} testId="stat-total-bpjs-kes" />
@@ -163,7 +164,7 @@ export default function Dashboard() {
           </div>
         </>
       )}
-      <Panel title="Periode Penggajian" right={<Link to="/hr-manager/payroll" className="text-xs font-semibold text-blue-900 hover:underline" data-testid="dashboard-all-periods-link">Kelola</Link>}>
+      <Panel title="Periode Penggajian" right={<Link to="/hr-manager/payroll" className="tap text-xs font-semibold text-blue-900 hover:underline" data-testid="dashboard-all-periods-link">Kelola</Link>}>
         <div className="divide-y divide-slate-100">
           {periods.map((p) => (
             <Link key={p.id} to={`/hr-manager/payroll/${p.id}`} data-testid={`dashboard-period-${p.id}`} className="flex items-center justify-between px-5 py-3 hover:bg-slate-50 group">

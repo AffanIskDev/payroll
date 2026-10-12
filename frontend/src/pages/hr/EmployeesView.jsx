@@ -51,7 +51,7 @@ export default function EmployeesView() {
       <PageTitle title="Data Karyawan & Gaji" subtitle={status.synced_at ? (
         <span data-testid="employee-sync-status">
           Hanya-lihat, dari ROSY{month && ` · gaji ${month}`} · <span className={stale ? "text-amber-700 font-medium" : ""}>diperbarui {formatDateTime(status.synced_at)} ({timeAgo(status.synced_at)})</span>
-          {" · "}<Link to="/hr-manager" className="text-blue-900 hover:underline">perbarui lewat Sinkron dari ROSY di Dashboard</Link>
+          {" · "}<Link to="/hr-manager" className="tap text-blue-900 hover:underline">perbarui lewat Sinkron dari ROSY di Dashboard</Link>
         </span>
       ) : "Hanya-lihat, dari ROSY · belum pernah disinkron — jalankan Sinkron dari ROSY di Dashboard"}>
         <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 bg-white w-64">
@@ -72,7 +72,7 @@ export default function EmployeesView() {
       )}
       {showSkipped && skipped.length > 0 && (
         <Panel title={`Tidak ikut digaji · ${skipped.length} karyawan`} className="mb-4"
-          right={<button type="button" onClick={() => setShowSkipped(false)} className="text-slate-400 hover:text-slate-700" title="Tutup"><XCircle className="h-4 w-4" /></button>}>
+          right={<button type="button" onClick={() => setShowSkipped(false)} className="tap text-slate-400 hover:text-slate-700" title="Tutup"><XCircle className="h-4 w-4" /></button>}>
           <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto" data-testid="employee-skipped-list">
             {skipped.map((s) => (
               <div key={s.employee_id || s.nik} className="flex items-center justify-between gap-4 px-5 py-2 text-sm">
@@ -88,7 +88,7 @@ export default function EmployeesView() {
           <div className="px-5 py-3 border-b border-slate-200 flex flex-wrap items-center gap-3 text-sm" data-testid="employee-filter">
             <span className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-3 py-1.5">
               Filter: <b>{FILTERS[filter].label}</b> · <span className="num">{rows.length}</span> karyawan
-              <button type="button" onClick={() => setFilter("paid")} className="text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="employee-filter-clear"><XCircle className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setFilter("paid")} className="tap text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="employee-filter-clear"><XCircle className="h-4 w-4" /></button>
             </span>
             {filter === "issues" && <span className="text-xs text-slate-500">Rincian: {issueText} — dirapikan di ROSY, tidak menghalangi payroll</span>}
           </div>
@@ -104,8 +104,8 @@ export default function EmployeesView() {
                   <td className="px-4 py-3 num">{e.nik}</td>
                   <td className="px-4 py-3 font-semibold whitespace-nowrap">
                     {e.name}
-                    {!inRosy(e) && <span className="ml-2 text-[10px] text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded">tidak ada di ROSY</span>}
-                    {e.data_issues?.length > 0 && <span title={e.data_issues.map((i) => DATA_ISSUE_LABELS[i] || i).join(", ")} className="ml-2 text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded" data-testid={`employee-issues-${e.nik}`}>⚠ {e.data_issues.length}</span>}
+                    {!inRosy(e) && <span className="ml-2 text-[11px] text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded">tidak ada di ROSY</span>}
+                    {e.data_issues?.length > 0 && <span title={e.data_issues.map((i) => DATA_ISSUE_LABELS[i] || i).join(", ")} className="ml-2 text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded" data-testid={`employee-issues-${e.nik}`}>⚠ {e.data_issues.length}</span>}
                     <div className="text-xs font-normal text-slate-500">{e.email}</div>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{e.department}{e.position && <div className="text-xs text-slate-500">{e.position}</div>}</td>

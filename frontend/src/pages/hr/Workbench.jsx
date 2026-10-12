@@ -30,7 +30,7 @@ const Edit = ({ label, hint, value, onChange, disabled, testId, suffix }) => dis
 ) : (
   <div className="flex items-center justify-between gap-4 py-2 border-b border-dashed border-slate-200">
     <div>
-      <div className="text-sm text-slate-800 font-medium flex items-center gap-1.5">{label}<span className="text-[9px] font-bold tracking-wider text-amber-700 bg-amber-100 border border-amber-300 px-1 rounded">EDITABLE</span></div>
+      <div className="text-sm text-slate-800 font-medium flex items-center gap-1.5">{label}<span className="text-[10px] font-bold tracking-wider text-amber-700 bg-amber-100 border border-amber-300 px-1 rounded">EDITABLE</span></div>
       {hint && <div className="text-[11px] text-slate-400">{hint}</div>}
     </div>
     <div className="flex items-center gap-1.5">
@@ -119,7 +119,7 @@ export default function Workbench() {
 
   return (
     <div className="pb-36" data-testid="workbench-page">
-      <Link to={`/hr-manager/payroll/${pid}`} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-3"><ChevronLeft className="h-4 w-4" /> {period.period_name}</Link>
+      <Link to={`/hr-manager/payroll/${pid}`} className="tap inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-3"><ChevronLeft className="h-4 w-4" /> {period.period_name}</Link>
       <div className="bg-white border border-slate-200 rounded-lg p-5 mb-6 flex flex-wrap items-center gap-x-8 gap-y-3">
         <div>
           <div className="text-xs uppercase tracking-wider text-slate-500 num">{emp.nik} · {emp.department}</div>
