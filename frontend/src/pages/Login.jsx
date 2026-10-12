@@ -32,8 +32,8 @@ export default function Login() {
         <div className="relative flex items-center gap-3">
           <div className="h-10 w-10 rounded-md bg-blue-800 grid place-items-center"><Building2 className="h-5 w-5" /></div>
           <div>
-            <div className="font-bold tracking-tight">HRIS ROSY</div>
-            <div className="text-xs text-slate-400">Payroll Module · Rumatku</div>
+            <div className="font-bold tracking-tight">RASA</div>
+            <div className="text-xs text-slate-400">RUMAT Administration &amp; Salary Application</div>
           </div>
         </div>
         <div className="relative space-y-6 fade-up">

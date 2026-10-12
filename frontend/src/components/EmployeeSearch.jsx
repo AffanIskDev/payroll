@@ -10,7 +10,7 @@ export const EmployeeSearch = ({ employees, value, onChange }) => {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button data-testid="attendance-employee-search" className="w-72 flex items-center justify-between gap-2 border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white hover:border-slate-400">
-          <span className="flex items-center gap-2 truncate"><Search className="h-4 w-4 text-slate-400 shrink-0" />{cur ? `${cur.nik} · ${cur.name}` : "Cari karyawan..."}</span>
+          <span className="flex items-center gap-2 truncate"><Search className="h-4 w-4 text-slate-400 shrink-0" />{cur ? `${cur.nik} · ${cur.name}` : <span className="text-slate-400">Ketik nama atau NIK</span>}</span>
           <ChevronsUpDown className="h-4 w-4 text-slate-400 shrink-0" />
         </button>
       </PopoverTrigger>

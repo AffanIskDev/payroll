@@ -46,6 +46,21 @@ export const formatDateRange = (start, end) => {
   return `${formatDate(start)} – ${formatDate(end)}`;
 };
 
+// "9 Okt 2026, 11.05"
+export const formatDateTime = (iso) =>
+  iso ? new Date(iso).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+
+// "baru saja" / "25 menit lalu" / "3 jam lalu" / "kemarin" / "3 hari lalu" — dihitung per tanggal kalender
+export const timeAgo = (iso, now = new Date()) => {
+  const t = new Date(iso);
+  const min = Math.floor((now - t) / 60000);
+  if (min < 1) return "baru saja";
+  if (min < 60) return `${min} menit lalu`;
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(t.getFullYear(), t.getMonth(), t.getDate())) / 86400000);
+  if (days < 1) return `${Math.floor(min / 60)} jam lalu`;
+  return days === 1 ? "kemarin" : `${days} hari lalu`;
+};
+
 // Tanggal lokal (zona waktu peramban HRD) sebagai "YYYY-MM-DD"
 export const localIso = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

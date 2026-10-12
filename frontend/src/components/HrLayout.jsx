@@ -20,9 +20,12 @@ export default function HrLayout() {
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-6">
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0" title="RASA — RUMAT Administration & Salary Application" data-testid="app-brand">
             <div className="h-8 w-8 rounded bg-blue-800 grid place-items-center"><Building2 className="h-4 w-4" /></div>
-            <span className="font-bold tracking-tight hidden sm:inline">ROSY Payroll</span>
+            <div className="hidden sm:block leading-tight">
+              <div className="font-bold tracking-tight">RASA</div>
+              <div className="text-[10px] text-slate-400 hidden xl:block">RUMAT Administration &amp; Salary Application</div>
+            </div>
           </div>
           <nav className="flex items-center gap-1 overflow-x-auto">
             {nav.map(([to, label, Icon, end]) => (

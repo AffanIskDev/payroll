@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Camera, MapPin } from "lucide-react";
 import { api } from "@/lib/api";
-import { LEAVE_LABELS, jamMenit } from "@/lib/format";
+import { LEAVE_LABELS, jamMenit, localIso } from "@/lib/format";
 import { PageTitle, Panel } from "@/components/common";
 import { EmployeeSearch } from "@/components/EmployeeSearch";
 
@@ -13,14 +13,26 @@ const Evidence = ({ photo, loc, tid }) => (
   </span>
 );
 
+// bulan berjalan, dipakai hanya bila belum ada periode payroll
+const thisMonth = () => {
+  const d = new Date();
+  return { start: localIso(new Date(d.getFullYear(), d.getMonth(), 1)), end: localIso(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+};
+
 export default function AttendanceView() {
   const [emps, setEmps] = useState([]);
   const [eid, setEid] = useState("");
-  const [range, setRange] = useState({ start: "2026-03-01", end: "2026-03-31" });
+  const [range, setRange] = useState(thisMonth);
   const [logs, setLogs] = useState([]);
-  useEffect(() => { api.get("/hr/employees").then((r) => { setEmps(r.data); if (r.data[0]) setEid(r.data[0].id); }); }, []);
+  // tidak memilih karyawan pertama otomatis (user 12 Okt 2026): kolom cari kosong sampai HRD mengetik nama/NIK;
+  // rentang tanggal bawaan mengikuti periode payroll terbaru (daftar periode sudah terurut terbaru dulu)
+  useEffect(() => {
+    api.get("/hr/employees").then((r) => setEmps(r.data));
+    api.get("/hr/periods").then((r) => { const p = r.data[0]; if (p) setRange({ start: p.start_date, end: p.end_date }); });
+  }, []);
   const load = useCallback(() => {
     if (eid) api.get("/hr/attendance", { params: { employee_id: eid, ...range } }).then((r) => setLogs(r.data));
+    else setLogs([]);
   }, [eid, range]);
   useEffect(() => { load(); }, [load]);
   const sumOt = logs.reduce((a, l) => a + (l.overtime_hours || 0), 0);
@@ -32,7 +44,7 @@ export default function AttendanceView() {
         <input data-testid="attendance-start-input" type="date" value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} className={inp} />
         <input data-testid="attendance-end-input" type="date" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} className={inp} />
       </PageTitle>
-      <Panel title={`${logs.length} log · lembur ${jamMenit(sumOt)}`}>
+      <Panel title={eid ? `${logs.length} log · lembur ${jamMenit(sumOt)}` : "Log presensi"}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="attendance-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
@@ -52,7 +64,7 @@ export default function AttendanceView() {
                   <td className="px-4 py-2 text-xs font-sans">{LEAVE_LABELS[l.leave_type] || l.leave_type}</td>
                 </tr>
               ))}
-              {!logs.length && <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500 font-sans">Tidak ada log pada rentang ini.</td></tr>}
+              {!logs.length && <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-500 font-sans">{eid ? "Tidak ada log pada rentang ini." : "Pilih karyawan dulu — ketik nama atau NIK di kolom cari."}</td></tr>}
             </tbody>
           </table>
         </div>

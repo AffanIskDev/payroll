@@ -4,7 +4,7 @@ import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronDown, Landmark,
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp, PERIOD_STATUS, formatDate, formatDateRange, jamMenit } from "@/lib/format";
-import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
+import { PageTitle, Panel, StatusBadge, Btn, SummaryCard } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -16,23 +16,6 @@ const COLS = ["Karyawan", "Total Penghasilan", "PKP", "PPh 21", "Poin Presensi",
 const SYNC_BUTTON_VISIBLE = false;
 
 const ACTIONS = { submitted: "Diajukan ke Manager", rejected: "Ditolak", approved: "Lock & Approve" };
-
-// kartu ringkasan periode, sekaligus filter tabel slip (user 10 Okt 2026); kursor di atas kartu menampilkan namanya
-const SummaryCard = ({ icon: Icon, label, value, sub, names, warn, active, onClick, testId }) => {
-  const Tag = onClick ? "button" : "div";
-  return (
-    <Tag type={onClick ? "button" : undefined} onClick={onClick} aria-pressed={onClick ? !!active : undefined} data-testid={testId}
-      title={names?.length ? `${names.slice(0, 40).join(", ")}${names.length > 40 ? `, dan ${names.length - 40} lainnya` : ""}` : ""}
-      className={`text-left bg-white border rounded-lg px-4 py-3 shadow-sm transition-colors ${active ? "border-blue-900 ring-2 ring-blue-900/20" : "border-slate-200"} ${onClick ? "hover:border-blue-400" : "cursor-default"}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
-        <Icon className={`h-4 w-4 ${active ? "text-blue-900" : "text-slate-400"}`} />
-      </div>
-      <div className={`num text-2xl font-bold mt-1 ${warn && value ? "text-amber-600" : "text-slate-900"}`}>{value}</div>
-      <div className="text-xs text-slate-500 truncate">{sub}</div>
-    </Tag>
-  );
-};
 
 const FILTER_LABELS = { overtime: "Lembur", unpaid: "Unpaid", maternity: "Cuti Melahirkan", partial: "Tidak Penuh" };
 
@@ -224,19 +207,20 @@ export default function PeriodDetail() {
         </div>
       )}
       <Panel>
+        {/* bilah cari diberi ruang napas & dipisah garis dari tabel, tidak menempel ke tepi panel (user 12 Okt 2026) */}
+        <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center gap-3" data-testid="payslip-toolbar">
+          <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-2 bg-white w-full sm:w-80 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-900/10">
+            <Search className="h-4 w-4 text-slate-400" />
+            <input data-testid="payslip-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama karyawan" className="outline-none text-sm w-full" />
+          </label>
+          {filter && (
+            <span className="inline-flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-3 py-2" data-testid="payslip-filter">
+              Filter: <b>{FILTER_LABELS[filter]}</b> · <span className="num">{only.size}</span> karyawan
+              <button type="button" onClick={() => setFilter(null)} className="text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="payslip-filter-clear"><XCircle className="h-4 w-4" /></button>
+            </span>
+          )}
+        </div>
         <div className="overflow-x-auto">
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 bg-white w-72">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input data-testid="payslip-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama karyawan" className="outline-none text-sm w-full" />
-            </label>
-            {filter && (
-              <span className="inline-flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-3 py-1.5" data-testid="payslip-filter">
-                Filter: <b>{FILTER_LABELS[filter]}</b> · <span className="num">{only.size}</span> karyawan
-                <button type="button" onClick={() => setFilter(null)} className="text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="payslip-filter-clear"><XCircle className="h-4 w-4" /></button>
-              </span>
-            )}
-          </div>
           <table className="w-full text-sm" data-testid="payslips-table">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
