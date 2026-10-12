@@ -214,10 +214,16 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     hours = 0 if unpaid else float(adj.get("overtime_hours") or 0)
     kpi = 0 if unpaid else round(float(adj.get("kpi_incentive") or 0))
     bonus = 0 if unpaid else round(float(adj.get("additional_bonus") or 0))
+    # ROSY "THR" (Tambahan Bulanan, user 12 Oct 2026): paid as is like Bonus — in ROSY both are bulanan pendapatan, so
+    # it counts in the PPh 21 base (PayrollModules::brutoPajak) but never in the BPJS wage and is never prorated
+    thr = 0 if unpaid else round(float(adj.get("thr") or 0))
     kasbon = round(float(adj.get("other_deductions") or 0))
     # ROSY "Potongan Tidak Mencapai Target" (Tambahan Bulanan, user 10 Oct 2026): off the take-home pay like kasbon;
     # as in ROSY (PayrollModules::brutoPajak counts only pendapatan) it does not lower the PPh 21 base
     target = 0 if unpaid else round(float(adj.get("target_deduction") or 0))
+    # ROSY "Cicilan / Pinjaman" (Tambahan Bulanan, user 12 Oct 2026): a loan repayment, off the take-home pay like the
+    # target cut and likewise not lowering the PPh 21 base; unpaid leave has no pay to take it from, as ROSY skips them
+    installment = 0 if unpaid else round(float(adj.get("loan_installment") or 0))
     transport = 0 if unpaid else round(float(adj.get("transport_homecare") or 0))
     overtime_pay = round(hours * float(emp.get("overtime_hourly_rate") or 0))
 
@@ -252,7 +258,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     tunj_tk = bp["jkk"] + bp["jkm"] + bp["jht_company"] + bp["jp_company"]
 
     base_earn = (basic_paid - absent_deduction + position_paid - position_deduction + attendance_net + overtime_pay
-                 + transport + kpi + bonus)
+                 + transport + kpi + bonus + thr)
     gross = base_earn + tunj_kes + tunj_tk
     taxable = base_earn + bp["kes_company"] + bp["jkk"] + bp["jkm"]
 
@@ -267,7 +273,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
 
     iuran_kes = bp["kes_company"] + bp["kes_employee"]
     iuran_tk = bp["jkk"] + bp["jkm"] + bp["jht_company"] + bp["jht_employee"] + bp["jp_company"] + bp["jp_employee"]
-    total_ded = iuran_kes + iuran_tk + pph21 + kasbon + target
+    total_ded = iuran_kes + iuran_tk + pph21 + kasbon + target + installment
     thp = gross - total_ded
 
     return {
@@ -276,7 +282,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "position_allowance": position_paid, "position_deduction_amount": position_deduction,
         "attendance_allowance_base": round(att), "attendance_allowance": attendance_net,
         "overtime_hours": hours, "overtime_pay": overtime_pay, "transport_homecare": transport,
-        "kpi_incentive": kpi, "additional_bonus": bonus,
+        "kpi_incentive": kpi, "additional_bonus": bonus, "thr": thr,
         "tunjangan_bpjs_kes": tunj_kes, "tunjangan_bpjs_tk": tunj_tk,
         "gross_earnings": gross, "taxable_gross": taxable,
         # late_penalty_points = Poin Presensi as shown (lateness + sakit/cuti days); lateness alone = discipline.total_points
@@ -287,7 +293,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
         "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
         "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
-        "other_deductions": kasbon, "target_deduction": target, "total_deductions": total_ded, "take_home_pay": thp,
+        "other_deductions": kasbon, "target_deduction": target, "loan_installment": installment,
+        "total_deductions": total_ded, "take_home_pay": thp,
         "bpjs_company_advance": bpjs_advance,
         "discipline": disc, "bpjs": bp, "terbilang": terbilang(thp),
     }

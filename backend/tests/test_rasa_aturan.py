@@ -193,6 +193,40 @@ def test_target_deduction_cuts_take_home_pay_but_not_the_pph21_base():
     assert unpaid["target_deduction"] == 0
 
 
+def test_thr_and_installment_come_from_rosy_like_bonus():
+    # user 12 Okt: THR & Cicilan / Pinjaman diambil dari Tambahan Bulanan ROSY, seperti Bonus
+    row = {"komponen_bulanan": [
+        {"component_id": "KOMP-00014", "nama": "THR", "tipe": "pendapatan", "nominal": 4500000.0},
+        {"component_id": "KOMP-00007", "nama": "Cicilan / Pinjaman", "tipe": "potongan", "nominal": 350000.0},
+        {"component_id": "KOMP-00005", "nama": "Bonus", "tipe": "pendapatan", "nominal": 50000.0},
+        {"component_id": "KOMP-00006", "nama": "PPh 21", "tipe": "potongan", "nominal": 12345.0}]}  # RASA's own
+    assert integrations.monthly_components(row) == {"THR": 4500000.0, "LOAN_INSTALLMENT": 350000.0, "BONUS": 50000.0}
+
+
+def test_thr_is_taxable_income_but_not_bpjs_wage():
+    base = compute_payslip(EMP, [], CFG, {})
+    slip = compute_payslip(EMP, [], CFG, {"thr": 4500000})
+    assert slip["thr"] == 4500000
+    assert slip["gross_earnings"] - base["gross_earnings"] == 4500000
+    assert slip["taxable_gross"] - base["taxable_gross"] == 4500000          # brutoPajak, like Bonus
+    assert slip["bpjs"] == base["bpjs"]                                       # never part of the BPJS wage
+    assert slip["pph21_amount"] > base["pph21_amount"]
+    unpaid = compute_payslip({**EMP, "payroll_status": "unpaid_leave"}, [], CFG, {"thr": 4500000})
+    assert unpaid["thr"] == 0
+
+
+def test_installment_cuts_take_home_pay_but_not_the_pph21_base():
+    base = compute_payslip(EMP, [], CFG, {})
+    slip = compute_payslip(EMP, [], CFG, {"loan_installment": 350000})
+    assert slip["loan_installment"] == 350000
+    assert (slip["gross_earnings"], slip["taxable_gross"], slip["pph21_amount"]) == \
+        (base["gross_earnings"], base["taxable_gross"], base["pph21_amount"])
+    assert slip["total_deductions"] - base["total_deductions"] == 350000
+    assert base["take_home_pay"] - slip["take_home_pay"] == 350000
+    unpaid = compute_payslip({**EMP, "payroll_status": "unpaid_leave"}, [], CFG, {"loan_installment": 350000})
+    assert unpaid["loan_installment"] == 0
+
+
 # ---------------------------------------------------------------- payslip PDF
 SIGNER = {"id": "SIGN-00001", "nama": "Meliawasni", "jabatan": "Manager HRD"}  # ROSY Document Signer (payroll)
 
@@ -251,6 +285,39 @@ def test_payslip_prints_target_deduction_only_when_set():
     assert ("Potongan Tidak Mencapai Target", 500000, "") in ded
     _, ded = payslip_lines(_slip())
     assert not any(r[0] == "Potongan Tidak Mencapai Target" for r in ded)
+
+
+def test_payslip_prints_thr_and_installment_only_when_set():
+    earn, ded = payslip_lines(_slip(thr=4500000, loan_installment=350000, other_deductions=100000))
+    assert ("THR", 4500000, "") in earn and ("Cicilan / Pinjaman", 350000, "") in ded
+    # THR right after Bonus's place; Cicilan with the other money cuts: after PPh 21, before Kasbon
+    assert [r[0] for r in earn].index("THR") == [r[0] for r in earn].index("Transport Homecare") + 1
+    assert [r[0] for r in ded][-4:] == [ded[-4][0], "Cicilan / Pinjaman", "Kasbon / Potongan Lain", "TOTAL POTONGAN"]
+    assert ded[-4][0].startswith("PPh 21")
+    earn, ded = payslip_lines(_slip())                                       # slips without them: no rows
+    assert not any(r[0] == "THR" for r in earn) and not any(r[0] == "Cicilan / Pinjaman" for r in ded)
+    text, _ = _pdf(_slip(thr=4500000, loan_installment=350000))
+    assert "THR" in text and "Cicilan / Pinjaman" in text
+
+
+@pytest.mark.parametrize("dept,label", [("Pelayanan", "Bonus Threshold"), (" pelayanan ", "Bonus Threshold"),
+                                        ("Perawat", "Tunjangan Jabatan"), ("Human Capital", "Tunjangan Jabatan"),
+                                        (None, "Tunjangan Jabatan")])
+def test_pelayanan_reads_bonus_threshold_for_the_position_allowance(dept, label):
+    from labels import position_allowance_label
+    assert position_allowance_label({"department": dept}) == label
+    s = _slip()
+    s["employee"]["department"] = dept
+    earn, _ = payslip_lines(s)
+    assert (label, s["position_allowance"], "") in earn
+
+
+def test_bonus_threshold_on_the_printed_slip():
+    s = _slip(position_allowance_label="Bonus Threshold")                  # label stored by build_slip
+    text, _ = _pdf(s)
+    assert "Bonus Threshold" in text and "Tunjangan Jabatan" not in text
+    text, _ = _pdf(_slip())                                                  # Perawat: unchanged
+    assert "Tunjangan Jabatan" in text and "Bonus Threshold" not in text
 
 
 def test_old_snapshot_without_bank_code_falls_back_to_bank_name():

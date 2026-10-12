@@ -35,11 +35,12 @@ LEAVE_MAP = {
 
 # Monthly ROSY components RASA takes over (HAM Tambahan Bulanan), component id -> period_components kode:
 # "Transport Rumat Kita" (shown as Transport Homecare), "Bonus" and "Potongan Tidak Mencapai Target" — Bonus is no
-# longer typed in RASA, it is ROSY's like transport (user decision 10 Oct 2026). Other monthly components (e.g.
-# KOMP-00023 Lembur) are ignored: overtime is paid from the HAM claims.
+# longer typed in RASA, it is ROSY's like transport (user decision 10 Oct 2026) — plus "THR" and "Cicilan / Pinjaman"
+# (user 12 Oct 2026). Other monthly components are ignored: KOMP-00023 Lembur is paid from the HAM claims, and PPh 21 /
+# Potongan Presensi are calculated by RASA itself.
 TRANSPORT_COMPONENT = "KOMP-00022"
 MONTHLY_COMPONENTS = {TRANSPORT_COMPONENT: "TRANSPORT_HOMECARE", "KOMP-00005": "BONUS",
-                      "KOMP-00015": "TARGET_DEDUCTION"}
+                      "KOMP-00015": "TARGET_DEDUCTION", "KOMP-00014": "THR", "KOMP-00007": "LOAN_INSTALLMENT"}
 
 # Simulation sample (mock mode only)
 EMPLOYEES = [

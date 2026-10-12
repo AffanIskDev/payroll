@@ -40,15 +40,24 @@ def test_build_slip_takes_bonus_and_target_deduction_from_rosy(monkeypatch):
                 {"payroll_period_id": "p1", "employee_id": "e1", "kode": "TRANSPORT_HOMECARE", "nominal": 1350000.0},
                 {"payroll_period_id": "p1", "employee_id": "e1", "kode": "BONUS", "nominal": 3184400.0},
                 {"payroll_period_id": "p1", "employee_id": "e1", "kode": "TARGET_DEDUCTION", "nominal": 500000.0},
+                {"payroll_period_id": "p1", "employee_id": "e1", "kode": "THR", "nominal": 4500000.0},
+                {"payroll_period_id": "p1", "employee_id": "e1", "kode": "LOAN_INSTALLMENT", "nominal": 350000.0},
                 {"payroll_period_id": "p0", "employee_id": "e1", "kode": "BONUS", "nominal": 999.0}])  # other month
 
-            slip = await pipeline.build_slip(PERIOD, EMP, {"additional_bonus": 777777, "target_deduction": 1}, CFG)
-            assert (slip["transport_homecare"], slip["additional_bonus"], slip["target_deduction"]) == \
-                (1350000, 3184400, 500000)
+            slip = await pipeline.build_slip(PERIOD, EMP, {"additional_bonus": 777777, "target_deduction": 1,
+                                                           "thr": 1, "loan_installment": 1}, CFG)
+            assert (slip["transport_homecare"], slip["additional_bonus"], slip["target_deduction"],
+                    slip["thr"], slip["loan_installment"]) == (1350000, 3184400, 500000, 4500000, 350000)
+            assert slip["position_allowance_label"] == "Tunjangan Jabatan"
 
             # nothing synced for the period yet: zero, never the value the review page sent
-            empty = await pipeline.build_slip({**PERIOD, "id": "p9"}, EMP, {"additional_bonus": 777777}, CFG)
-            assert (empty["transport_homecare"], empty["additional_bonus"], empty["target_deduction"]) == (0, 0, 0)
+            empty = await pipeline.build_slip({**PERIOD, "id": "p9"}, EMP, {"additional_bonus": 777777, "thr": 5}, CFG)
+            assert (empty["transport_homecare"], empty["additional_bonus"], empty["target_deduction"],
+                    empty["thr"], empty["loan_installment"]) == (0, 0, 0, 0, 0)
+
+            # divisi Pelayanan: the label is stored on the slip, so review page & PDF agree
+            pelayanan = await pipeline.build_slip(PERIOD, {**EMP, "department": "Pelayanan"}, {}, CFG)
+            assert pelayanan["position_allowance_label"] == "Bonus Threshold"
         finally:
             await client.drop_database(name)
             client.close()

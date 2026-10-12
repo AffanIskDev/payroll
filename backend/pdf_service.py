@@ -14,6 +14,8 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
+from labels import position_allowance_label
+
 STORAGE = Path(__file__).parent / "storage" / "payslips"
 STORAGE.mkdir(parents=True, exist_ok=True)
 # Tanda tangan penandatangan slip dari ROSY, disimpan signer.py per versi berkas (ttd_versi HAM)
@@ -142,19 +144,23 @@ def payslip_lines(slip: dict) -> tuple:
     attendance-related cut under POTONGAN as just two lines — Potongan Presensi (lateness points plus sakit/cuti
     days, which only cut the attendance allowance) and Potongan Absensi (alfa/izin/cuti tanpa upah days: their
     attendance-allowance cut plus the gaji pokok and tunjangan jabatan cuts of the PPT). Both totals carry the
-    cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA."""
+    cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA. THR and Cicilan / Pinjaman (ROSY Tambahan Bulanan,
+    12 Oct) print only when set; divisi Pelayanan reads "Bonus Threshold" for the tunjangan jabatan (labels.py)."""
     split = "presence_penalty_amount" in slip  # slips calculated before 9 Oct only have the net allowance
+    # slips calculated before 12 Oct carry no label yet: derive it from their employee snapshot
+    jabatan = slip.get("position_allowance_label") or position_allowance_label(slip.get("employee"))
     presensi = slip.get("presence_penalty_amount", 0)
     absensi = (slip.get("absence_penalty_amount", 0) + slip["absent_deduction_amount"]
                + slip.get("position_deduction_amount", 0))
     kehadiran = (("Tunjangan Kehadiran", slip["attendance_allowance_base"]) if split
                  else ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"]))
     earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
-                   ("Tunjangan Jabatan", slip["position_allowance"], False),
+                   (jabatan, slip["position_allowance"], False),
                    (*kehadiran, False),
                    (f"Lembur ({_jam_menit(slip['overtime_hours'])})", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus", slip["additional_bonus"], False),
+                   ("THR", slip.get("thr", 0), False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
                    ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
                    ("TOTAL PENDAPATAN", slip["gross_earnings"] + presensi + absensi, True)])
@@ -165,6 +171,7 @@ def payslip_lines(slip: dict) -> tuple:
                   ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
                   (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
                     else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"], True),
+                  ("Cicilan / Pinjaman", slip.get("loan_installment", 0), False),
                   ("Kasbon / Potongan Lain", slip["other_deductions"], False),
                   ("TOTAL POTONGAN", slip["total_deductions"] + presensi + absensi, True)])
     return earn, ded

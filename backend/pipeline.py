@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from core import db, now_iso, get_configs, actor
 from engine import compute_payslip
+from labels import position_allowance_label
 from pdf_service import save_encrypted
 
 ADJ_KEYS = ("overtime_hours", "kpi_incentive", "additional_bonus", "other_deductions")
@@ -79,12 +80,15 @@ async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = N
     cfg = cfg or await get_configs()
     logs = await period_logs(emp["id"], period)
     comp = await period_components(period, emp["id"])
-    # Transport Homecare, Bonus and Potongan Tidak Mencapai Target come from ROSY only, never from the review page
+    # Transport Homecare, Bonus, THR, Potongan Tidak Mencapai Target and Cicilan / Pinjaman come from ROSY only,
+    # never from the review page
     adj = {**adj, "overtime_hours": await overtime_hours(period, emp["id"], logs),
            "transport_homecare": comp.get("TRANSPORT_HOMECARE", 0), "additional_bonus": comp.get("BONUS", 0),
-           "target_deduction": comp.get("TARGET_DEDUCTION", 0)}
+           "thr": comp.get("THR", 0), "target_deduction": comp.get("TARGET_DEDUCTION", 0),
+           "loan_installment": comp.get("LOAN_INSTALLMENT", 0)}
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
+    calc["position_allowance_label"] = position_allowance_label(emp)
     return calc
 
 

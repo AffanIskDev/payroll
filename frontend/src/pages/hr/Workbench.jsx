@@ -109,10 +109,12 @@ export default function Workbench() {
   const absensi = (calc.absence_penalty_amount || 0) + (calc.absent_deduction_amount || 0) + (calc.position_deduction_amount || 0);
   const totalPendapatan = calc.gross_earnings + presensi + absensi;
   const totalPotongan = calc.total_deductions + presensi + absensi;
+  // divisi Pelayanan: tunjangan jabatan disebut "Bonus Threshold" (aturan di backend labels.py, user 12 Okt 2026)
+  const jabatan = calc.position_allowance_label || payslip.position_allowance_label || "Tunjangan Jabatan";
   const absensiHint = [
     calc.absence_penalty_amount > 0 && `Tj. Kehadiran ${rp(calc.absence_penalty_amount)}`,
     calc.absent_deduction_amount > 0 && `Gaji Pokok ${rp(calc.absent_deduction_amount)}`,
-    calc.position_deduction_amount > 0 && `Tj. Jabatan ${rp(calc.position_deduction_amount)}`,
+    calc.position_deduction_amount > 0 && `${jabatan === "Tunjangan Jabatan" ? "Tj. Jabatan" : jabatan} ${rp(calc.position_deduction_amount)}`,
   ].filter(Boolean).join(" · ");
 
   return (
@@ -138,12 +140,13 @@ export default function Workbench() {
         <Panel title="Pendapatan" right={<span className="num text-sm font-bold">{rp(totalPendapatan)}</span>}>
           <div className="px-5 py-2">
             <Row label="Gaji Pokok" hint={calc.wage_multiplier !== 1 ? `Pengali upah ${calc.wage_multiplier * 100}% dari ${rp(calc.basic_salary_contract)}` : null} value={rp(calc.basic_salary)} testId="earn-basic" />
-            <Row label="Tunjangan Jabatan" value={rp(calc.position_allowance)} testId="earn-position" />
+            <Row label={jabatan} value={rp(calc.position_allowance)} testId="earn-position" />
             <Row label={split ? "Tunjangan Kehadiran" : "Tunjangan Kehadiran (bersih)"} value={rp(split ? calc.attendance_allowance_base : calc.attendance_allowance)} testId="earn-attendance" />
             {(emp.overtime_access || calc.overtime_hours > 0 || calc.overtime_pay > 0) && <Row label={`Lembur (${jamMenit(calc.overtime_hours)} dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />}
             <Row label="Transport Homecare" hint="Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)" value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
             {(KPI_VISIBLE || Number(adj.kpi_incentive) !== 0) && <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />}
             <Row label="Bonus" hint="Dari ROSY (Tambahan Bulanan: Bonus)" value={rp(calc.additional_bonus || 0)} testId="earn-bonus" />
+            {calc.thr > 0 && <Row label="THR" hint="Dari ROSY (Tambahan Bulanan: THR)" value={rp(calc.thr)} testId="earn-thr" />}
             <Row label="Tunjangan BPJS Kesehatan (4%)" hint={`Basis ${rp(bp.kes_base)} (max gaji pokok, UMK Bekasi)`} value={rp(calc.tunjangan_bpjs_kes)} testId="earn-bpjs-kes" />
             <Row label="Tunjangan BPJS TK" hint={`JKK ${rp(bp.jkk)} · JKM ${rp(bp.jkm)} · JHT 3,7% ${rp(bp.jht_company)} · JP 2% ${rp(bp.jp_company)}`} value={rp(calc.tunjangan_bpjs_tk)} testId="earn-bpjs-tk" />
           </div>
@@ -162,6 +165,7 @@ export default function Workbench() {
               ) : (
                 <Row label={`PPh 21 TER ${calc.ter_category}`} hint={`${calc.ter_rate}% × ${rp(calc.taxable_gross)}`} value={rp(calc.pph21_amount)} testId="ded-pph21" />
               )}
+              {calc.loan_installment > 0 && <Row label="Cicilan / Pinjaman" hint="Dari ROSY (Tambahan Bulanan: Cicilan / Pinjaman)" value={rp(calc.loan_installment)} tone="text-rose-600" testId="ded-loan" />}
               <Edit label="Kasbon / Potongan Lain" value={adj.other_deductions} onChange={set("other_deductions")} disabled={locked} testId="input-other-deductions" />
             </div>
           </Panel>

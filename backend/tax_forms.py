@@ -45,7 +45,8 @@ async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
         "i3": sm(lambda s: s["position_allowance"] - s.get("position_deduction_amount", 0) + s["attendance_allowance"]
                  + s["overtime_pay"] + s.get("transport_homecare", 0)), "i4": 0,
         "i5": sm(lambda s: s["tunjangan_bpjs_kes"] + s["bpjs"]["jkk"] + s["bpjs"]["jkm"]), "i6": 0,
-        "i7": sm(lambda s: s["kpi_incentive"] + s["additional_bonus"]),
+        # angka 7 = "Tantiem, Bonus, Gratifikasi, Jasa Produksi dan THR" (THR dari ROSY sejak 12 Okt 2026)
+        "i7": sm(lambda s: s["kpi_incentive"] + s["additional_bonus"] + s.get("thr", 0)),
         "i7a": float((init or {}).get("gross_income_ytd") or 0),
     }
     it["i8"] = sum(it[k] for k in ("i1", "i2", "i3", "i4", "i5", "i6", "i7", "i7a"))

@@ -4,8 +4,9 @@ import { Users, UserPlus, UserMinus, UserX, AlertTriangle, Wallet, Receipt, Hear
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { api, errMsg } from "@/lib/api";
-import { rp, PERIOD_STATUS, DATA_ISSUE_LABELS, formatDateRange } from "@/lib/format";
+import { rp, PERIOD_STATUS, DATA_ISSUE_LABELS, formatDate, formatDateRange, localIso, unfinishedSyncDay } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
+import SyncTodayDialog from "@/components/SyncTodayDialog";
 
 const Stat = ({ icon: Icon, label, value, hint, tone = "text-slate-900", compact, testId }) => (
   <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm fade-up">
@@ -82,6 +83,7 @@ export default function Dashboard() {
   const [d, setD] = useState(null);
   const [open, setOpen] = useState({});
   const [syncing, setSyncing] = useState(false);
+  const [confirmDay, setConfirmDay] = useState(null);
 
   const load = useCallback((pid) => api.get("/hr/dashboard/employees", { params: pid ? { pid } : {} }).then((r) => setD(r.data)), []);
   const loadLists = useCallback(() => {
@@ -97,6 +99,7 @@ export default function Dashboard() {
   // Pindahan tombol "Sinkron dari ROSY" dari halaman periode (user 10 Okt 2026): satu tombol mengambil karyawan & gaji,
   // absensi, klaim lembur, dan Tambahan Bulanan ROSY untuk periode yang dipilih, lalu menghitung ulang slip
   const sync = async () => {
+    setConfirmDay(null);
     setSyncing(true);
     try {
       await api.post(`/hr/periods/${period.id}/fetch-attendance`);
@@ -107,17 +110,25 @@ export default function Dashboard() {
       loadLists();
     }
   };
+  // periode yang masih berjalan: tanya dulu, karena absensi hari ini belum selesai (user 12 Okt 2026)
+  const requestSync = () => {
+    const day = unfinishedSyncDay(period.start_date, period.end_date);
+    if (day) setConfirmDay(day);
+    else sync();
+  };
+  const lastSyncDay = period?.last_sync_at ? localIso(new Date(period.last_sync_at)) : null;
+  const syncedMidPeriod = editable && lastSyncDay && period.start_date <= lastSyncDay && lastSyncDay <= period.end_date;
 
   return (
     <div data-testid="hr-dashboard">
-      <PageTitle title="Dashboard Payroll" subtitle={period ? <><span className="block">{formatDateRange(period.start_date, period.end_date)}</span><span className="block" data-testid="dashboard-sync-status">Sinkron terakhir: {period.last_sync_at ? new Date(period.last_sync_at).toLocaleString("id-ID") : "belum pernah"}</span></> : "Belum ada periode — buat di menu Payroll"}>
+      <PageTitle title="Dashboard Payroll" subtitle={period ? <><span className="block">{formatDateRange(period.start_date, period.end_date)}</span><span className="block" data-testid="dashboard-sync-status">Sinkron terakhir: {period.last_sync_at ? new Date(period.last_sync_at).toLocaleString("id-ID") : "belum pernah"}{syncedMidPeriod && <span className="text-amber-700" data-testid="dashboard-sync-midperiod"> · diambil saat periode berjalan, alfa {formatDate(lastSyncDay)} belum final</span>}</span></> : "Belum ada periode — buat di menu Payroll"}>
         {period && <StatusBadge map={PERIOD_STATUS} status={period.status} testId="dashboard-period-status" />}
         {periods.length > 0 && (
           <select data-testid="dashboard-period-select" value={period?.id || ""} onChange={(e) => load(e.target.value)} className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white">
             {periods.map((p) => <option key={p.id} value={p.id}>{p.period_name}</option>)}
           </select>
         )}
-        {period && <Btn variant="primary" data-testid="dashboard-sync-button" disabled={syncing || !editable} onClick={sync} title={editable ? "Karyawan & gaji, absensi, klaim lembur, dan Tambahan Bulanan (Transport, Bonus, Potongan Target) terbaru dari ROSY" : "Periode ini sudah diajukan atau dikunci, jadi tidak bisa disinkron lagi"}><RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Menyinkronkan..." : "Sinkron dari ROSY"}</Btn>}
+        {period && <Btn variant="primary" data-testid="dashboard-sync-button" disabled={syncing || !editable} onClick={requestSync} title={editable ? "Karyawan & gaji, absensi, klaim lembur, dan Tambahan Bulanan (Transport, Bonus, THR, Potongan Target, Cicilan) terbaru dari ROSY" : "Periode ini sudah diajukan atau dikunci, jadi tidak bisa disinkron lagi"}><RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Menyinkronkan..." : "Sinkron dari ROSY"}</Btn>}
       </PageTitle>
       {period?.last_sync_error && (
         <div className="mb-4 flex gap-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-4 py-3 text-sm" data-testid="dashboard-sync-error">
@@ -169,6 +180,7 @@ export default function Dashboard() {
           {!periods.length && <div className="px-5 py-6 text-sm text-slate-500">Belum ada periode.</div>}
         </div>
       </Panel>
+      <SyncTodayDialog day={confirmDay} periodName={period?.period_name} onConfirm={sync} onCancel={() => setConfirmDay(null)} />
     </div>
   );
 }

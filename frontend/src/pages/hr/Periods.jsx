@@ -3,8 +3,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
-import { PERIOD_STATUS, periodNameFor } from "@/lib/format";
+import { PERIOD_STATUS, periodNameFor, unfinishedSyncDay } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
+import SyncTodayDialog from "@/components/SyncTodayDialog";
 import { useAuth, isManager } from "@/context/AuthContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -30,8 +31,16 @@ export default function Periods() {
   useEffect(() => { load(); }, []);
 
   const [syncing, setSyncing] = useState(false);
-  const create = async (e) => {
+  const [confirmDay, setConfirmDay] = useState(null);
+  // periode yang mencakup hari ini langsung disinkron: tanya dulu, absensi hari ini belum selesai (user 12 Okt 2026)
+  const submit = (e) => {
     e.preventDefault();
+    const day = unfinishedSyncDay(f.start_date, f.end_date);
+    if (day) setConfirmDay(day);
+    else create();
+  };
+  const create = async () => {
+    setConfirmDay(null);
     setSyncing(true);
     try {
       const { data } = await api.post("/hr/periods", f);
@@ -81,8 +90,8 @@ export default function Periods() {
       </Panel>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="create-period-dialog">
-          <DialogHeader><DialogTitle>Periode Payroll Baru</DialogTitle><DialogDescription>Karyawan, gaji, absensi, lembur, dan Transport Homecare langsung disinkron dari ROSY, lalu slip dihitung. Satu bulan hanya satu periode.</DialogDescription></DialogHeader>
-          <form onSubmit={create} className="space-y-3">
+          <DialogHeader><DialogTitle>Periode Payroll Baru</DialogTitle><DialogDescription>Karyawan, gaji, absensi, lembur, dan Tambahan Bulanan (Transport, Bonus, THR, Potongan Target, Cicilan) langsung disinkron dari ROSY, lalu slip dihitung. Satu bulan hanya satu periode.</DialogDescription></DialogHeader>
+          <form onSubmit={submit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Mulai" type="date" testId="period-start-input" required value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
               <Field label="Selesai" type="date" testId="period-end-input" required value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} />
@@ -107,6 +116,7 @@ export default function Periods() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <SyncTodayDialog day={confirmDay} periodName={autoName || f.period_name} onConfirm={create} onCancel={() => setConfirmDay(null)} />
     </div>
   );
 }

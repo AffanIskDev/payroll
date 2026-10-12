@@ -46,6 +46,17 @@ export const formatDateRange = (start, end) => {
   return `${formatDate(start)} – ${formatDate(end)}`;
 };
 
+// Tanggal lokal (zona waktu peramban HRD) sebagai "YYYY-MM-DD"
+export const localIso = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Sinkron selagi periode berjalan ikut membawa absensi hari itu yang belum selesai (user 12 Okt 2026): HAM menghitung
+// sampai hari ini, jadi karyawan yang belum absen masuk saat sinkron terbaca alfa. Tanggal hari itu bila kena, selain itu null.
+export const unfinishedSyncDay = (start, end, at = new Date()) => {
+  const day = localIso(at);
+  return start && end && start <= day && day <= end ? day : null;
+};
+
 // data_issues from HAM's payroll feed (PayrollFeedRules::masalahData)
 export const DATA_ISSUE_LABELS = {
   npwp_kosong: "NPWP kosong",

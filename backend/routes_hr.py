@@ -14,6 +14,7 @@ from core import db, now_iso, require_hr, require_manager, actor, DEFAULT_CONFIG
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
+from labels import position_allowance_label
 from periods import BULAN, payroll_month, period_name_for, validate_dates, overlaps
 import integrations
 import signer as signer_mod
@@ -99,7 +100,7 @@ async def dashboard_employees(pid: Optional[str] = None):
     start, end = period["start_date"], period["end_date"]
     ids = period.get("employee_ids") or []
     fields = {"_id": 0, "id": 1, "rosy_employee_id": 1, "nik": 1, "name": 1, "join_date": 1, "exit_date": 1,
-              "payroll_status": 1, "data_issues": 1}
+              "payroll_status": 1, "data_issues": 1, "department": 1}
     emps = {e["id"]: e async for e in db.employees.find({"id": {"$in": ids}}, fields)}
     slips = {s["employee_id"]: s async for s in db.payslips.find({"payroll_period_id": period["id"]}, {
         "_id": 0, "employee_id": 1, "status": 1, "payroll_status": 1, "wage_multiplier": 1, "absence_points": 1,
@@ -138,7 +139,8 @@ async def dashboard_employees(pid: Optional[str] = None):
         if s.get("absence_points"):
             types = (s.get("discipline") or {}).get("absence_by_type") or {}
             days = ", ".join(f"{n} hari {ABSENCE_NAMES.get(t, t)}" for t, n in types.items()) or f"{s['absence_points']} hari"
-            attendance.append(item(e, f"{days} — memotong gaji pokok, tunj. jabatan & kehadiran"))
+            jabatan = "bonus threshold" if position_allowance_label(e) == "Bonus Threshold" else "tunj. jabatan"
+            attendance.append(item(e, f"{days} — memotong gaji pokok, {jabatan} & kehadiran"))
     for m in period.get("attendance_missing") or []:
         attendance.append(item(emps.get(m.get("employee_id")) or {"id": m.get("employee_id"), "nik": m.get("nik"),
                                                                    "name": m.get("name")},
@@ -367,7 +369,7 @@ async def _sync(pid: str) -> dict:
         "company": emp_meta.get("company"), "signer": signer}})
     # draft slips of people who dropped out of the population (resigned, no salary contract) must not linger
     await db.payslips.delete_many({"payroll_period_id": pid, "employee_id": {"$nin": ids}, "status": {"$ne": "approved"}})
-    # ROSY Tambahan Bulanan for this month: Transport Homecare, Bonus, Potongan Tidak Mencapai Target
+    # ROSY Tambahan Bulanan for this month: Transport Homecare, Bonus, THR, Potongan Tidak Mencapai Target, Cicilan
     component_ids = {kode: cid for cid, kode in integrations.MONTHLY_COMPONENTS.items()}
     comp_docs = [{"id": str(uuid.uuid4()), "payroll_period_id": pid, "employee_id": by_rosy[rid], "kode": kode,
                   "component_id": component_ids[kode], "nominal": nominal, "synced_at": now_iso()}
@@ -593,6 +595,8 @@ async def workbench(pid: str, eid: str):
     period = await get_period(pid)
     emp = await get_employee(eid)
     slip = await _slip(pid, eid)
+    # slips calculated before 12 Oct carry no label yet: same rule as the PDF, from the slip's employee snapshot
+    slip.setdefault("position_allowance_label", position_allowance_label(slip.get("employee") or emp))
     return {"period": period, "employee": emp, "payslip": slip, "attendance": await period_logs(eid, period)}
 
 
