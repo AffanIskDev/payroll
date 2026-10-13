@@ -2,6 +2,8 @@
 import math
 import re
 
+from labels import is_pjunit
+
 TER_A = [(5400000, 0), (5650000, 0.25), (5950000, 0.5), (6300000, 0.75), (6750000, 1), (7500000, 1.25),
          (8550000, 1.5), (9650000, 1.75), (10050000, 2), (10350000, 2.25), (10700000, 2.5), (11050000, 3),
          (11600000, 3.5), (12500000, 4), (13750000, 5), (15100000, 6), (16950000, 7), (19750000, 8),
@@ -225,7 +227,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     thr = 0 if unpaid else round(float(adj.get("thr") or 0))
     kasbon = round(float(adj.get("other_deductions") or 0))
     # ROSY "Potongan Tidak Mencapai Target" (Tambahan Bulanan, user 10 Oct 2026): off the take-home pay like kasbon;
-    # as in ROSY (PayrollModules::brutoPajak counts only pendapatan) it does not lower the PPh 21 base
+    # as in ROSY (PayrollModules::brutoPajak counts only pendapatan) it does not lower the PPh 21 base — except a
+    # PJUnit's, which comes off the Bonus Threshold (below)
     target = 0 if unpaid else round(float(adj.get("target_deduction") or 0))
     # ROSY "Cicilan / Pinjaman" (Tambahan Bulanan, user 12 Oct 2026): a loan repayment, off the take-home pay like the
     # target cut and likewise not lowering the PPh 21 base; unpaid leave has no pay to take it from, as ROSY skips them
@@ -236,6 +239,12 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     basic_paid = round(basic * mult)
     # PPT: during prolonged illness only gapok is paid (100/75/50/25%); jabatan and attendance are not
     position_paid = 0 if status == "prolonged_illness" else round(float(emp.get("position_allowance") or 0) * mult)
+    # PJUnit (user 13 Oct 2026): Potongan Tidak Mencapai Target comes off their own Bonus Threshold — a bonus not earned
+    # is no income, so it leaves the PPh 21 base, is not cut again for alfa/izin, and no longer shows as a potongan.
+    # Only as far as the Bonus Threshold goes; the rest (e.g. Bonus Threshold 0 in ROSY) stays a potongan
+    target_from_bonus = min(target, position_paid) if is_pjunit(emp) else 0
+    position_paid -= target_from_bonus
+    target -= target_from_bonus
     if status == "active":
         # Poin Presensi + Poin Absensi each cost 1/wd of the attendance allowance
         penalty_days = min(disc["presence_points"] + disc["absence_points"], wd)
@@ -304,7 +313,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
         "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
         "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
-        "other_deductions": kasbon, "target_deduction": target, "loan_installment": installment,
+        "other_deductions": kasbon, "target_deduction": target, "target_from_bonus": target_from_bonus,
+        "loan_installment": installment,
         "total_deductions": total_ded, "take_home_pay": thp,
         "bpjs_company_advance": bpjs_advance,
         "discipline": disc, "bpjs": bp, "terbilang": terbilang(thp),

@@ -145,17 +145,22 @@ def payslip_lines(slip: dict) -> tuple:
     days, which only cut the attendance allowance) and Potongan Absensi (alfa/izin/cuti tanpa upah days: their
     attendance-allowance cut plus the gaji pokok and tunjangan jabatan cuts of the PPT). Both totals carry the
     cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA. THR and Cicilan / Pinjaman (ROSY Tambahan Bulanan,
-    12 Oct) print only when set; divisi Pelayanan reads "Bonus Threshold" for the tunjangan jabatan (labels.py)."""
+    12 Oct) print only when set; divisi Pelayanan reads "Bonus Threshold" for the tunjangan jabatan (labels.py).
+    A PJUnit's Potongan Tidak Mencapai Target is already off their Bonus Threshold (engine, 13 Oct): that row says so,
+    even at Rp 0, and the potongan row shows only what the Bonus Threshold could not cover."""
     split = "presence_penalty_amount" in slip  # slips calculated before 9 Oct only have the net allowance
     # slips calculated before 12 Oct carry no label yet: derive it from their employee snapshot
     jabatan = slip.get("position_allowance_label") or position_allowance_label(slip.get("employee"))
+    from_bonus = slip.get("target_from_bonus", 0)
+    jabatan_detail = (f"{rp(slip['position_allowance'] + from_bonus)}, dipotong {rp(from_bonus)} karena tidak "
+                      "mencapai target") if from_bonus else ""
     presensi = slip.get("presence_penalty_amount", 0)
     absensi = (slip.get("absence_penalty_amount", 0) + slip["absent_deduction_amount"]
                + slip.get("position_deduction_amount", 0))
     kehadiran = (("Tunjangan Kehadiran", slip["attendance_allowance_base"]) if split
                  else ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"]))
     earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
-                   (jabatan, slip["position_allowance"], False),
+                   (jabatan, slip["position_allowance"], bool(from_bonus), jabatan_detail),
                    (*kehadiran, False),
                    (f"Lembur ({_jam_menit(slip['overtime_hours'])})", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),

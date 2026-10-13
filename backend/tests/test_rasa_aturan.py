@@ -193,6 +193,61 @@ def test_target_deduction_cuts_take_home_pay_but_not_the_pph21_base():
     assert unpaid["target_deduction"] == 0
 
 
+# ---------------------------------------------------------------- PJUnit: target cut off the Bonus Threshold (13 Oct)
+PJUNIT = {**EMP, "department": "Pelayanan", "position": "Penanggung Jawab unit"}
+
+
+@pytest.mark.parametrize("emp,expected", [
+    ({"department": "Pelayanan", "position": "Penanggung Jawab unit"}, True),      # the position's name in ROSY
+    ({"department": " pelayanan ", "position": "PENANGGUNG  JAWAB UNIT"}, True),
+    ({"department": "Pelayanan", "position": "PJ Unit"}, True), ({"department": "Pelayanan", "position": "PJUnit"}, True),
+    ({"department": "Pelayanan", "position": "Perawat"}, False),
+    ({"department": "Pelayanan", "position": "Supervisor Pelayanan"}, False),
+    ({"department": "Marketing", "position": "Penanggung Jawab unit"}, False),     # PJUnit is a Pelayanan position
+    ({}, False), (None, False),
+])
+def test_pjunit_is_the_penanggung_jawab_unit_in_pelayanan(emp, expected):
+    from labels import is_pjunit
+    assert is_pjunit(emp) is expected
+
+
+def test_pjunit_target_deduction_comes_off_the_bonus_threshold():
+    # user 13 Okt: PJUnit yang tidak mencapai target tidak jadi menerima Bonus Threshold-nya — bukan pendapatan, dan
+    # tidak ditaruh lagi di potongan supaya tidak dobel
+    base = compute_payslip(PJUNIT, [], CFG, {})
+    slip = compute_payslip(PJUNIT, [], CFG, {"target_deduction": 500000})
+    assert (slip["position_allowance"], slip["target_from_bonus"], slip["target_deduction"]) == (0, 500000, 0)
+    assert base["gross_earnings"] - slip["gross_earnings"] == 500000
+    assert base["taxable_gross"] - slip["taxable_gross"] == 500000          # a bonus not earned is not taxed
+    tax_saved = base["pph21_amount"] - slip["pph21_amount"]
+    assert tax_saved > 0
+    assert base["take_home_pay"] - slip["take_home_pay"] == 500000 - tax_saved
+    assert base["total_deductions"] - slip["total_deductions"] == tax_saved   # no potongan row added
+    # not a PJUnit (a Perawat, also in Pelayanan): still a potongan after tax, as in ROSY
+    perawat = compute_payslip({**PJUNIT, "position": "Perawat"}, [], CFG, {"target_deduction": 500000})
+    assert (perawat["position_allowance"], perawat["target_from_bonus"], perawat["target_deduction"]) == \
+        (500000, 0, 500000)
+    assert perawat["taxable_gross"] == base["taxable_gross"]
+
+
+@pytest.mark.parametrize("allowance,expected", [
+    (1000000, (500000, 500000, 0)),     # bonus left over
+    (300000, (0, 300000, 200000)),      # only the Bonus Threshold there is; the rest stays a potongan
+    (0, (0, 0, 500000)),                # ROSY Sep 2026 has PJUnit with Bonus Threshold 0: never a negative income
+])
+def test_pjunit_target_comes_off_only_as_far_as_the_bonus_threshold_goes(allowance, expected):
+    slip = compute_payslip({**PJUNIT, "position_allowance": allowance}, [], CFG, {"target_deduction": 500000})
+    assert (slip["position_allowance"], slip["target_from_bonus"], slip["target_deduction"]) == expected
+
+
+def test_pjunit_bonus_threshold_lost_to_the_target_is_not_cut_again_for_alfa():
+    slip = compute_payslip(PJUNIT, [_day("alfa")], CFG, {"target_deduction": 500000})
+    assert slip["position_deduction_amount"] == 0                  # nothing left of the Bonus Threshold to cut
+    assert (slip["absent_deduction_amount"], slip["absence_penalty_amount"]) == (180000, 30000)  # gapok & kehadiran
+    left = compute_payslip({**PJUNIT, "position_allowance": 1000000}, [_day("alfa")], CFG, {"target_deduction": 500000})
+    assert left["position_deduction_amount"] == 20000              # 1/25 of the 500 rb that is left
+
+
 def test_thr_and_installment_come_from_rosy_like_bonus():
     # user 12 Okt: THR & Cicilan / Pinjaman diambil dari Tambahan Bulanan ROSY, seperti Bonus
     row = {"komponen_bulanan": [
@@ -285,6 +340,29 @@ def test_payslip_prints_target_deduction_only_when_set():
     assert ("Potongan Tidak Mencapai Target", 500000, "") in ded
     _, ded = payslip_lines(_slip())
     assert not any(r[0] == "Potongan Tidak Mencapai Target" for r in ded)
+
+
+def _pjunit_slip(allowance=500000):
+    s = compute_payslip({**PJUNIT, "position_allowance": allowance}, [], CFG, {"target_deduction": 500000})
+    s["employee"] = {**_slip()["employee"], "department": "Pelayanan"}
+    s["position_allowance_label"] = "Bonus Threshold"
+    return s
+
+
+def test_payslip_shows_the_pjunit_bonus_threshold_after_the_target_cut():
+    s = _pjunit_slip()
+    earn, ded = payslip_lines(s)
+    # printed even at Rp 0, so the employee sees where the Bonus Threshold went; no potongan row on top of it
+    assert ("Bonus Threshold", 0, "Rp 500.000, dipotong Rp 500.000 karena tidak mencapai target") in earn
+    assert not any(r[0] == "Potongan Tidak Mencapai Target" for r in ded)
+    amount = lambda rows, k: next(v for n, v, _ in rows if n == k)  # noqa: E731
+    assert amount(earn, "TOTAL PENDAPATAN") - amount(ded, "TOTAL POTONGAN") == s["take_home_pay"]
+    flat = " ".join(_pdf(s)[0].split())
+    assert "Bonus Threshold" in flat and "dipotong Rp 500.000" in flat and "Potongan Tidak Mencapai Target" not in flat
+    # Bonus Threshold smaller than the potongan: it is used up and only the rest is printed as a potongan
+    earn, ded = payslip_lines(_pjunit_slip(300000))
+    assert ("Bonus Threshold", 0, "Rp 300.000, dipotong Rp 300.000 karena tidak mencapai target") in earn
+    assert ("Potongan Tidak Mencapai Target", 200000, "") in ded
 
 
 def test_payslip_prints_thr_and_installment_only_when_set():

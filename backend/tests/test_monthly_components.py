@@ -58,6 +58,12 @@ def test_build_slip_takes_bonus_and_target_deduction_from_rosy(monkeypatch):
             # divisi Pelayanan: the label is stored on the slip, so review page & PDF agree
             pelayanan = await pipeline.build_slip(PERIOD, {**EMP, "department": "Pelayanan"}, {}, CFG)
             assert pelayanan["position_allowance_label"] == "Bonus Threshold"
+
+            # PJUnit (13 Okt): the same ROSY potongan comes off their Bonus Threshold instead
+            pjunit = await pipeline.build_slip(
+                PERIOD, {**EMP, "department": "Pelayanan", "position": "Penanggung Jawab unit"}, {}, CFG)
+            assert (pjunit["position_allowance"], pjunit["target_from_bonus"], pjunit["target_deduction"]) == \
+                (0, 500000, 0)
         finally:
             await client.drop_database(name)
             client.close()

@@ -111,6 +111,9 @@ export default function Workbench() {
   const totalPotongan = calc.total_deductions + presensi + absensi;
   // divisi Pelayanan: tunjangan jabatan disebut "Bonus Threshold" (aturan di backend labels.py, user 12 Okt 2026)
   const jabatan = calc.position_allowance_label || payslip.position_allowance_label || "Tunjangan Jabatan";
+  // PJUnit (13 Okt 2026): Potongan Tidak Mencapai Target sudah diambil dari Bonus Threshold di backend (engine.py);
+  // baris Potongan Tidak Mencapai Target tinggal sisanya, bila Bonus Threshold tidak cukup
+  const fromBonus = calc.target_from_bonus || 0;
   // dasar PPh 21 yang dipakai slip ini (setelan Dasar PPh 21 di Konfigurasi); slip lama tanpa isian = bersih
   const kotor = calc.pph21_basis === "kotor";
   const absensiHint = [
@@ -142,7 +145,7 @@ export default function Workbench() {
         <Panel title="Pendapatan" right={<span className="num text-sm font-bold">{rp(totalPendapatan)}</span>}>
           <div className="px-5 py-2">
             <Row label="Gaji Pokok" hint={calc.wage_multiplier !== 1 ? `Pengali upah ${calc.wage_multiplier * 100}% dari ${rp(calc.basic_salary_contract)}` : null} value={rp(calc.basic_salary)} testId="earn-basic" />
-            <Row label={jabatan} value={rp(calc.position_allowance)} testId="earn-position" />
+            <Row label={jabatan} hint={fromBonus ? `${rp(calc.position_allowance + fromBonus)} − ${rp(fromBonus)} Potongan Tidak Mencapai Target (ROSY)` : null} value={rp(calc.position_allowance)} testId="earn-position" />
             <Row label={split ? "Tunjangan Kehadiran" : "Tunjangan Kehadiran (bersih)"} value={rp(split ? calc.attendance_allowance_base : calc.attendance_allowance)} testId="earn-attendance" />
             {(emp.overtime_access || calc.overtime_hours > 0 || calc.overtime_pay > 0) && <Row label={`Lembur (${jamMenit(calc.overtime_hours)} dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />}
             <Row label="Transport Homecare" hint="Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)" value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
@@ -159,7 +162,7 @@ export default function Workbench() {
             <div className="px-5 py-2">
               {split && <Row label="Potongan Presensi" hint={`${calc.late_penalty_points} poin presensi × 1/${wd} Tunjangan Kehadiran`} value={rp(presensi)} tone={presensi > 0 ? "text-rose-600" : ""} testId="ded-presensi" />}
               <Row label="Potongan Absensi" hint={`${calc.absence_points ?? calc.absent_days ?? 0} hari alfa/izin${absensiHint ? ` — ${absensiHint}` : ""}`} value={rp(absensi)} tone={absensi > 0 ? "text-rose-600" : ""} testId="ded-absensi" />
-              {calc.target_deduction > 0 && <Row label="Potongan Tidak Mencapai Target" hint="Dari ROSY (Tambahan Bulanan: Potongan Tidak Mencapai Target)" value={rp(calc.target_deduction)} tone="text-rose-600" testId="ded-target" />}
+              {calc.target_deduction > 0 && <Row label="Potongan Tidak Mencapai Target" hint={fromBonus ? `Sisa yang melebihi ${jabatan} — dari ROSY (Tambahan Bulanan)` : "Dari ROSY (Tambahan Bulanan: Potongan Tidak Mencapai Target)"} value={rp(calc.target_deduction)} tone="text-rose-600" testId="ded-target" />}
               <Row label="Iuran BPJS Kesehatan (5%)" hint={`Perusahaan ${rp(bp.kes_company)} + Karyawan ${rp(bp.kes_employee)}`} value={rp(calc.iuran_bpjs_kes_total)} testId="ded-bpjs-kes" />
               <Row label="Iuran BPJS Ketenagakerjaan" hint={`JKK+JKM ${rp(bp.jkk + bp.jkm)} · JHT ${rp(bp.jht_company + bp.jht_employee)} · JP ${rp(bp.jp_company + bp.jp_employee)}`} value={rp(calc.iuran_bpjs_tk_total)} testId="ded-bpjs-tk" />
               {calc.tax_reconciliation ? (
