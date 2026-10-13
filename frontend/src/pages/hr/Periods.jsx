@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
-import { PERIOD_STATUS, periodNameFor, unfinishedSyncDay, formatDate, formatDateRange } from "@/lib/format";
+import { PERIOD_STATUS, periodNameFor, unfinishedSyncDay, formatDate, formatDateRange, localIso, monthRange, firstDayAfter } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
 import SyncTodayDialog from "@/components/SyncTodayDialog";
 import { useAuth, isManager } from "@/context/AuthContext";
@@ -17,25 +17,46 @@ const Field = ({ label, testId, ...p }) => (
   </label>
 );
 
-const EMPTY = { period_name: "", start_date: "", end_date: "", payment_date: "" };
+// Periode baru = pilih satu bulan kalender (user 13 Okt 2026): tanggal mulai & selesai mengikuti bulannya, dan Tanggal
+// Transfer terisi otomatis tanggal 1 bulan berikutnya (tetap bisa diubah). Bulan yang bisa dipilih: bulan ini dan 12
+// bulan sebelumnya, terbaru di atas.
+const EMPTY = { month: "", payment_date: "" };
+const MONTHS_BACK = 12;
+const recentMonths = () => {
+  const now = localIso().slice(0, 7);
+  let y = Number(now.slice(0, 4)), m = Number(now.slice(5, 7));
+  const keys = [];
+  for (let i = 0; i <= MONTHS_BACK; i++) {
+    keys.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (--m === 0) { m = 12; y -= 1; }
+  }
+  return keys;
+};
 
 export default function Periods() {
   const { user } = useAuth();
   const [list, setList] = useState([]);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState(EMPTY);
-  const autoName = periodNameFor(f.start_date, f.end_date);
+  const range = f.month ? monthRange(f.month) : null;
+  const monthName = range ? periodNameFor(range.start, range.end) : "";
   const [del, setDel] = useState(null);
   const nav = useNavigate();
   const load = () => api.get("/hr/periods").then((r) => setList(r.data));
   useEffect(() => { load(); }, []);
+  // sama dengan aturan backend: satu periode per bulan dan tanggalnya tidak boleh bertumpuk; yang sudah ada tak bisa dipilih
+  const months = recentMonths().map((key) => {
+    const r = monthRange(key);
+    return { key, name: periodNameFor(r.start, r.end), taken: list.some((p) => p.bulan === key || (p.start_date <= r.end && r.start <= p.end_date)) };
+  });
 
   const [syncing, setSyncing] = useState(false);
   const [confirmDay, setConfirmDay] = useState(null);
   // periode yang mencakup hari ini langsung disinkron: tanya dulu, absensi hari ini belum selesai (user 12 Okt 2026)
   const submit = (e) => {
     e.preventDefault();
-    const day = unfinishedSyncDay(f.start_date, f.end_date);
+    if (!range) return;
+    const day = unfinishedSyncDay(range.start, range.end);
     if (day) setConfirmDay(day);
     else create();
   };
@@ -43,8 +64,8 @@ export default function Periods() {
     setConfirmDay(null);
     setSyncing(true);
     try {
-      const { data } = await api.post("/hr/periods", f);
-      if (data.sync_error) toast.warning(`Periode ${data.period_name} dibuat, tetapi sinkron gagal: ${data.sync_error}. Ulangi lewat "Sinkron dari ROSY" di Dashboard.`, { duration: 10000 });
+      const { data } = await api.post("/hr/periods", { start_date: range.start, end_date: range.end, payment_date: f.payment_date });
+      if (data.sync_error) toast.warning(`Periode ${data.period_name} dibuat, tetapi sinkron gagal: ${data.sync_error}. Buka periodenya lalu ulangi lewat "Fetch Data Terbaru".`, { duration: 10000 });
       else toast.success(`Periode ${data.period_name} dibuat · ${data.employee_count} karyawan disinkron dari ROSY`);
       setOpen(false);
       setF(EMPTY);
@@ -62,8 +83,8 @@ export default function Periods() {
 
   return (
     <div>
-      <PageTitle title="Periode Payroll" subtitle="Siklus penggajian bulanan">
-        <Btn data-testid="create-period-button" onClick={() => setOpen(true)}><Plus className="h-4 w-4" /> Periode Baru</Btn>
+      <PageTitle title="PAYROLL" subtitle="Siklus penggajian bulanan">
+        <Btn data-testid="create-period-button" onClick={() => { setF(EMPTY); setOpen(true); }}><Plus className="h-4 w-4" /> Periode Baru</Btn>
       </PageTitle>
       <Panel>
         {/* HP (user 12 Okt 2026): nama periode jadi tautannya, rentang & tanggal transfer turun ke bawah nama, sehingga
@@ -99,15 +120,16 @@ export default function Periods() {
         <DialogContent data-testid="create-period-dialog">
           <DialogHeader><DialogTitle>Periode Payroll Baru</DialogTitle><DialogDescription>Karyawan, gaji, absensi, lembur, dan Tambahan Bulanan (Transport, Bonus, THR, Potongan Target, Cicilan) langsung disinkron dari ROSY, lalu slip dihitung. Satu bulan hanya satu periode.</DialogDescription></DialogHeader>
           <form onSubmit={submit} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Mulai" type="date" testId="period-start-input" required value={f.start_date} onChange={(e) => setF({ ...f, start_date: e.target.value })} />
-              <Field label="Selesai" type="date" testId="period-end-input" required value={f.end_date} onChange={(e) => setF({ ...f, end_date: e.target.value })} />
-            </div>
-            {autoName || !f.start_date || !f.end_date
-              ? <Field label="Nama Periode (otomatis)" testId="period-name-input" readOnly value={autoName || ""} placeholder="Terisi otomatis dari tanggal" />
-              : <Field label="Nama Periode (lintas bulan)" testId="period-name-input" required placeholder="mis. Payroll 26 Sep – 25 Okt 2026" value={f.period_name} onChange={(e) => setF({ ...f, period_name: e.target.value })} />}
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Periode</span>
+              <select data-testid="period-month-select" required value={f.month} onChange={(e) => setF({ month: e.target.value, payment_date: e.target.value ? firstDayAfter(e.target.value) : "" })} className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white">
+                <option value="">Pilih periode...</option>
+                {months.map((m) => <option key={m.key} value={m.key} disabled={m.taken}>{m.name}{m.taken ? " — sudah ada" : ""}</option>)}
+              </select>
+              {range && <span className="block text-xs text-slate-500" data-testid="period-range-hint">{formatDateRange(range.start, range.end)}</span>}
+            </label>
             <Field label="Tanggal Transfer" type="date" testId="period-payment-input" value={f.payment_date} onChange={(e) => setF({ ...f, payment_date: e.target.value })} />
-            <Btn data-testid="period-submit-button" disabled={syncing} className="w-full justify-center">{syncing ? "Menyinkronkan dari ROSY..." : "Simpan & Sinkron dari ROSY"}</Btn>
+            <Btn data-testid="period-submit-button" disabled={syncing || !range} className="w-full justify-center">{syncing ? "Menyinkronkan dari ROSY..." : "Simpan & Sinkronisasi"}</Btn>
           </form>
         </DialogContent>
       </Dialog>
@@ -123,7 +145,7 @@ export default function Periods() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <SyncTodayDialog day={confirmDay} periodName={autoName || f.period_name} onConfirm={create} onCancel={() => setConfirmDay(null)} />
+      <SyncTodayDialog day={confirmDay} periodName={monthName} onConfirm={create} onCancel={() => setConfirmDay(null)} />
     </div>
   );
 }

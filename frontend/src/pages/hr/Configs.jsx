@@ -99,7 +99,7 @@ function Pph21BasisPanel({ value, choices, onChange }) {
             );
           })}
         </div>
-        <p className="text-xs text-slate-500 mt-3">Berlaku untuk slip yang dihitung sesudah disimpan: klik <b>Sinkron dari ROSY</b> di Dashboard untuk periode yang masih draft. Slip yang sudah di-approve tidak berubah, dan 1721-A1 mengikuti dasar yang dipakai tiap slipnya.</p>
+        <p className="text-xs text-slate-500 mt-3">Berlaku untuk slip yang dihitung sesudah disimpan: klik <b>Fetch Data Terbaru</b> di halaman periode untuk periode yang masih draft. Slip yang sudah di-approve tidak berubah, dan 1721-A1 mengikuti dasar yang dipakai tiap slipnya.</p>
       </div>
     </Panel>
   );

@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Users, UserPlus, UserMinus, UserX, AlertTriangle, Wallet, Receipt, HeartPulse, HardHat, ArrowRight, BellRing, XCircle, RefreshCw, ChevronDown, LockKeyhole } from "lucide-react";
-import { toast } from "sonner";
-import { useAuth } from "@/context/AuthContext";
-import { api, errMsg } from "@/lib/api";
-import { rp, PERIOD_STATUS, DATA_ISSUE_LABELS, formatDate, formatDateRange, localIso, unfinishedSyncDay } from "@/lib/format";
-import { PageTitle, Panel, StatusBadge, Btn } from "@/components/common";
-import SyncTodayDialog from "@/components/SyncTodayDialog";
+import { Users, UserPlus, UserMinus, UserX, AlertTriangle, Wallet, Receipt, HeartPulse, HardHat, ArrowRight, BellRing, XCircle, ChevronDown, LockKeyhole } from "lucide-react";
+import { api } from "@/lib/api";
+import { rp, PERIOD_STATUS, DATA_ISSUE_LABELS, formatDate, formatDateRange, localIso } from "@/lib/format";
+import { PageTitle, Panel, StatusBadge } from "@/components/common";
 
 const Stat = ({ icon: Icon, label, value, hint, tone = "text-slate-900", compact, testId }) => (
   <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm fade-up">
@@ -34,13 +31,14 @@ const Notice = ({ n }) => {
   );
 };
 
-// Kelompok "Perlu Ditinjau" (user 10 Okt 2026): siapa yang keluar/masuk, tidak digaji, digaji tidak penuh, absensi & data
+// Kelompok "Perlu Ditinjau" (user 10 Okt 2026): siapa yang keluar/masuk, tidak digaji, digaji tidak penuh, dan data.
+// 13 Okt 2026: "Absensi perlu dicek" dibuang; "Tidak ikut digaji" = unpaid & cuti melahirkan (sama dgn kartunya),
+// bukan lagi karyawan tanpa Kontrak Gaji.
 const GROUP_INFO = {
   left: ["Keluar di periode ini, atau ada di periode sebelumnya tapi tidak dikirim ROSY lagi", "text-rose-700"],
   new: ["Mulai bekerja di periode ini — cek Kontrak Gaji & slip pertamanya", "text-blue-900"],
-  skipped: ["Ada di ROSY tapi tidak masuk periode ini, jadi tidak digaji", "text-amber-700"],
-  partial: ["Prorata: masuk, keluar, atau cuti melahirkan di tengah periode; sakit berkepanjangan; cuti di luar tanggungan", "text-amber-700"],
-  attendance: ["Alfa/izin (ikut memotong gaji pokok), tanpa data absensi, atau belum tertaut RUMATKU", "text-amber-700"],
+  not_paid: ["Unpaid / cuti di luar tanggungan (upah Rp 0) dan cuti melahirkan (Tunj. Kehadiran terpotong)", "text-amber-700"],
+  partial: ["Prorata: masuk, keluar, atau cuti melahirkan di tengah periode; sakit berkepanjangan", "text-amber-700"],
   data: ["Data karyawan di ROSY yang belum lengkap — tidak menghalangi payroll", "text-slate-600"],
 };
 
@@ -77,13 +75,10 @@ const ReviewGroup = ({ g, pid, open, onToggle }) => {
 };
 
 export default function Dashboard() {
-  const { user } = useAuth();
   const [notes, setNotes] = useState([]);
   const [periods, setPeriods] = useState([]);
   const [d, setD] = useState(null);
   const [open, setOpen] = useState({});
-  const [syncing, setSyncing] = useState(false);
-  const [confirmDay, setConfirmDay] = useState(null);
 
   const load = useCallback((pid) => api.get("/hr/dashboard/employees", { params: pid ? { pid } : {} }).then((r) => setD(r.data)), []);
   const loadLists = useCallback(() => {
@@ -96,72 +91,57 @@ export default function Dashboard() {
   const { period, counts, groups, payroll } = d;
   const editable = period && ["draft", "revision"].includes(period.status);
 
-  // Pindahan tombol "Sinkron dari ROSY" dari halaman periode (user 10 Okt 2026): satu tombol mengambil karyawan & gaji,
-  // absensi, klaim lembur, dan Tambahan Bulanan ROSY untuk periode yang dipilih, lalu menghitung ulang slip
-  const sync = async () => {
-    setConfirmDay(null);
-    setSyncing(true);
-    try {
-      await api.post(`/hr/periods/${period.id}/fetch-attendance`);
-      toast.success(`Sinkron ${period.period_name} dari ROSY selesai & payroll dihitung ulang`);
-    } catch (e) { toast.error(errMsg(e)); } finally {
-      setSyncing(false);
-      await load(period.id);
-      loadLists();
-    }
-  };
-  // periode yang masih berjalan: tanya dulu, karena absensi hari ini belum selesai (user 12 Okt 2026)
-  const requestSync = () => {
-    const day = unfinishedSyncDay(period.start_date, period.end_date);
-    if (day) setConfirmDay(day);
-    else sync();
-  };
+  // Tombol "Fetch Data Terbaru" ada di halaman periode (menu Payroll), bukan di sini (user 13 Okt 2026);
+  // Dashboard hanya menampilkan kapan sinkron terakhir
   const lastSyncDay = period?.last_sync_at ? localIso(new Date(period.last_sync_at)) : null;
   const syncedMidPeriod = editable && lastSyncDay && period.start_date <= lastSyncDay && lastSyncDay <= period.end_date;
 
   return (
     <div data-testid="hr-dashboard">
       <PageTitle title="Dashboard Payroll" subtitle={period ? <><span className="block">{formatDateRange(period.start_date, period.end_date)}</span><span className="block" data-testid="dashboard-sync-status">Sinkron terakhir: {period.last_sync_at ? new Date(period.last_sync_at).toLocaleString("id-ID") : "belum pernah"}{syncedMidPeriod && <span className="text-amber-700" data-testid="dashboard-sync-midperiod"> · diambil saat periode berjalan, alfa {formatDate(lastSyncDay)} belum final</span>}</span></> : "Belum ada periode — buat di menu Payroll"}>
-        {period && <StatusBadge map={PERIOD_STATUS} status={period.status} testId="dashboard-period-status" />}
+        {period && <StatusBadge map={PERIOD_STATUS} status={period.status} caption="Status:" testId="dashboard-period-status" />}
         {periods.length > 0 && (
           <select data-testid="dashboard-period-select" value={period?.id || ""} onChange={(e) => load(e.target.value)} className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white">
             {periods.map((p) => <option key={p.id} value={p.id}>{p.period_name}</option>)}
           </select>
         )}
-        {period && <Btn variant="primary" data-testid="dashboard-sync-button" disabled={syncing || !editable} onClick={requestSync} title={editable ? "Karyawan & gaji, absensi, klaim lembur, dan Tambahan Bulanan (Transport, Bonus, THR, Potongan Target, Cicilan) terbaru dari ROSY" : "Periode ini sudah diajukan atau dikunci, jadi tidak bisa disinkron lagi"}><RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Menyinkronkan..." : "Sinkron dari ROSY"}</Btn>}
       </PageTitle>
       {period?.last_sync_error && (
         <div className="mb-4 flex gap-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-md px-4 py-3 text-sm" data-testid="dashboard-sync-error">
           <AlertTriangle className="h-5 w-5 shrink-0" />
-          <span>Sinkron dari ROSY terakhir gagal: {period.last_sync_error}. Klik "Sinkron dari ROSY" untuk mencoba lagi.</span>
+          <span>Sinkron dari ROSY terakhir gagal: {period.last_sync_error}. Buka <Link to={`/hr-manager/payroll/${period.id}`} className="font-semibold underline">halaman periode {period.period_name}</Link>, lalu klik "Fetch Data Terbaru" untuk mencoba lagi.</span>
         </div>
       )}
-      <div className="mb-6 space-y-2" data-testid="notifications-panel">
-        {notes.map((n) => <Notice key={n.period_id} n={n} />)}
-        {!notes.length && <div className="text-xs text-slate-400" data-testid="no-notifications">{user?.role === "manager_hrd" ? "Tidak ada draft payroll yang menunggu approval." : "Tidak ada draft payroll yang ditolak."}</div>}
-      </div>
+      {period && (
+        // kartu nominal di paling atas (user 13 Okt 2026); angka rupiah butuh lebar: satu kolom di HP supaya tidak meluber dari kartu (12 Okt 2026)
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+          <Stat icon={Wallet} label="Total THP" compact value={rp(payroll.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />
+          <Stat icon={Receipt} label="Total PPh 21" compact value={rp(payroll.total_pph21)} testId="stat-total-pph21" />
+          <Stat icon={HeartPulse} label="Setoran BPJS Kesehatan" compact value={rp(payroll.total_bpjs_kes)} testId="stat-total-bpjs-kes" />
+          <Stat icon={HardHat} label="Setoran BPJS TK" compact value={rp(payroll.total_bpjs_tk)} testId="stat-total-bpjs-tk" />
+          <Stat icon={LockKeyhole} label="Slip Dikunci" value={`${payroll.approved}/${payroll.slips}`} tone={payroll.slips && payroll.approved === payroll.slips ? "text-emerald-600" : "text-amber-600"} testId="stat-approved" />
+        </div>
+      )}
+      {/* banner hanya tampil bila ada draft yang diajukan / ditolak; tanpa teks "tidak ada ..." (user 13 Okt 2026) */}
+      {notes.length > 0 && (
+        <div className="mb-6 space-y-2" data-testid="notifications-panel">
+          {notes.map((n) => <Notice key={n.period_id} n={n} />)}
+        </div>
+      )}
       {period && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-            <Stat icon={Users} label="Karyawan Periode Ini" value={counts.in_period} hint="ikut digaji (punya Kontrak Gaji)" testId="stat-employees" />
+            <Stat icon={Users} label="Karyawan Periode Ini" value={counts.in_period} hint="punya slip di periode ini" testId="stat-employees" />
             <Stat icon={UserPlus} label="Karyawan Baru" value={counts.new} tone={counts.new ? "text-blue-900" : "text-slate-900"} hint="mulai bekerja di periode ini" testId="stat-new" />
             <Stat icon={UserMinus} label="Karyawan Keluar" value={counts.left} tone={counts.left ? "text-rose-600" : "text-slate-900"} hint="keluar / tidak dikirim ROSY lagi" testId="stat-left" />
-            <Stat icon={UserX} label="Tidak Ikut Digaji" value={counts.skipped} tone={counts.skipped ? "text-amber-600" : "text-slate-900"} hint="mis. belum punya Kontrak Gaji" testId="stat-skipped" />
-            <Stat icon={AlertTriangle} label="Perlu Ditinjau" value={counts.review} tone={counts.review ? "text-amber-600" : "text-emerald-600"} hint="karyawan di daftar bawah" testId="stat-review" />
+            <Stat icon={UserX} label="Tidak Ikut Digaji" value={counts.unpaid + counts.maternity} tone={counts.unpaid + counts.maternity ? "text-amber-600" : "text-slate-900"} hint={`${counts.unpaid} unpaid · ${counts.maternity} cuti melahirkan`} testId="stat-unpaid" />
+            <Stat icon={AlertTriangle} label="Perlu Ditinjau" value={counts.data} tone={counts.data ? "text-amber-600" : "text-emerald-600"} hint="data belum lengkap: rekening, NPWP, dll" testId="stat-review" />
           </div>
           <Panel title={`Perlu Ditinjau · ${period.period_name}`} className="mb-6">
             {groups.map((g) => (
               <ReviewGroup key={g.key} g={g} pid={period.id} open={!!open[g.key]} onToggle={() => setOpen({ ...open, [g.key]: !open[g.key] })} />
             ))}
           </Panel>
-          {/* angka rupiah butuh lebar: satu kolom di HP supaya tidak meluber dari kartu (12 Okt 2026) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-            <Stat icon={Wallet} label="Total Diterima" compact value={rp(payroll.total_thp)} tone="text-emerald-600" testId="stat-total-thp" />
-            <Stat icon={Receipt} label="Total PPh 21" compact value={rp(payroll.total_pph21)} testId="stat-total-pph21" />
-            <Stat icon={HeartPulse} label="Setoran BPJS Kesehatan" compact value={rp(payroll.total_bpjs_kes)} testId="stat-total-bpjs-kes" />
-            <Stat icon={HardHat} label="Setoran BPJS TK" compact value={rp(payroll.total_bpjs_tk)} testId="stat-total-bpjs-tk" />
-            <Stat icon={LockKeyhole} label="Slip Dikunci" value={`${payroll.approved}/${payroll.slips}`} tone={payroll.slips && payroll.approved === payroll.slips ? "text-emerald-600" : "text-amber-600"} testId="stat-approved" />
-          </div>
         </>
       )}
       <Panel title="Periode Penggajian" right={<Link to="/hr-manager/payroll" className="tap text-xs font-semibold text-blue-900 hover:underline" data-testid="dashboard-all-periods-link">Kelola</Link>}>
@@ -181,7 +161,6 @@ export default function Dashboard() {
           {!periods.length && <div className="px-5 py-6 text-sm text-slate-500">Belum ada periode.</div>}
         </div>
       </Panel>
-      <SyncTodayDialog day={confirmDay} periodName={period?.period_name} onConfirm={sync} onCancel={() => setConfirmDay(null)} />
     </div>
   );
 }

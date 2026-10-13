@@ -1,6 +1,8 @@
 """Dashboard "Perlu Ditinjau" (GET /api/hr/dashboard/employees, user request 10 Oct 2026): who joined, who left, who is
-not paid or not in full, and attendance/data to check. Runs against a throwaway MongoDB database that is dropped
-afterwards (skipped when MongoDB is not running)."""
+not paid or not in full, and employee data to check. 13 Oct 2026: no attendance group any more; "Tidak ikut digaji"
+lists unpaid + maternity leave (not the employees without a Kontrak Gaji), and the cards count those and the employees
+whose data is incomplete. Runs against a throwaway MongoDB database that is dropped afterwards (skipped when MongoDB is
+not running)."""
 import asyncio
 import os
 import sys
@@ -46,8 +48,9 @@ def test_dashboard_groups_who_needs_a_look(monkeypatch):
             await tdb.employees.insert_many([
                 _emp("a", "Ani Lama"), _emp("b", "Budi Baru", join_date="2026-09-01"),
                 _emp("c", "Cici Tengah", join_date="2026-09-15"), _emp("d", "Dodi Keluar", exit_date="2026-09-20"),
-                _emp("e", "Eka Unpaid", payroll_status="unpaid_leave"), _emp("f", "Fajar Alfa", data_issues=["npwp_kosong"]),
-                _emp("g", "Gita Agustus")])
+                _emp("e", "Eka Unpaid", payroll_status="unpaid_leave"), _emp("f", "Fajar Alfa", data_issues=["npwp_kosong", "rekening_kosong"]),
+                # incomplete data but not in September: must not be counted
+                _emp("g", "Gita Agustus", data_issues=["rekening_kosong"])])
             await tdb.payroll_periods.insert_many([
                 {"id": "agu", "period_name": "Agustus 2026", "start_date": "2026-08-01", "end_date": "2026-08-31",
                  "status": "approved", "employee_ids": ["a", "d", "e", "f", "g"]},
@@ -62,7 +65,9 @@ def test_dashboard_groups_who_needs_a_look(monkeypatch):
             await tdb.payslips.insert_many([
                 _slip("a", overtime_pay=50000, overtime_hours=2, transport_homecare=120000),
                 _slip("b", discipline={"presence_by_type": {"maternity_leave": 3}}), _slip("c"), _slip("d"),
-                _slip("e", payroll_status="unpaid_leave", take_home_pay=0),
+                # unpaid wins over maternity leave, as on the period page: counted once, as unpaid
+                _slip("e", payroll_status="unpaid_leave", take_home_pay=0,
+                      discipline={"presence_by_type": {"maternity_leave": 2}}),
                 _slip("f", absence_points=2, absent_deduction_amount=150000, status="approved",
                       discipline={"absence_by_type": {"alpha": 1, "permission_leave": 1}})])
 
@@ -72,29 +77,38 @@ def test_dashboard_groups_who_needs_a_look(monkeypatch):
             assert g["left"] == {"Dodi Keluar": "keluar 20 September 2026",
                                  "Gita Agustus": "tidak lagi dikirim ROSY — ada di Agustus 2026, tidak ada di periode ini"}
             assert g["new"] == {"Budi Baru": "mulai 1 September 2026", "Cici Tengah": "mulai 15 September 2026"}
-            assert g["skipped"] == {"Xena Tanpa Kontrak": "belum punya Kontrak Gaji"}
-            # prorata, not the alfa/izin fines (user 10 Oct 2026): Fajar's alfa stays under attendance only
-            assert g["partial"] == {"Eka Unpaid": "cuti di luar tanggungan — upah & tunjangan Rp 0",
-                                    "Cici Tengah": "masuk 15 September 2026, di tengah periode — cek prorata",
+            # not paid because of leave (user 13 Oct 2026): unpaid and maternity leave, one row per person
+            assert g["not_paid"] == {"Eka Unpaid": "cuti di luar tanggungan — upah & tunjangan Rp 0",
+                                     "Budi Baru": "cuti melahirkan 3 hari — Tunj. Kehadiran terpotong"}
+            # prorata only, not the alfa/izin fines (user 10 Oct 2026); the unpaid have their own group
+            assert g["partial"] == {"Cici Tengah": "masuk 15 September 2026, di tengah periode — cek prorata",
                                     "Dodi Keluar": "keluar 20 September 2026, di tengah periode — cek prorata",
                                     "Budi Baru": "cuti melahirkan 3 hari, masuk kerja 2 hari — cek prorata"}
-            assert set(g["attendance"]) == {"Fajar Alfa", "Ani Lama", "Budi Baru"}
-            assert g["attendance"]["Fajar Alfa"].startswith("1 hari alfa, 1 hari izin")
-            assert [i["issues"] for x in r["groups"] if x["key"] == "data" for i in x["items"]] == [["npwp_kosong"]]
-            # unique people outside the data group: Dodi, Gita, Budi, Cici, Xena, Eka, Fajar, Ani
-            assert r["counts"] == {"in_period": 6, "new": 2, "left": 2, "skipped": 1, "review": 8, "data": 1}
+            # alfa/izin and missing attendance are not listed here any more (user 13 Oct 2026), nor counted
+            assert [x["key"] for x in r["groups"]] == ["left", "new", "not_paid", "partial", "data"]
+            names = {i["name"] for x in r["groups"] if x["key"] != "data" for i in x["items"]}
+            assert "Fajar Alfa" not in names
+            # nor is anyone without a Kontrak Gaji (Xena, HAM meta.dilewati): ROSY will not allow that any more
+            assert "Xena Tanpa Kontrak" not in {i["name"] for x in r["groups"] for i in x["items"]}
+            # data group = people in the period with something missing; Fajar has two gaps but is one employee
+            assert [i["issues"] for x in r["groups"] if x["key"] == "data" for i in x["items"]] == \
+                [["npwp_kosong", "rekening_kosong"]]
+            assert r["counts"] == {"in_period": 6, "new": 2, "left": 2, "unpaid": 1, "maternity": 1, "data": 1}
+            assert len(g["not_paid"]) == r["counts"]["unpaid"] + r["counts"]["maternity"]  # card = group
             assert r["payroll"] == {"slips": 6, "approved": 1, "total_thp": 5000, "total_pph21": 60,
                                     "total_bpjs_kes": 30, "total_bpjs_tk": 42}
             links = {i["name"]: i["has_slip"] for x in r["groups"] for i in x["items"]}
-            assert links["Budi Baru"] and not links["Gita Agustus"] and not links["Xena Tanpa Kontrak"]
+            assert links["Budi Baru"] and links["Eka Unpaid"] and not links["Gita Agustus"]  # Gita is not in the period
 
             # the period page's summary cards filter the table by employee id (user 10 Oct 2026)
             sm = (await routes_hr.period_detail("sep"))["summary"]
-            assert (sm["included"], sm["skipped"], sm["overtime_hours"], sm["overtime_pay"], sm["homecare_total"]) == \
-                (6, ["Xena Tanpa Kontrak"], 2, 50000, 120000)
+            assert (sm["included"], sm["overtime_hours"], sm["overtime_pay"], sm["homecare_total"]) == (6, 2, 50000, 120000)
+            assert "skipped" not in sm  # the "Tidak Ikut" card (no Kontrak Gaji) is gone from the period page (user 13 Oct 2026)
             assert {k: sorted(sm[k]) for k in ("overtime", "homecare", "unpaid", "maternity", "partial")} == {
                 "overtime": ["a"], "homecare": ["a"], "unpaid": ["e"], "maternity": ["b"],
                 "partial": ["b", "c", "d"]}  # maternity ends mid-period, joins mid-period, leaves mid-period
+            # the dashboard card counts the same people as the period page's Unpaid + Cuti Melahirkan cards
+            assert (r["counts"]["unpaid"], r["counts"]["maternity"]) == (len(sm["unpaid"]), len(sm["maternity"]))
 
             older = await routes_hr.dashboard_employees("agu")  # the first period has nothing to compare with
             assert older["period"]["id"] == "agu" and older["counts"]["left"] == 0

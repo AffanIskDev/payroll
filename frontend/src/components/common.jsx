@@ -1,21 +1,32 @@
-export const StatusBadge = ({ map, status, testId }) => {
-  const s = map[status] || { label: status, cls: "bg-slate-100 text-slate-600 border-slate-300" };
+// Status sebagai LABEL, bukan kotak (user 13 Okt 2026): titik berwarna + teks tanpa bingkai atau latar, kursor panah,
+// supaya tidak disangka tombol yang bisa diklik. caption = awalan abu-abu ("Status:"), large = ukuran untuk di samping judul;
+// testId menempel pada teks statusnya saja (tanpa awalan)
+export const StatusBadge = ({ map, status, testId, caption, large }) => {
+  const s = map[status] || { label: status, cls: "text-slate-600", dot: "bg-slate-400" };
   return (
-    <span data-testid={testId} className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-semibold uppercase tracking-wide ${s.cls}`}>
-      {s.label}
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap cursor-default ${large ? "text-base" : "text-sm"}`}>
+      {caption && <span className="text-slate-500">{caption}</span>}
+      <span data-testid={testId} className={`inline-flex items-center gap-1.5 font-medium ${s.cls}`}>
+        <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} aria-hidden="true" />
+        {s.label}
+      </span>
     </span>
   );
 };
 
-export const PageTitle = ({ title, subtitle, children }) => (
-  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
-    <div>
-      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{title}</h1>
-      {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
+// titleExtra = keterangan di samping judul (mis. "Status: Draft" di halaman periode, user 13 Okt 2026), bukan di deretan tombol
+export const PageTitle = ({ title, titleExtra, subtitle, children }) => {
+  const h1 = <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">{title}</h1>;
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+      <div>
+        {titleExtra ? <div className="flex flex-wrap items-center gap-x-4 gap-y-1">{h1}{titleExtra}</div> : h1}
+        {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
+      </div>
+      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
-    <div className="flex flex-wrap gap-2">{children}</div>
-  </div>
-);
+  );
+};
 
 export const Panel = ({ title, right, children, className = "" }) => (
   <section className={`bg-white border border-slate-200 rounded-lg shadow-sm ${className}`}>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Users, UserX, AlertTriangle, UserMinus, XCircle } from "lucide-react";
+import { Search, AlertTriangle, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { rp, PAYROLL_STATUS_LABELS, DATA_ISSUE_LABELS, periodNameFor, formatDateTime, timeAgo } from "@/lib/format";
-import { PageTitle, Panel, SummaryCard } from "@/components/common";
+import { PageTitle, Panel } from "@/components/common";
 
 // kolom "Sinkron" per baris dibuang (user 12 Okt 2026): semua baris tersinkron bersamaan, waktunya cukup di judul
 const COLS = ["NIK", "Nama", "Dept", "L/P", "PTKP", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rate Lembur/Jam", "BPJS", "Rekening"];
@@ -14,35 +14,29 @@ const bpjsText = (e) => {
   return [e.has_bpjs_kes !== false && "Kes", e.has_bpjs_tk !== false && "TK"].filter(Boolean).join(" + ") || "-";
 };
 
-// kartu ringkasan menggantikan paragraf status sinkron (user 12 Okt 2026): satu angka per hal yang perlu diketahui
-// HRD, sekaligus penyaring tabel; yang bukan bawaan tampil sebagai filter yang bisa dihapus
+// Kartu ringkasan dibuang (user 13 Okt 2026), diganti satu lencana peringatan bila ada karyawan yang datanya belum
+// lengkap (NPWP, tgl lahir, rekening, dll — hasil periksa ROSY, sama dengan "Perlu Ditinjau" di Dashboard). Tabel hanya
+// memuat karyawan yang masih ada di ROSY; lencananya sekaligus menyaring tabel.
 const inRosy = (e) => e.in_rosy !== false;
-const FILTERS = {
-  paid: { label: "Ikut Digaji", match: inRosy },
-  issues: { label: "Data Perlu Dirapikan", match: (e) => inRosy(e) && e.data_issues?.length > 0 },
-  gone: { label: "Tidak Lagi di ROSY", match: (e) => !inRosy(e) },
-};
+const incomplete = (e) => e.data_issues?.length > 0;
 const STALE_MS = 7 * 86400000;
 
 export default function EmployeesView() {
   const [list, setList] = useState([]);
   const [status, setStatus] = useState({});
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState("paid");
-  const [showSkipped, setShowSkipped] = useState(false);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   useEffect(() => {
     api.get("/hr/employees").then((r) => setList(r.data));
     api.get("/hr/employees/sync-status").then((r) => setStatus(r.data || {}));
   }, []);
 
-  const count = (key) => list.filter(FILTERS[key].match).length;
-  const toggle = (key) => setFilter(filter === key ? "paid" : key);
-  const rows = list.filter((e) => FILTERS[filter].match(e) && `${e.nik} ${e.name} ${e.department}`.toLowerCase().includes(q.trim().toLowerCase()));
-  const skipped = [...(status.skipped || [])].sort((a, b) => `${a.alasan}${a.name}`.localeCompare(`${b.alasan}${b.name}`));
-  // jumlah per jenis masalah; seorang karyawan bisa punya lebih dari satu, jadi totalnya bisa melebihi angka kartu
+  const current = list.filter(inRosy);
+  const lacking = current.filter(incomplete);
+  const rows = (onlyIncomplete ? lacking : current).filter((e) => `${e.nik} ${e.name} ${e.department}`.toLowerCase().includes(q.trim().toLowerCase()));
+  // jumlah per jenis masalah; seorang karyawan bisa punya lebih dari satu, jadi totalnya bisa melebihi jumlah karyawan
   const issueTypes = Object.entries(status.data_issues || {}).sort((a, b) => b[1] - a[1]);
   const issueText = issueTypes.map(([k, n]) => `${DATA_ISSUE_LABELS[k] || k} ${n}`).join(" · ");
-  const issueTop = issueTypes.length ? `${issueTypes.length > 1 ? "terbanyak: " : ""}${DATA_ISSUE_LABELS[issueTypes[0][0]] || issueTypes[0][0]} ${issueTypes[0][1]}` : "";
   const month = status.periode ? periodNameFor(`${status.periode}-01`, `${status.periode}-01`) : null;
   const stale = status.synced_at && Date.now() - new Date(status.synced_at) > STALE_MS;
 
@@ -51,46 +45,29 @@ export default function EmployeesView() {
       <PageTitle title="Data Karyawan & Gaji" subtitle={status.synced_at ? (
         <span data-testid="employee-sync-status">
           Hanya-lihat, dari ROSY{month && ` · gaji ${month}`} · <span className={stale ? "text-amber-700 font-medium" : ""}>diperbarui {formatDateTime(status.synced_at)} ({timeAgo(status.synced_at)})</span>
-          {" · "}<Link to="/hr-manager" className="tap text-blue-900 hover:underline">perbarui lewat Sinkron dari ROSY di Dashboard</Link>
+          {" · "}<Link to="/hr-manager/payroll" className="tap text-blue-900 hover:underline">perbarui lewat Fetch Data Terbaru di halaman periode (menu Payroll)</Link>
         </span>
-      ) : "Hanya-lihat, dari ROSY · belum pernah disinkron — jalankan Sinkron dari ROSY di Dashboard"}>
+      ) : "Hanya-lihat, dari ROSY · belum pernah disinkron — jalankan Fetch Data Terbaru di halaman periode (menu Payroll)"}>
+        {lacking.length > 0 && (
+          <button type="button" onClick={() => setOnlyIncomplete(!onlyIncomplete)} aria-pressed={onlyIncomplete} data-testid="employee-issues-badge"
+            title={`${issueText ? `${issueText} — ` : ""}klik untuk ${onlyIncomplete ? "menampilkan semua karyawan" : "menampilkan hanya yang datanya belum lengkap"}`}
+            className={`tap inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${onlyIncomplete ? "bg-amber-200 border-amber-400 text-amber-900" : "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100"}`}>
+            <AlertTriangle className="h-4 w-4" /> <span className="num">{lacking.length}</span> karyawan data belum lengkap
+          </button>
+        )}
         <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-1.5 bg-white w-64">
           <Search className="h-4 w-4 text-slate-400" />
           <input data-testid="employee-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / NIK / dept" className="outline-none text-sm w-full" />
         </label>
       </PageTitle>
-      {list.length > 0 && (
-        <div className="mb-4 grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="employee-summary">
-          <SummaryCard icon={Users} label="Ikut Digaji" value={count("paid")} sub="punya Kontrak Gaji di ROSY" active={filter === "paid"} onClick={() => setFilter("paid")} testId="emp-sum-paid" />
-          <SummaryCard icon={UserX} label="Tidak Ikut Digaji" value={skipped.length} warn sub={skipped.length ? "klik untuk lihat nama & alasannya" : "semua ikut digaji"}
-            active={showSkipped} onClick={skipped.length ? () => setShowSkipped(!showSkipped) : undefined} testId="emp-sum-skipped" />
-          <SummaryCard icon={AlertTriangle} label="Data Perlu Dirapikan" value={count("issues")} warn sub={issueTop || "data lengkap"}
-            active={filter === "issues"} onClick={count("issues") ? () => toggle("issues") : undefined} testId="emp-sum-issues" />
-          <SummaryCard icon={UserMinus} label="Tidak Lagi di ROSY" value={count("gone")} names={list.filter(FILTERS.gone.match).map((e) => e.name)} sub="keluar atau dihapus di ROSY"
-            active={filter === "gone"} onClick={count("gone") ? () => toggle("gone") : undefined} testId="emp-sum-gone" />
-        </div>
-      )}
-      {showSkipped && skipped.length > 0 && (
-        <Panel title={`Tidak ikut digaji · ${skipped.length} karyawan`} className="mb-4"
-          right={<button type="button" onClick={() => setShowSkipped(false)} className="tap text-slate-400 hover:text-slate-700" title="Tutup"><XCircle className="h-4 w-4" /></button>}>
-          <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto" data-testid="employee-skipped-list">
-            {skipped.map((s) => (
-              <div key={s.employee_id || s.nik} className="flex items-center justify-between gap-4 px-5 py-2 text-sm">
-                <span><span className="font-medium text-slate-800">{s.name}</span> <span className="num text-xs text-slate-400">{s.nik}</span></span>
-                <span className="text-xs text-slate-500 text-right">{s.alasan}</span>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      )}
       <Panel>
-        {filter !== "paid" && (
+        {onlyIncomplete && (
           <div className="px-5 py-3 border-b border-slate-200 flex flex-wrap items-center gap-3 text-sm" data-testid="employee-filter">
             <span className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-3 py-1.5">
-              Filter: <b>{FILTERS[filter].label}</b> · <span className="num">{rows.length}</span> karyawan
-              <button type="button" onClick={() => setFilter("paid")} className="tap text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="employee-filter-clear"><XCircle className="h-4 w-4" /></button>
+              Filter: <b>Data Belum Lengkap</b> · <span className="num">{rows.length}</span> karyawan
+              <button type="button" onClick={() => setOnlyIncomplete(false)} className="tap text-blue-900 hover:text-rose-600" title="Hapus filter" data-testid="employee-filter-clear"><XCircle className="h-4 w-4" /></button>
             </span>
-            {filter === "issues" && <span className="text-xs text-slate-500">Rincian: {issueText} — dirapikan di ROSY, tidak menghalangi payroll</span>}
+            {issueText && <span className="text-xs text-slate-500">Rincian: {issueText} — dirapikan di ROSY, tidak menghalangi payroll</span>}
           </div>
         )}
         <div className="overflow-x-auto">
@@ -120,7 +97,7 @@ export default function EmployeesView() {
                   <td className="px-4 py-3 num text-xs whitespace-nowrap">{e.bank_name} {e.bank_account_number}</td>
                 </tr>
               ))}
-              {!rows.length && <tr><td colSpan={COLS.length} className="px-4 py-8 text-center text-slate-500">{list.length ? "Tidak ada yang cocok." : "Belum ada data — jalankan \"Sinkron dari ROSY\" di Dashboard."}</td></tr>}
+              {!rows.length && <tr><td colSpan={COLS.length} className="px-4 py-8 text-center text-slate-500">{list.length ? "Tidak ada yang cocok." : "Belum ada data — jalankan \"Fetch Data Terbaru\" di halaman periode (menu Payroll)."}</td></tr>}
             </tbody>
           </table>
         </div>

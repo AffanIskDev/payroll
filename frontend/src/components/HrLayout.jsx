@@ -7,7 +7,7 @@ const NAV = [
   ["/hr-manager", "Dashboard", LayoutDashboard, true],
   ["/hr-manager/payroll", "Payroll", Wallet],
   ["/hr-manager/employees", "Karyawan", Users],
-  ["/hr-manager/attendance", "Absensi", CalendarClock],
+  ["/hr-manager/attendance", "Presensi", CalendarClock],
   ["/hr-manager/recap", "Rekap", BarChart3],
   ["/hr-manager/tax", "Pajak", Calculator, false, true],
   ["/hr-manager/config", "Konfigurasi", Settings2, false, true],

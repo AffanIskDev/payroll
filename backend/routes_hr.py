@@ -53,10 +53,6 @@ async def dashboard():
     return stats
 
 
-# alfa/izin/cuti tanpa upah: the absence days that also cut gaji pokok & tunjangan jabatan (Poin Absensi)
-ABSENCE_NAMES = {"alpha": "alfa", "permission_leave": "izin", "approved_unpaid_leave": "cuti tanpa upah"}
-
-
 def _tanggal(iso: Optional[str]) -> str:
     return f"{int(iso[8:10])} {BULAN[int(iso[5:7]) - 1]} {iso[:4]}" if iso else "-"
 
@@ -90,7 +86,12 @@ def _prorata_note(slip: dict, emp: dict, period: dict, maternity_days: int, pres
 @router.get("/dashboard/employees")
 async def dashboard_employees(pid: Optional[str] = None):
     """Who needs a look before payday (user request 10 Oct 2026): the period's headcount, who joined and who left,
-    who is not paid this period or not in full, and attendance or employee data to check. Latest period by default."""
+    who is not paid this period or not in full, and employee data to check. Latest period by default.
+
+    13 Oct 2026: the "Absensi perlu dicek" group is gone (alfa/izin and missing attendance are no longer listed or
+    counted here). "Tidak ikut digaji" lists unpaid + maternity leave (the same people as the Unpaid and Cuti Melahirkan
+    cards on the period page), no longer the employees without a Kontrak Gaji. The cards count those and the employees
+    whose ROSY data is incomplete (rekening, NPWP, ...)."""
     periods = await db.payroll_periods.find({}, {"_id": 0, "review_history": 0}).sort("start_date", -1).to_list(100)
     period = next((p for p in periods if p["id"] == pid), None) if pid else (periods[0] if periods else None)
     if not period:
@@ -103,8 +104,8 @@ async def dashboard_employees(pid: Optional[str] = None):
               "payroll_status": 1, "data_issues": 1, "department": 1}
     emps = {e["id"]: e async for e in db.employees.find({"id": {"$in": ids}}, fields)}
     slips = {s["employee_id"]: s async for s in db.payslips.find({"payroll_period_id": period["id"]}, {
-        "_id": 0, "employee_id": 1, "status": 1, "payroll_status": 1, "wage_multiplier": 1, "absence_points": 1,
-        "discipline.absence_by_type": 1, "discipline.presence_by_type": 1, "take_home_pay": 1, "pph21_amount": 1, "iuran_bpjs_kes_total": 1,
+        "_id": 0, "employee_id": 1, "status": 1, "payroll_status": 1, "wage_multiplier": 1,
+        "discipline.presence_by_type": 1, "take_home_pay": 1, "pph21_amount": 1, "iuran_bpjs_kes_total": 1,
         "iuran_bpjs_tk_total": 1})}
 
     def item(e: dict, note: str) -> dict:
@@ -122,45 +123,38 @@ async def dashboard_employees(pid: Optional[str] = None):
             left.append(item(e, f"{why} — ada di {prev['period_name']}, tidak ada di periode ini"))
     new = [item(e, f"mulai {_tanggal(e['join_date'])}") for e in emps.values()
            if e.get("join_date") and start <= e["join_date"] <= end]
-    # not paid this period at all: no Kontrak Gaji in HAM yet, or starting after the period (HAM meta.dilewati)
-    skipped = [{"employee_id": d.get("employee_id"), "nik": d.get("nik"), "name": d.get("name"),
-                "note": d.get("alasan") or "-", "has_slip": False} for d in period.get("employees_skipped") or []]
-    partial, attendance = [], []
+    # Not paid because of leave: unpaid = ROSY's is_paid switched off (cuti di luar tanggungan, everything Rp 0);
+    # maternity = any maternity-leave day in the period (Tunj. Kehadiran cut). Same rules as the period page's Unpaid /
+    # Cuti Melahirkan cards, so the two pages show the same people. Employees without a Kontrak Gaji (HAM
+    # meta.dilewati) are not listed here any more (user 13 Oct 2026): ROSY will require salary data for every new
+    # employee; the period page's "Tidak Ikut" card still shows them
+    not_paid, partial, unpaid, maternity = [], [], set(), set()
     present = await _present_days(period, ids)
     for e in emps.values():
         s = slips.get(e["id"]) or {}
         if (s.get("payroll_status") or e.get("payroll_status")) == "unpaid_leave":
-            partial.append(item(e, "cuti di luar tanggungan — upah & tunjangan Rp 0"))
-        else:
-            maternity = ((s.get("discipline") or {}).get("presence_by_type") or {}).get("maternity_leave", 0)
-            note = _prorata_note(s, e, period, maternity, present.get(e["id"], 0))
-            if note:
-                partial.append(item(e, f"{note} — cek prorata"))
-        if s.get("absence_points"):
-            types = (s.get("discipline") or {}).get("absence_by_type") or {}
-            days = ", ".join(f"{n} hari {ABSENCE_NAMES.get(t, t)}" for t, n in types.items()) or f"{s['absence_points']} hari"
-            jabatan = "bonus threshold" if position_allowance_label(e) == "Bonus Threshold" else "tunj. jabatan"
-            attendance.append(item(e, f"{days} — memotong gaji pokok, {jabatan} & kehadiran"))
-    for m in period.get("attendance_missing") or []:
-        attendance.append(item(emps.get(m.get("employee_id")) or {"id": m.get("employee_id"), "nik": m.get("nik"),
-                                                                   "name": m.get("name")},
-                               "tidak ada data absensi — Tunj. Kehadiran tidak terpotong"))
-    by_rosy = {e.get("rosy_employee_id"): e for e in emps.values()}
-    for u in period.get("attendance_unlinked") or []:
-        e = by_rosy.get(u.get("employee_id")) or {"id": None, "nik": u.get("nik"), "name": u.get("name")}
-        attendance.append(item(e, "belum tertaut ke akun RUMATKU — absensinya tidak terbaca"))
+            unpaid.add(e["id"])
+            not_paid.append(item(e, "cuti di luar tanggungan — upah & tunjangan Rp 0"))
+            continue
+        maternity_days = ((s.get("discipline") or {}).get("presence_by_type") or {}).get("maternity_leave", 0)
+        if maternity_days:
+            maternity.add(e["id"])
+            not_paid.append(item(e, f"cuti melahirkan {maternity_days} hari — Tunj. Kehadiran terpotong"))
+        # a maternity leave that starts or ends inside the period is also a prorata case, as on the period page
+        note = _prorata_note(s, e, period, maternity_days, present.get(e["id"], 0))
+        if note:
+            partial.append(item(e, f"{note} — cek prorata"))
+    # one employee counts once, however many things are missing
     data = [{**item(e, ""), "issues": e["data_issues"]} for e in emps.values() if e.get("data_issues")]
 
-    groups = [("left", "Karyawan keluar", left), ("new", "Karyawan baru", new), ("skipped", "Tidak ikut digaji", skipped),
-              ("partial", "Gaji tidak penuh", partial), ("attendance", "Absensi perlu dicek", attendance),
-              ("data", "Data karyawan belum lengkap", data)]
-    review = {i["employee_id"] or i["name"] for key, _, rows in groups if key != "data" for i in rows}
+    groups = [("left", "Karyawan keluar", left), ("new", "Karyawan baru", new), ("not_paid", "Tidak ikut digaji", not_paid),
+              ("partial", "Gaji tidak penuh", partial), ("data", "Data karyawan belum lengkap", data)]
     sl = list(slips.values())
     return {
         "period": {k: period.get(k) for k in ("id", "period_name", "status", "start_date", "end_date", "payment_date",
                                               "last_sync_at", "last_sync_error", "employees_synced_at")},
-        "counts": {"in_period": len(ids), "new": len(new), "left": len(left), "skipped": len(skipped),
-                   "review": len(review), "data": len(data)},
+        "counts": {"in_period": len(ids), "new": len(new), "left": len(left),
+                   "unpaid": len(unpaid), "maternity": len(maternity), "data": len(data)},
         "groups": [{"key": k, "title": t, "items": sorted(rows, key=lambda i: (i.get("name") or "").casefold())}
                    for k, t, rows in groups],
         "payroll": {"slips": len(sl), "approved": sum(1 for s in sl if s.get("status") == "approved"),
@@ -310,7 +304,7 @@ async def create_period(body: PeriodIn):
     try:
         result = await sync_period(data["id"])
     except HTTPException as e:
-        # the draft stays; "Sinkron dari ROSY" retries
+        # the draft stays; "Fetch Data Terbaru" retries
         return {**await get_period(data["id"]), "sync_error": e.detail}
     return {**await get_period(data["id"]), "sync": result}
 
@@ -320,7 +314,7 @@ SYNC_STALE = timedelta(minutes=10)
 
 @router.post("/periods/{pid}/fetch-attendance")
 async def sync_now(pid: str):
-    """Button "Sinkron dari ROSY" (Dashboard): employees & salary, attendance, overtime and Tambahan Bulanan."""
+    """Button "Fetch Data Terbaru" (period page): employees & salary, attendance, overtime and Tambahan Bulanan."""
     return await sync_period(pid)
 
 
@@ -469,8 +463,7 @@ async def period_detail(pid: str):
             groups["maternity"].append(eid)
         if _prorata_note(s, dates.get(eid) or {}, period, maternity, present.get(eid, 0)):
             groups["partial"].append(eid)
-    summary = {"included": len(slips), "skipped": [d.get("name") for d in period.get("employees_skipped") or []],
-               "overtime_hours": hours, "overtime_pay": overtime_pay, "homecare_total": homecare,
+    summary = {"included": len(slips), "overtime_hours": hours, "overtime_pay": overtime_pay, "homecare_total": homecare,
                **groups}
     return {"period": period, "payslips": slips, "summary": summary,
             "signer_status": signer_mod.status(period.get("signer"))}
@@ -519,7 +512,7 @@ async def submit_period(pid: str, user: dict = Depends(require_hr)):
     if period["status"] not in EDITABLE_STATUSES:
         raise HTTPException(400, "Hanya periode draft / revisi yang dapat diajukan")
     if period.get("last_sync_error") or not period.get("attendance_synced_at"):
-        raise HTTPException(400, "Sinkron dari ROSY belum berhasil. Jalankan \"Sinkron dari ROSY\" di Dashboard sebelum mengajukan")
+        raise HTTPException(400, "Sinkron dari ROSY belum berhasil. Klik \"Fetch Data Terbaru\" di halaman periode sebelum mengajukan")
     if not await db.payslips.count_documents({"payroll_period_id": pid}):
         raise HTTPException(400, "Belum ada slip. Jalankan proses payroll terlebih dahulu")
     await _log(pid, "submitted", user, extra={"status": "pending_approval", "submitted_by": actor(user),
@@ -546,7 +539,7 @@ async def reject_period(pid: str, body: RejectIn, user: dict = Depends(require_m
 def _ensure_synced(period: dict):
     """The gate submitting applies, for a Manager approving straight from draft."""
     if period.get("last_sync_error") or not period.get("attendance_synced_at"):
-        raise HTTPException(400, "Sinkron dari ROSY belum berhasil. Jalankan \"Sinkron dari ROSY\" di Dashboard sebelum di-approve")
+        raise HTTPException(400, "Sinkron dari ROSY belum berhasil. Klik \"Fetch Data Terbaru\" di halaman periode sebelum di-approve")
 
 
 @router.post("/periods/{pid}/approve-all")

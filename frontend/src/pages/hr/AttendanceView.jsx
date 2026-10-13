@@ -39,7 +39,7 @@ export default function AttendanceView() {
 
   return (
     <div>
-      <PageTitle title="Log Presensi Harian" subtitle="Hanya-lihat. Sumber: RUMATKU lewat ROSY — diperbarui dengan tombol 'Sinkron dari ROSY' di Dashboard">
+      <PageTitle title="Log Presensi Harian" subtitle="Hanya-lihat. Sumber: RUMATKU lewat ROSY — diperbarui dengan tombol 'Fetch Data Terbaru' di halaman periode (menu Payroll)">
         <EmployeeSearch employees={emps} value={eid} onChange={setEid} />
         <input data-testid="attendance-start-input" type="date" value={range.start} onChange={(e) => setRange({ ...range, start: e.target.value })} className={inp} />
         <input data-testid="attendance-end-input" type="date" value={range.end} onChange={(e) => setRange({ ...range, end: e.target.value })} className={inp} />

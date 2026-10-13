@@ -1,7 +1,7 @@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { formatDate } from "@/lib/format";
 
-// Peringatan sebelum "Sinkron dari ROSY" selagi periode berjalan (user 12 Okt 2026): absensi hari ini belum selesai,
+// Peringatan sebelum "Fetch Data Terbaru" selagi periode berjalan (user 12 Okt 2026): absensi hari ini belum selesai,
 // jadi karyawan yang belum absen masuk saat sinkron terhitung 1 hari alfa sampai periodenya disinkron ulang.
 export default function SyncTodayDialog({ day, periodName, onConfirm, onCancel }) {
   return (

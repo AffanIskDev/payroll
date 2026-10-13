@@ -32,6 +32,18 @@ const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "
 export const periodNameFor = (start, end) =>
   start && end && start.slice(0, 7) === end.slice(0, 7) ? `${BULAN[Number(start.slice(5, 7)) - 1]} ${start.slice(0, 4)}` : null;
 
+// Periode baru cukup pilih satu bulan kalender (user 13 Okt 2026): "2026-09" → { start: "2026-09-01", end: "2026-09-30" }
+export const monthRange = (month) => {
+  const [y, m] = month.split("-").map(Number);
+  return { start: `${month}-01`, end: `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` };
+};
+
+// Tanggal 1 sesudah bulan itu, bawaan Tanggal Transfer: "2026-09" → "2026-10-01", "2026-12" → "2027-01-01"
+export const firstDayAfter = (month) => {
+  const [y, m] = month.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+};
+
 // "2026-10-01" → "1 Oktober 2026"
 export const formatDate = (iso) =>
   iso ? `${Number(iso.slice(8, 10))} ${BULAN[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}` : "-";
@@ -91,21 +103,22 @@ export const PAYROLL_STATUS_LABELS = {
   work_accident_stmb: "Kecelakaan Kerja (STMB)",
 };
 
+// cls = warna teks, dot = warna titik; keduanya dipakai StatusBadge (label tanpa kotak, user 13 Okt 2026)
 export const PERIOD_STATUS = {
-  draft: { label: "Draft", cls: "bg-slate-100 text-slate-600 border-slate-300" },
-  pending_approval: { label: "Menunggu Approval", cls: "bg-amber-50 text-amber-700 border-amber-300" },
-  revision: { label: "Ditolak · Revisi", cls: "bg-rose-50 text-rose-700 border-rose-300" },
-  approved: { label: "Approved & Locked", cls: "bg-emerald-50 text-emerald-700 border-emerald-300" },
-  closed: { label: "Closed", cls: "bg-purple-50 text-purple-700 border-purple-300" },
+  draft: { label: "Draft", cls: "text-slate-600", dot: "bg-slate-400" },
+  pending_approval: { label: "Menunggu Approval", cls: "text-amber-700", dot: "bg-amber-500" },
+  revision: { label: "Ditolak · Revisi", cls: "text-rose-700", dot: "bg-rose-500" },
+  approved: { label: "Approved & Locked", cls: "text-emerald-700", dot: "bg-emerald-500" },
+  closed: { label: "Closed", cls: "text-purple-700", dot: "bg-purple-500" },
 };
 
 export const DELIVERY_STATUS = {
-  queued: { label: "Mengirim...", cls: "bg-blue-50 text-blue-700 border-blue-300" },
-  sent: { label: "Terkirim", cls: "bg-emerald-50 text-emerald-700 border-emerald-300" },
-  failed: { label: "Gagal", cls: "bg-rose-50 text-rose-700 border-rose-300" },
+  queued: { label: "Mengirim...", cls: "text-blue-700", dot: "bg-blue-500" },
+  sent: { label: "Terkirim", cls: "text-emerald-700", dot: "bg-emerald-500" },
+  failed: { label: "Gagal", cls: "text-rose-700", dot: "bg-rose-500" },
 };
 
 export const SLIP_STATUS = {
-  draft: { label: "Draft", cls: "bg-slate-100 text-slate-600 border-slate-300" },
-  approved: { label: "Locked", cls: "bg-emerald-50 text-emerald-700 border-emerald-300" },
+  draft: { label: "Draft", cls: "text-slate-600", dot: "bg-slate-400" },
+  approved: { label: "Locked", cls: "text-emerald-700", dot: "bg-emerald-500" },
 };
