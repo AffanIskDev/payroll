@@ -48,6 +48,12 @@ def resolve_ptkp(emp: dict) -> str:
     return f"TK/{dep}"
 
 
+def pph21_basis(cfg: dict) -> str:
+    """Config PPH21_BASIS: "kotor" taxes the income before Potongan Presensi & Absensi; anything else (missing, blank,
+    a typo) keeps "bersih", the basis RASA used before the setting existed."""
+    return "kotor" if str((cfg or {}).get("PPH21_BASIS") or "").strip().lower() == "kotor" else "bersih"
+
+
 def ter_category(ptkp: str) -> str:
     if ptkp in ("TK/0", "TK/1", "K/0"):
         return "A"
@@ -260,7 +266,12 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     base_earn = (basic_paid - absent_deduction + position_paid - position_deduction + attendance_net + overtime_pay
                  + transport + kpi + bonus + thr)
     gross = base_earn + tunj_kes + tunj_tk
-    taxable = base_earn + bp["kes_company"] + bp["jkk"] + bp["jkm"]
+    # PPh 21 basis (config PPH21_BASIS, user 13 Oct 2026): "bersih" taxes what is left after Potongan Presensi & Absensi;
+    # "kotor" taxes the income before them, so gapok / jabatan / kehadiran cut for absence still count as bruto. Only
+    # those cuts differ (zero for unpaid leave, prolonged illness & the like); take-home pay moves only by the PPh 21
+    basis = pph21_basis(cfg)
+    addback = presence_penalty + absence_penalty + absent_deduction + position_deduction if basis == "kotor" else 0
+    taxable = base_earn + bp["kes_company"] + bp["jkk"] + bp["jkm"] + addback
 
     ptkp = resolve_ptkp(emp)
     cat = ter_category(ptkp)
@@ -284,7 +295,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "overtime_hours": hours, "overtime_pay": overtime_pay, "transport_homecare": transport,
         "kpi_incentive": kpi, "additional_bonus": bonus, "thr": thr,
         "tunjangan_bpjs_kes": tunj_kes, "tunjangan_bpjs_tk": tunj_tk,
-        "gross_earnings": gross, "taxable_gross": taxable,
+        "gross_earnings": gross, "taxable_gross": taxable, "pph21_basis": basis, "pph21_addback": addback,
         # late_penalty_points = Poin Presensi as shown (lateness + sakit/cuti days); lateness alone = discipline.total_points
         "late_penalty_points": disc["presence_points"], "late_penalty_days": penalty_days,
         "late_penalty_amount": penalty_amount, "absence_points": disc["absence_points"], "work_days": wd,

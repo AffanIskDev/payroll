@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from core import db, now_iso, require_hr, require_manager, actor, DEFAULT_CONFIGS
+from core import db, now_iso, require_hr, require_manager, actor, DEFAULT_CONFIGS, CONFIG_CHOICES
 from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
@@ -186,7 +186,10 @@ async def notifications(user: dict = Depends(require_hr)):
 
 @router.get("/configs")
 async def list_configs():
-    return await db.payroll_configs.find({}, {"_id": 0}).sort("config_key", 1).to_list(100)
+    docs = await db.payroll_configs.find({}, {"_id": 0}).sort("config_key", 1).to_list(100)
+    # a config with a fixed set of values (PPH21_BASIS) says which, so the page offers a choice instead of free text
+    return [{**d, "choices": list(CONFIG_CHOICES[d["config_key"]])} if d["config_key"] in CONFIG_CHOICES else d
+            for d in docs]
 
 
 @router.put("/configs", dependencies=[Depends(require_manager)])
@@ -196,6 +199,8 @@ async def update_configs(body: dict):
             raise HTTPException(400, f"Config tidak dikenal: {k}")
         if k == "CSV_DELIMITER" and str(v) not in (",", ";", "|", "tab"):
             raise HTTPException(400, "Pemisah CSV harus , ; | atau tab")
+        if k in CONFIG_CHOICES and str(v) not in CONFIG_CHOICES[k]:
+            raise HTTPException(400, f"{k} harus salah satu dari: {', '.join(CONFIG_CHOICES[k])}")
         await db.payroll_configs.update_one({"config_key": k}, {"$set": {"config_value": str(v)}})
     return await list_configs()
 

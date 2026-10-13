@@ -63,6 +63,48 @@ function SignerPanel() {
   );
 }
 
+// Dasar PPh 21 (permintaan user 13 Okt 2026): satu setelan global (backend engine.pph21_basis); rumusnya sama dengan
+// baris "Bruto Objek Pajak" di halaman review slip. Hanya Potongan Presensi & Absensi yang membedakan keduanya.
+const PPH21_BASIS = {
+  bersih: {
+    title: "Pendapatan bersih", tag: "bawaan",
+    formula: "Total Pendapatan − Potongan Presensi & Absensi − JHT & JP perusahaan",
+    note: "PPh 21 dihitung dari penghasilan setelah potongan kehadiran, jadi karyawan yang terpotong dikenai pajak lebih kecil.",
+  },
+  kotor: {
+    title: "Pendapatan kotor",
+    formula: "Total Pendapatan − JHT & JP perusahaan",
+    note: "PPh 21 dihitung dari gaji & tunjangan penuh; potongan presensi & absensi tidak menurunkan dasar pajak.",
+  },
+};
+
+function Pph21BasisPanel({ value, choices, onChange }) {
+  return (
+    <Panel title="Dasar PPh 21" className="mb-6">
+      <div className="px-5 py-4" data-testid="pph21-basis-panel">
+        <p className="text-xs text-slate-500 mb-3">Penghasilan yang dipakai sebagai dasar tarif TER (Jan–Nov) dan perhitungan setahun Pasal 17 (Desember). Take home pay hanya berubah lewat PPh 21-nya.</p>
+        <div role="radiogroup" aria-label="Dasar PPh 21" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {choices.filter((k) => PPH21_BASIS[k]).map((k) => {
+            const o = PPH21_BASIS[k];
+            const on = value === k;
+            return (
+              <label key={k} data-testid={`pph21-basis-${k}`} className={`flex gap-3 rounded-md border px-4 py-3 cursor-pointer transition-colors ${on ? "border-blue-900 ring-2 ring-blue-900/20 bg-blue-50/40" : "border-slate-200 hover:border-blue-400"}`}>
+                <input type="radio" name="PPH21_BASIS" value={k} checked={on} onChange={() => onChange(k)} className="mt-1 h-4 w-4 accent-blue-900 shrink-0" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 min-h-[24px] text-sm font-semibold text-slate-900">{o.title}{o.tag && <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{o.tag}</span>}</span>
+                  <span className="block num text-xs text-slate-700 mt-1">{o.formula}</span>
+                  <span className="block text-xs text-slate-500 mt-1">{o.note}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">Berlaku untuk slip yang dihitung sesudah disimpan: klik <b>Sinkron dari ROSY</b> di Dashboard untuk periode yang masih draft. Slip yang sudah di-approve tidak berubah, dan 1721-A1 mengikuti dasar yang dipakai tiap slipnya.</p>
+      </div>
+    </Panel>
+  );
+}
+
 export default function Configs() {
   const [list, setList] = useState([]);
   const [vals, setVals] = useState({});
@@ -71,6 +113,7 @@ export default function Configs() {
     setVals(Object.fromEntries(r.data.map((c) => [c.config_key, c.config_value])));
   });
   useEffect(() => { load(); }, []);
+  const basis = list.find((c) => c.config_key === "PPH21_BASIS" && c.choices?.length); // none until the backend has seeded it
 
   const save = async () => {
     try {
@@ -86,9 +129,10 @@ export default function Configs() {
         <Btn data-testid="save-config-button" onClick={save}><Save className="h-4 w-4" /> Simpan</Btn>
       </PageTitle>
       <SignerPanel />
+      {basis && <Pph21BasisPanel value={vals.PPH21_BASIS} choices={basis.choices} onChange={(v) => setVals({ ...vals, PPH21_BASIS: v })} />}
       <Panel>
         <div className="divide-y divide-slate-100">
-          {list.map((c) => (
+          {list.filter((c) => c.config_key !== "PPH21_BASIS").map((c) => (
             <div key={c.config_key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-5 py-4">
               <div>
                 <div className="num text-sm font-semibold">{c.config_key}</div>

@@ -111,6 +111,8 @@ export default function Workbench() {
   const totalPotongan = calc.total_deductions + presensi + absensi;
   // divisi Pelayanan: tunjangan jabatan disebut "Bonus Threshold" (aturan di backend labels.py, user 12 Okt 2026)
   const jabatan = calc.position_allowance_label || payslip.position_allowance_label || "Tunjangan Jabatan";
+  // dasar PPh 21 yang dipakai slip ini (setelan Dasar PPh 21 di Konfigurasi); slip lama tanpa isian = bersih
+  const kotor = calc.pph21_basis === "kotor";
   const absensiHint = [
     calc.absence_penalty_amount > 0 && `Tj. Kehadiran ${rp(calc.absence_penalty_amount)}`,
     calc.absent_deduction_amount > 0 && `Gaji Pokok ${rp(calc.absent_deduction_amount)}`,
@@ -150,7 +152,7 @@ export default function Workbench() {
             <Row label="Tunjangan BPJS Kesehatan (4%)" hint={`Basis ${rp(bp.kes_base)} (max gaji pokok, UMK Bekasi)`} value={rp(calc.tunjangan_bpjs_kes)} testId="earn-bpjs-kes" />
             <Row label="Tunjangan BPJS TK" hint={`JKK ${rp(bp.jkk)} · JKM ${rp(bp.jkm)} · JHT 3,7% ${rp(bp.jht_company)} · JP 2% ${rp(bp.jp_company)}`} value={rp(calc.tunjangan_bpjs_tk)} testId="earn-bpjs-tk" />
           </div>
-          <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex items-center justify-between gap-4"><span title="Pendapatan − Potongan Presensi & Absensi − JHT & JP perusahaan">Bruto Objek Pajak (dasar TER)</span><b className="num text-slate-900 whitespace-nowrap" data-testid="taxable-gross">{rp(calc.taxable_gross)}</b></div>
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex items-center justify-between gap-4"><span title={kotor ? "Pendapatan − JHT & JP perusahaan; Potongan Presensi & Absensi tidak mengurangi (Dasar PPh 21: kotor)" : "Pendapatan − Potongan Presensi & Absensi − JHT & JP perusahaan"}>Bruto Objek Pajak (dasar TER{kotor ? ", kotor" : ""})</span><b className="num text-slate-900 whitespace-nowrap" data-testid="taxable-gross">{rp(calc.taxable_gross)}</b></div>
         </Panel>
         <div className="space-y-6">
           <Panel title="Potongan" right={<span className="num text-sm font-bold text-rose-600">{rp(totalPotongan)}</span>}>

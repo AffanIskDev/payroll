@@ -26,6 +26,13 @@ ITEM_LABELS = [
 ]
 
 
+def _kept(s: dict, key: str) -> float:
+    """A cut of the slip that still counts as income on the form: a slip taxed on the gross basis (PPH21_BASIS = kotor)
+    kept Potongan Presensi & Absensi inside its PPh 21 base, so angka 1 / 3 must report them too — otherwise the
+    form's annual tax would not match the PPh 21 actually withheld. Slips without the field (before the setting) = 0."""
+    return s.get(key, 0) if s.get("pph21_basis") == "kotor" else 0
+
+
 async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
     pids = {p["id"]: p async for p in db.payroll_periods.find(
         {"end_date": {"$gte": f"{year}-01-01", "$lte": f"{year}-12-31"}}, {"_id": 0})}
@@ -39,10 +46,13 @@ async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
     months = sorted(int(pids[s["payroll_period_id"]]["end_date"][5:7]) for s in slips)
     sm = lambda f: sum(f(s) for s in slips)  # noqa: E731
     it = {
-        "i1": sm(lambda s: s["basic_salary"] - s["absent_deduction_amount"]), "i2": 0,
-        # tunjangan lainnya: jabatan net of the alfa/izin cut, attendance, overtime, Transport Homecare
-        # (.get: slips approved before these fields existed)
-        "i3": sm(lambda s: s["position_allowance"] - s.get("position_deduction_amount", 0) + s["attendance_allowance"]
+        "i1": sm(lambda s: s["basic_salary"] - s["absent_deduction_amount"] + _kept(s, "absent_deduction_amount")),
+        "i2": 0,
+        # tunjangan lainnya: jabatan net of the alfa/izin cut, attendance net of Potongan Presensi & Absensi, overtime,
+        # Transport Homecare (.get: slips approved before these fields existed); cuts kept on kotor slips, see _kept
+        "i3": sm(lambda s: s["position_allowance"] - s.get("position_deduction_amount", 0)
+                 + _kept(s, "position_deduction_amount") + s["attendance_allowance"]
+                 + _kept(s, "presence_penalty_amount") + _kept(s, "absence_penalty_amount")
                  + s["overtime_pay"] + s.get("transport_homecare", 0)), "i4": 0,
         "i5": sm(lambda s: s["tunjangan_bpjs_kes"] + s["bpjs"]["jkk"] + s["bpjs"]["jkm"]), "i6": 0,
         # angka 7 = "Tantiem, Bonus, Gratifikasi, Jasa Produksi dan THR" (THR dari ROSY sejak 12 Okt 2026)

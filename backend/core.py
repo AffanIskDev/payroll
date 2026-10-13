@@ -70,12 +70,16 @@ DEFAULT_CONFIGS = {
     "BPJS_JP_MAX_WAGE": ("10042300", "Plafon upah maksimal Jaminan Pensiun"),
     "BPJS_KES_MAX_WAGE": ("12000000", "Plafon upah maksimal BPJS Kesehatan"),
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
+    "PPH21_BASIS": ("bersih", "Dasar PPh 21: bersih = sesudah Potongan Presensi & Absensi, kotor = sebelum potongan itu"),
     "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Nama pemotong pajak (1721-A1)"),
     "COMPANY_ADDRESS": ("[ALAMAT_PERUSAHAAN]", "Alamat perusahaan (1721-A1; kop slip gaji memakai logo RPI & RUMAT)"),
     "CSV_DELIMITER": (",", "Pemisah kolom ekspor CSV: , atau ; atau | atau tab"),
     "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "NPWP pemotong pajak (1721-A1)"),
     "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),
 }
+
+# configs that only accept a fixed set of values: validated on save and sent to the Config page as `choices`
+CONFIG_CHOICES = {"PPH21_BASIS": ("bersih", "kotor")}
 
 
 async def get_configs() -> dict:
