@@ -82,7 +82,7 @@ export default function Verify() {
 
   useEffect(() => {
     const before = document.title;
-    document.title = "Verifikasi Dokumen | RASA";
+    document.title = "Verifikasi Dokumen | RUSA";
     return () => { document.title = before; };
   }, []);
 
@@ -157,7 +157,7 @@ export default function Verify() {
           )}
         </div>
         <div className="mt-5 px-4 text-center text-xs text-slate-500">
-          Layanan verifikasi dokumen RASA — RUMAT Administration &amp; Salary Application
+          Layanan verifikasi dokumen RUSA — RUMAT Salary Administration
         </div>
       </div>
     </div>

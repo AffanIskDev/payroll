@@ -1,12 +1,12 @@
 {
   "app_identity": {
-    "name": "RASA — Aplikasi Penggajian RUMAT",
+    "name": "RUSA (RUMAT Salary Administration) — Aplikasi Penggajian RUMAT",
     "description": "Automated Indonesian Payroll HRIS system featuring waterfall attendance penalty, BPJS calculation with UMK Bekasi floor, PPh21 TER (Taraf Efektif Rata-Rata), HRD review/approve/lock workbench with two-column split, sticky real-time THP bar with terbilang rupiah, and employee mobile PWA interface with password-protected PDF payslips.",
     "persona": "RUMAT: tenang, klinis, terpercaya — satu keluarga visual dengan ROSY & RUMATku",
     "language": "Bahasa Indonesia"
   },
   "color_system": {
-    "_aturan": "Satu warna brand untuk SEMUA aplikasi RUMAT (ROSY, RASA, RUMATku). Pakai kelas Tailwind brand-* dari tailwind.config.js. DILARANG blue-*, indigo-*, atau hex baru di JSX.",
+    "_aturan": "Satu warna brand untuk SEMUA aplikasi RUMAT (ROSY, RUSA, RUMATku). Pakai kelas Tailwind brand-* dari tailwind.config.js. DILARANG blue-*, indigo-*, atau hex baru di JSX.",
     "brand": {
       "50": "#EEF7F8",
       "100": "#D5ECEE",

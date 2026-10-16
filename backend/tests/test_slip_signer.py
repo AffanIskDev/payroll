@@ -45,7 +45,7 @@ def _text(signer_doc, **slip_kw):
 
 
 def test_slip_pdf_names_the_signer_under_the_qr():
-    text = _text(SIGNER, verify_url="https://rasa.rumat.id/verifikasi/AbCdEfGhIjKl")
+    text = _text(SIGNER, verify_url="https://rusa.rumat.id/verifikasi/AbCdEfGhIjKl")
     assert "Disetujui oleh," in text and "Meliawasni" in text and "Manager HRD" in text
     text = _text(None)                                                # no signer: the block stays empty
     assert "Disetujui oleh," in text and "Meliawasni" not in text
@@ -90,9 +90,9 @@ def test_refresh_updates_open_periods_and_keeps_approved_ones(monkeypatch):
 
             # the Config page also tells where the QR on the slips points, and warns when only this computer can open it
             await tdb.payroll_configs.insert_one({"config_key": "SLIP_VERIFY_BASE_URL",
-                                                  "config_value": "https://rasa.rumat.id/"})
+                                                  "config_value": "https://rusa.rumat.id/"})
             cur = await signer.current()
-            assert (cur["verify_base"], cur["verify_base_local"]) == ("https://rasa.rumat.id", False)
+            assert (cur["verify_base"], cur["verify_base_local"]) == ("https://rusa.rumat.id", False)
             await tdb.payroll_configs.update_one({"config_key": "SLIP_VERIFY_BASE_URL"},
                                                  {"$set": {"config_value": "http://localhost:3800"}})
             cur = await signer.current()

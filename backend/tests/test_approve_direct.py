@@ -89,9 +89,9 @@ def test_manager_locks_and_approves_straight_from_draft(monkeypatch):
             assert await tdb.payslips.count_documents({"payroll_period_id": "ok", "status": "approved"}) == 2
             assert sorted(pdfs) == ["ok-a", "ok-b"] and deliveries == ["ok"]
             # document numbers (15 Oct 2026) follow the NIK, whatever order the slips were stored in; a period without a
-            # company from ROSY reads RASA, its month comes from the start date
+            # company from ROSY reads RUSA, its month comes from the start date
             numbers = {s["id"]: s["doc_number"] async for s in tdb.payslips.find({"payroll_period_id": "ok"})}
-            assert numbers == {"ok-a": "SG/RASA/2026/09/0001", "ok-b": "SG/RASA/2026/09/0002"}
+            assert numbers == {"ok-a": "SG/RUSA/2026/09/0001", "ok-b": "SG/RUSA/2026/09/0002"}
             history = (await tdb.payroll_periods.find_one({"id": "ok"}))["review_history"]
             assert [h["action"] for h in history] == ["approved"] and history[0]["by_name"] == "Meliawasni"
 
@@ -112,7 +112,7 @@ def test_manager_locks_and_approves_straight_from_draft(monkeypatch):
             # one slip from the review page, straight from draft; the rest of the period is untouched
             await routes_hr.approve_one("one", "a", MANAGER)
             assert (await tdb.payslips.find_one({"id": "one-a"}))["status"] == "approved"
-            assert (await tdb.payslips.find_one({"id": "one-a"}))["doc_number"] == "SG/RASA/2026/09/0001"  # per period
+            assert (await tdb.payslips.find_one({"id": "one-a"}))["doc_number"] == "SG/RUSA/2026/09/0001"  # per period
             assert (await tdb.payslips.find_one({"id": "one-b"}))["status"] == "draft"
             assert (await status("one"))["status"] == "draft"
             with pytest.raises(HTTPException) as e:

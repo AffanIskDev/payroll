@@ -1,6 +1,6 @@
 """Lembur dibayar PER MENIT dengan tarif per karyawan (keputusan user 11 Okt 2026), sama dengan rekap Excel lembur
 driver yang sudah berjalan: total menit × tarif/60. ROSY mengirim menit disetujui per klaim (tanpa pembulatan 30 menit),
-RASA yang menghitung rupiahnya."""
+RUSA yang menghitung rupiahnya."""
 import os
 import sys
 from pathlib import Path

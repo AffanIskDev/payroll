@@ -1,7 +1,7 @@
 """Verifikasi slip lewat QR (user 14 Okt 2026): "tanda tangan" slip = QR code per slip, bukan gambar tanda tangan.
 
 Tiap slip punya `verify_code` yang tidak bisa ditebak; QR di slip berisi {alamat}/verifikasi/{kode}. Siapa pun yang
-memindainya (karyawan, bank, pemilik kontrakan) membuka halaman publik RASA yang mengonfirmasi bahwa slip itu pernah
+memindainya (karyawan, bank, pemilik kontrakan) membuka halaman publik RUSA yang mengonfirmasi bahwa slip itu pernah
 di-approve HRD — tanpa nominal gaji, nama karyawan disamarkan. Alamat QR dibekukan di slip saat di-approve
 (`verify_url`) supaya PDF yang dibuat ulang memuat QR yang sama; slip draft memakai alamat dari Konfigurasi yang
 berlaku saat dirender, jadi Preview PDF Slip sama dengan slip akhirnya.
@@ -38,7 +38,7 @@ def clean_base(url: Optional[str]) -> str:
 
 def base_url(cfg: Optional[dict]) -> str:
     """Konfigurasi SLIP_VERIFY_BASE_URL; kosong → alamat frontend pertama di CORS_ORIGINS (halaman verifikasi ada di
-    frontend yang sama dengan RASA)."""
+    frontend yang sama dengan RUSA)."""
     own = clean_base((cfg or {}).get("SLIP_VERIFY_BASE_URL"))
     if own:
         return own
@@ -70,9 +70,9 @@ def mask_name(name: Optional[str]) -> str:
 
 
 def company_code(period: dict) -> str:
-    """'RUMAT': nama singkat perusahaan periode (dari ROSY); 'RASA' bila periode tidak menyebut perusahaan."""
+    """'RUMAT': nama singkat perusahaan periode (dari ROSY); 'RUSA' bila periode tidak menyebut perusahaan."""
     company = period.get("company") or {}
-    return re.sub(r"[^A-Z0-9]", "", (company.get("nama") or company.get("id") or "").upper()) or "RASA"
+    return re.sub(r"[^A-Z0-9]", "", (company.get("nama") or company.get("id") or "").upper()) or "RUSA"
 
 
 def doc_number(period: dict, seq: int) -> str:

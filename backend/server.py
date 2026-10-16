@@ -21,7 +21,7 @@ import routes_tax  # noqa: E402
 import routes_recap  # noqa: E402
 import routes_verify  # noqa: E402
 
-app = FastAPI(title="RASA")
+app = FastAPI(title="RUSA")
 auth = APIRouter(prefix="/api/auth")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -61,7 +61,7 @@ async def login(body: LoginIn, request: Request, response: Response):
         "$set": fields, "$setOnInsert": {"id": str(uuid.uuid4()), "rosy_user_id": acc["user_id"],
                                          "created_at": now_iso()}}, upsert=True)
     if not role:
-        raise HTTPException(403, "Akun ROSY Anda tidak memiliki akses ke RASA. RASA khusus Manager HRD "
+        raise HTTPException(403, "Akun ROSY Anda tidak memiliki akses ke RUSA. RUSA khusus Manager HRD "
                                  "dan Supervisor HRD (sesuai jabatan di ROSY)")
     user = await db.users.find_one({"rosy_user_id": acc["user_id"]}, {"_id": 0})
     return _issue(user, response)

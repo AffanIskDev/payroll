@@ -1,4 +1,4 @@
-"""RASA rules of 9 Oct 2026 — pure unit tests, no server, no database.
+"""RUSA rules of 9 Oct 2026 — pure unit tests, no server, no database.
 
 Access from the ROSY position, one period per month with an automatic name, the PPT absence matrix,
 Transport Homecare, and the new payslip layout."""
@@ -470,7 +470,7 @@ def test_thr_and_installment_come_from_rosy_like_bonus():
         {"component_id": "KOMP-00014", "nama": "THR", "tipe": "pendapatan", "nominal": 4500000.0},
         {"component_id": "KOMP-00007", "nama": "Cicilan / Pinjaman", "tipe": "potongan", "nominal": 350000.0},
         {"component_id": "KOMP-00005", "nama": "Bonus", "tipe": "pendapatan", "nominal": 50000.0},
-        {"component_id": "KOMP-00006", "nama": "PPh 21", "tipe": "potongan", "nominal": 12345.0}]}  # RASA's own
+        {"component_id": "KOMP-00006", "nama": "PPh 21", "tipe": "potongan", "nominal": 12345.0}]}  # RUSA's own
     assert integrations.monthly_components(row) == {"THR": 4500000.0, "LOAN_INSTALLMENT": 350000.0, "BONUS": 50000.0}
 
 

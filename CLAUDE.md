@@ -1,7 +1,11 @@
-# RASA (PAYROLL-SINGKAT) — setup lokal
+# RUSA (PAYROLL-SINGKAT) — setup lokal
 
-RASA = aplikasi gaji HRD RUMAT: backend FastAPI + MongoDB, frontend React (CRA + craco). Karyawan, presensi,
-lembur, dan **login** diambil dari **HAM ROSY** lewat `api/ham/v2/payroll-feed/*` (hanya-baca). Branch kerja: `rasa`.
+RUSA (**RUMAT Salary Administration**, dulu bernama RASA) = aplikasi gaji HRD RUMAT: backend FastAPI + MongoDB,
+frontend React (CRA + craco). Karyawan, presensi, lembur, dan **login** diambil dari **HAM ROSY** lewat
+`api/ham/v2/payroll-feed/*` (hanya-baca). Branch kerja: `rasa`.
+Nama di layar & dokumen = **RUSA** (user 16 Okt 2026). Nama teknis sengaja tetap `rasa`/`RASA` karena sudah dipakai HAM
+produksi dan `.env` yang ada: branch `rasa`, DB `rasa`, env `RASA_DEPT_HAM`, kunci HAM `integrasi:RASA` +
+`INTEGRASI_RASA_SECRET`, header `X-Rasa-Client-Ip`, localStorage `rasa.*` — jangan diganti tanpa mengubah HAM bersamaan.
 Langkah di bawah sudah diuji di instalasi bersih (13 Okt 2026) — ikuti apa adanya, tidak perlu menjelajah ulang.
 
 ## Yang perlu terpasang
@@ -9,7 +13,7 @@ Langkah di bawah sudah diuji di instalasi bersih (13 Okt 2026) — ikuti apa ada
 |---|---|---|
 | Python | 3.12 | backend |
 | Node + Yarn 1 | Node 20, Yarn 1.22.22 (`corepack enable`) | frontend |
-| MongoDB | 8.0 | DB RASA di `127.0.0.1:27017` |
+| MongoDB | 8.0 | DB RUSA di `127.0.0.1:27017` |
 | PHP + Composer | PHP 8.1, Composer 2 | HAM lokal (login & data) |
 | MySQL | 8.0 | salinan DB `rosy-db-ham` + `rumatku` untuk HAM |
 
@@ -48,11 +52,11 @@ Buka **http://localhost:3070** — bukan `127.0.0.1`, karena CORS hanya mengizin
 
 ## HAM lokal — port 8601, wajib untuk login
 Tanpa HAM, login selalu gagal (tidak ada akun lokal atau mode tester); tes unit tetap bisa jalan.
-- Repo `IT-RUMAT/API-Service-Human-Capital`, branch `lembur-20261008` (memuat payroll-feed RASA, commit `72718d8`).
+- Repo `IT-RUMAT/API-Service-Human-Capital`, branch `lembur-20261008` (memuat payroll-feed untuk RUSA, commit `72718d8`).
 - `composer install`, salin `.env.example` → `.env`, lalu isi: `DB_HOST=127.0.0.1`, `DB_DATABASE=rosy-db-ham`,
-  `DB_RUMATKU_DATABASE=rumatku`, `INTEGRASI_RASA_SECRET=<kunci yang sama dengan RASA>`, `PAYROLL_FEED_COMPANIES=CP-001`.
+  `DB_RUMATKU_DATABASE=rumatku`, `INTEGRASI_RASA_SECRET=<kunci yang sama dengan RUSA>`, `PAYROLL_FEED_COMPANIES=CP-001`.
 - Jalankan: `PHP_CLI_SERVER_WORKERS=4 php -S 127.0.0.1:8601 -t public`
-- Salinan DB `rosy-db-ham` & `rumatku`: minta dump ke Affan. **Jangan arahkan HAM atau RASA ke DB production
+- Salinan DB `rosy-db-ham` & `rumatku`: minta dump ke Affan. **Jangan arahkan HAM atau RUSA ke DB production
   (`8.215.81.103`).**
 - Login memakai akun ROSY berjabatan Manager HRD / Supervisor HRD yang ada di salinan DB itu. Data periode
   ditarik lewat Payroll → Periode Baru / tombol **Fetch Data Terbaru**.
@@ -90,7 +94,7 @@ otomatis di-skip bila Mongo mati.
 - Komentar bertanggal (mis. "user 13 Oct 2026") = keputusan bisnis dari user; jangan diubah tanpa konfirmasi.
 
 ## Aturan tampilan (desain RUMAT, 14 Okt 2026) — wajib diikuti
-RASA harus terasa satu keluarga dengan ROSY dan RUMATku. Detail token ada di `design_guidelines.json`; ringkasnya:
+RUSA harus terasa satu keluarga dengan ROSY dan RUMATku. Detail token ada di `design_guidelines.json`; ringkasnya:
 - **Warna**: hanya `brand-*` (teal RUMAT, `tailwind.config.js`) untuk primary, link, menu aktif, fokus. Jangan pakai `blue-*`/`indigo-*` atau hex baru di JSX.
 - **Font**: Nunito Sans (file di `src/fonts`, tanpa Google Fonts). Angka & rupiah: kelas `.num` (tabular-nums), **bukan** monospace.
 - **Ukuran teks** minimal `text-xs`. Huruf kapital semua hanya untuk header tabel.

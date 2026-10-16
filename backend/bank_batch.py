@@ -56,7 +56,7 @@ def account_name(emp: dict) -> str:
 
 
 def unpaid_zero(slip: dict) -> bool:
-    """Cuti tanpa upah (ROSY "Unpaid", is_paid 0): RASA still makes a Rp 0 slip where ROSY makes none, so it stays out
+    """Cuti tanpa upah (ROSY "Unpaid", is_paid 0): RUSA still makes a Rp 0 slip where ROSY makes none, so it stays out
     of the file — the file ROSY would make — instead of blocking it as a Rp 0 transfer."""
     return slip.get("payroll_status") == "unpaid_leave" and float(slip.get("take_home_pay") or 0) <= 0
 
@@ -87,7 +87,7 @@ def account_problems(emp: dict) -> list:
 def row_problems(slip: dict, emp) -> list:
     """What keeps one slip out of the file, as (kind, note) pairs; empty = ready (ROSY's batchMasalahBaris)."""
     if emp is None:
-        return [("Karyawan tidak ditemukan", f"employee_id {slip['employee_id']} tidak ada di data karyawan RASA")]
+        return [("Karyawan tidak ditemukan", f"employee_id {slip['employee_id']} tidak ada di data karyawan RUSA")]
     out = account_problems(emp)
     thp = float(slip.get("take_home_pay") or 0)
     if thp <= 0:
@@ -99,14 +99,14 @@ def approval_blockers(slips: list, employees: dict) -> list:
     """The employees whose account blocks "Ajukan ke Manager" and Lock & Approve (user 14 Oct 2026), one entry each with
     all its problems: every slip not approved yet, except the Rp 0 unpaid-leave ones, which transfer nothing (the bank
     file leaves them out too). Only the account rules — the amount is the slip's business, not the account's.
-    employees: RASA employee docs by id, bank data as last synced from ROSY (what the bank file reads, not the slip's
+    employees: RUSA employee docs by id, bank data as last synced from ROSY (what the bank file reads, not the slip's
     snapshot)."""
     out = []
     for s in slips:
         if s.get("status") == "approved" or unpaid_zero(s):
             continue
         emp = employees.get(s["employee_id"])
-        found = account_problems(emp) if emp else [("Karyawan tidak ditemukan", "tidak ada di data karyawan RASA")]
+        found = account_problems(emp) if emp else [("Karyawan tidak ditemukan", "tidak ada di data karyawan RUSA")]
         if found:
             emp, snap = emp or {}, s.get("employee") or {}
             out.append({"employee_id": s["employee_id"], "nik": snap.get("nik") or emp.get("nik"),
@@ -119,7 +119,7 @@ def approval_blockers(slips: list, employees: dict) -> list:
 
 
 def build(slips: list, employees: dict, month: str, upload_date: str) -> dict:
-    """slips: the payslips of one period, any status (as in ROSY); employees: RASA employee docs by id (bank data as
+    """slips: the payslips of one period, any status (as in ROSY); employees: RUSA employee docs by id (bank data as
     last synced from ROSY); month: 'YYYY-MM'. Returns {"problems": [...]} when any row blocks the file, else the file text and its
     summary. Raises ValueError when the rows exceed what one file may hold."""
     year, mon = _month(month)

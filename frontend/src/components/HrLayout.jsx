@@ -36,12 +36,12 @@ export default function HrLayout() {
           nama pengguna & tombol keluar di bagian bawah; diciutkan = ikon saja, nama menu di tooltip. */}
       <aside className="sticky top-0 z-40 bg-brand-700 text-white border-b border-brand-800 lg:border-b-0 lg:h-screen lg:w-[var(--sidebar-w)] lg:shrink-0 lg:transition-[width] lg:duration-200" data-testid="sidebar" data-collapsed={ciut ? "true" : "false"}>
         <div className="h-14 lg:h-full px-4 sm:px-6 lg:px-3 lg:py-5 flex lg:flex-col items-center lg:items-stretch gap-2 sm:gap-3 lg:gap-6">
-          <div className={`flex items-center gap-2.5 shrink-0 ${ciut ? "lg:justify-center" : "lg:px-2"}`} title="RASA — RUMAT Administration & Salary Application" data-testid="app-brand">
+          <div className={`flex items-center gap-2.5 shrink-0 ${ciut ? "lg:justify-center" : "lg:px-2"}`} title="RUSA — RUMAT Salary Administration" data-testid="app-brand">
             {/* [LOGO RUMAT] ganti ikon ini dengan logo resmi bila sudah ada (public/logo-rumat.svg) */}
             <div className="h-8 w-8 lg:h-10 lg:w-10 rounded-lg bg-white text-brand-700 grid place-items-center shrink-0"><Building2 className="h-4 w-4 lg:h-5 lg:w-5" /></div>
             <div className={`hidden sm:block leading-tight ${ciut ? "lg:hidden" : ""}`}>
-              <div className="font-extrabold tracking-[0.08em] lg:text-lg">RASA</div>
-              <div className="text-xs text-brand-100 hidden lg:block">Aplikasi Penggajian RUMAT</div>
+              <div className="font-extrabold tracking-[0.08em] lg:text-lg">RUSA</div>
+              <div className="text-xs text-brand-100 hidden lg:block">RUMAT Salary Administration</div>
             </div>
           </div>
           <nav id="main-nav" className="flex lg:flex-col items-center lg:items-stretch gap-0.5 sm:gap-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:flex-1" data-testid="main-nav" aria-label="Menu utama">

@@ -57,7 +57,7 @@ function SignerPanel() {
             {(!s.verify_base || s.verify_base_local) && (
               <div className="flex gap-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2 text-xs" data-testid="signer-verify-warning">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
-                <span>{s.verify_base ? "Alamat ini hanya bisa dibuka dari komputer atau jaringan ini, jadi QR belum bisa dipindai dari HP karyawan." : "Slip yang di-approve sekarang terbit tanpa QR karena alamat verifikasi belum ada."} Isi <b>SLIP_VERIFY_BASE_URL</b> di bawah dengan alamat publik RASA (contoh https://rasa.rumat.id).</span>
+                <span>{s.verify_base ? "Alamat ini hanya bisa dibuka dari komputer atau jaringan ini, jadi QR belum bisa dipindai dari HP karyawan." : "Slip yang di-approve sekarang terbit tanpa QR karena alamat verifikasi belum ada."} Isi <b>SLIP_VERIFY_BASE_URL</b> di bawah dengan alamat publik RUSA (contoh https://rusa.rumat.id).</span>
               </div>
             )}
             <p className="!mt-3 text-xs text-slate-500">Slip ditandatangani dengan QR: siapa pun yang memindainya melihat halaman pengecekan keaslian slip (tanpa nominal gaji, nama karyawan disamarkan). Nama & jabatan penandatangan diambil dari ROSY HRD, menu Penandatangan Dokumen (konteks payroll), dan tercetak di bawah QR. Untuk menggantinya, ubah di ROSY lalu klik <b>Ambil dari ROSY</b>. Slip yang sudah di-approve tidak berubah.</p>

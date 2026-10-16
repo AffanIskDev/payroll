@@ -55,7 +55,7 @@ def resolve_ptkp(emp: dict) -> str:
 
 def pph21_basis(cfg: dict) -> str:
     """Config PPH21_BASIS: "kotor" taxes the income before Potongan Presensi & Absensi; anything else (missing, blank,
-    a typo) keeps "bersih", the basis RASA used before the setting existed."""
+    a typo) keeps "bersih", the basis RUSA used before the setting existed."""
     return "kotor" if str((cfg or {}).get("PPH21_BASIS") or "").strip().lower() == "kotor" else "bersih"
 
 

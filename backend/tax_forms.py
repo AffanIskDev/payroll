@@ -137,7 +137,7 @@ async def render_1721a1(f: dict) -> bytes:
     diff = f["difference"]
     note = "Kurang bayar" if diff > 0 else "Lebih bayar" if diff < 0 else "Nihil"
     els += [t, Spacer(1, 6), Paragraph(f"Selisih PPh 21 terutang vs dipotong: <b>{rp(diff)}</b> ({note}).", small),
-            Spacer(1, 10), Paragraph("Dokumen ini dihasilkan dari RASA (RUMAT Administration &amp; Salary Application) "
+            Spacer(1, 10), Paragraph("Dokumen ini dihasilkan dari RUSA (RUMAT Salary Administration) "
                                      "sebagai bukti potong internal. "
                                      "Bukti potong resmi diterbitkan melalui aplikasi e-Bupot / Coretax DJP.", small)]
     doc.build(els)

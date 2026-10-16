@@ -1,6 +1,6 @@
 """PPh 21 basis (user 13 Oct 2026): config PPH21_BASIS = "bersih" (default) | "kotor".
 
-bersih = the income left after Potongan Presensi & Absensi (the basis RASA used before the setting existed);
+bersih = the income left after Potongan Presensi & Absensi (the basis RUSA used before the setting existed);
 kotor  = the income before those cuts, so a gapok / jabatan / kehadiran cut for absence still counts as bruto.
 The engine tests need no server and no database; the 1721-A1 and the config save run against a throwaway MongoDB that
 is dropped afterwards (skipped when MongoDB is not running)."""

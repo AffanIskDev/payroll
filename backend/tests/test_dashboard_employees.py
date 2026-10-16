@@ -54,7 +54,7 @@ def test_dashboard_groups_who_needs_a_look(monkeypatch):
                 _emp("g", "Gita Agustus", data_issues=["rekening_kosong"]),
                 # on maternity leave the whole period: paid gapok only (user 14 Oct 2026)
                 _emp("h", "Hana Cuti Penuh"),
-                # back from maternity leave inside the period, slip already prorated by RASA (user 15 Oct 2026): the leave
+                # back from maternity leave inside the period, slip already prorated by RUSA (user 15 Oct 2026): the leave
                 # days are no poin any more, so only the slip's prorata knows them
                 _emp("i", "Indah Kembali")])
             await tdb.payroll_periods.insert_many([
@@ -157,7 +157,7 @@ def test_dashboard_groups_who_needs_a_look(monkeypatch):
 
 
 def test_prorated_slips_say_by_how_much():
-    """Since 15 Oct 2026 RASA prorates joining, leaving and maternity leave inside the period (engine.prorata): the
+    """Since 15 Oct 2026 RUSA prorates joining, leaving and maternity leave inside the period (engine.prorata): the
     "Gaji tidak penuh" note says by how much instead of "cek prorata"; a slip of 25 working days or more is not listed."""
     import routes_hr
 

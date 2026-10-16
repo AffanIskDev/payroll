@@ -71,7 +71,7 @@ async def _present_days(period: dict, emp_ids: list) -> dict:
 def _prorata_note(slip: dict, emp: dict, period: dict, maternity_days: int, present_days: int) -> Optional[str]:
     """Why a slip is not a full month's pay as "fakta — akibat", or None (user 10 Oct 2026: prorata cases — joining or
     leaving inside the period, maternity leave that starts or ends inside it, prolonged illness — not the alfa/izin fines,
-    which are attendance penalties). Since 15 Oct 2026 RASA prorates the first three itself (engine.prorata, slip
+    which are attendance penalties). Since 15 Oct 2026 RUSA prorates the first three itself (engine.prorata, slip
     "prorata"): the note says by how much. A slip calculated before that still says "cek prorata" until Fetch Data
     Terbaru recalculates it."""
     start, end = period["start_date"], period["end_date"]
@@ -153,7 +153,7 @@ async def dashboard_employees(pid: Optional[str] = None):
     if prev:
         gone = [i for i in prev.get("employee_ids") or [] if i not in set(ids)]
         async for e in db.employees.find({"id": {"$in": gone}}, fields):
-            # user 14 Oct 2026: no "tidak dikirim ROSY" wording on this card; what RASA knows is that ROSY has no exit date
+            # user 14 Oct 2026: no "tidak dikirim ROSY" wording on this card; what RUSA knows is that ROSY has no exit date
             why = f"keluar {_tanggal(e['exit_date'])}" if e.get("exit_date") else "tanpa tanggal keluar di ROSY"
             left.append(item(e, f"{why} — ada di {prev['period_name']}, tidak ada di periode ini"))
     new = [item(e, f"mulai {_tanggal(e['join_date'])}") for e in emps.values()
@@ -242,7 +242,7 @@ async def update_configs(body: dict):
         if k == "CSV_DELIMITER" and str(v) not in (",", ";", "|", "tab"):
             raise HTTPException(400, "Pemisah CSV harus , ; | atau tab")
         if k == "SLIP_VERIFY_BASE_URL" and str(v).strip() and not verify.clean_base(str(v)):
-            raise HTTPException(400, "Alamat verifikasi slip harus diawali http:// atau https://, mis. https://rasa.rumat.id")
+            raise HTTPException(400, "Alamat verifikasi slip harus diawali http:// atau https://, mis. https://rusa.rumat.id")
         if k in CONFIG_CHOICES and str(v) not in CONFIG_CHOICES[k]:
             raise HTTPException(400, f"{k} harus salah satu dari: {', '.join(CONFIG_CHOICES[k])}")
         await db.payroll_configs.update_one({"config_key": k}, {"$set": {"config_value": str(v)}})

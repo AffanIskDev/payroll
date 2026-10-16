@@ -1,8 +1,8 @@
 """Slip signer (penandatangan) from ROSY: HAM's payroll Document Signer — name and position.
 
-ROSY stays the one place to manage signers (HRD: Penandatangan Dokumen); RASA shows them and prints them under the QR
+ROSY stays the one place to manage signers (HRD: Penandatangan Dokumen); RUSA shows them and prints them under the QR
 code of the slip. Since 14 Oct 2026 the slip is "signed" with that QR (verify.py), not with the signature image, so the
-image is no longer fetched; the signer's name and position are all RASA needs (user request 14 Oct 2026)."""
+image is no longer fetched; the signer's name and position are all RUSA needs (user request 14 Oct 2026)."""
 from typing import Optional
 
 from core import db, now_iso, get_configs

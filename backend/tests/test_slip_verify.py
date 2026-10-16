@@ -25,7 +25,7 @@ import verify  # noqa: E402
 from test_monthly_components import CFG, EMP  # noqa: E402
 from test_rasa_aturan import _slip  # noqa: E402
 
-URL = "https://rasa.rumat.id/verifikasi/AbCdEfGhIjKl"
+URL = "https://rusa.rumat.id/verifikasi/AbCdEfGhIjKl"
 SIGNER = {"id": "SIGN-00001", "nama": "Meliawasni", "jabatan": "Manager HRD"}
 
 
@@ -37,9 +37,9 @@ def test_codes_are_url_safe_and_do_not_repeat():
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("https://rasa.rumat.id", "https://rasa.rumat.id"), ("https://rasa.rumat.id/", "https://rasa.rumat.id"),
-    (" http://localhost:3800 ", "http://localhost:3800"), ("https://rasa.rumat.id/app/", "https://rasa.rumat.id/app"),
-    ("rasa.rumat.id", ""), ("ftp://rasa.rumat.id", ""), ("https://", ""), ("https://rasa rumat.id", ""),
+    ("https://rusa.rumat.id", "https://rusa.rumat.id"), ("https://rusa.rumat.id/", "https://rusa.rumat.id"),
+    (" http://localhost:3800 ", "http://localhost:3800"), ("https://rusa.rumat.id/app/", "https://rusa.rumat.id/app"),
+    ("rusa.rumat.id", ""), ("ftp://rusa.rumat.id", ""), ("https://", ""), ("https://rusa rumat.id", ""),
     ("javascript:alert(1)", ""), ("", ""), (None, ""),
 ])
 def test_only_a_real_web_address_is_accepted(raw, expected):
@@ -47,19 +47,19 @@ def test_only_a_real_web_address_is_accepted(raw, expected):
 
 
 def test_address_comes_from_the_config_then_the_first_frontend_origin(monkeypatch):
-    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3800, https://rasa.rumat.id")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3800, https://rusa.rumat.id")
     assert verify.base_url({}) == "http://localhost:3800"                      # no config: the frontend of this install
-    assert verify.base_url({"SLIP_VERIFY_BASE_URL": "https://rasa.rumat.id/"}) == "https://rasa.rumat.id"
+    assert verify.base_url({"SLIP_VERIFY_BASE_URL": "https://rusa.rumat.id/"}) == "https://rusa.rumat.id"
     assert verify.base_url({"SLIP_VERIFY_BASE_URL": "bukan alamat"}) == "http://localhost:3800"   # junk is ignored
     monkeypatch.setenv("CORS_ORIGINS", "")
     assert verify.base_url({}) == "" and verify.url_for("AbCdEfGhIjKl", {}) == ""                # nothing to point to
-    assert verify.url_for("AbCdEfGhIjKl", {"SLIP_VERIFY_BASE_URL": "https://rasa.rumat.id"}) == URL
-    assert verify.url_for("", {"SLIP_VERIFY_BASE_URL": "https://rasa.rumat.id"}) == ""
+    assert verify.url_for("AbCdEfGhIjKl", {"SLIP_VERIFY_BASE_URL": "https://rusa.rumat.id"}) == URL
+    assert verify.url_for("", {"SLIP_VERIFY_BASE_URL": "https://rusa.rumat.id"}) == ""
 
 
 @pytest.mark.parametrize("base,local", [
     ("http://localhost:3800", True), ("http://127.0.0.1:3800", True), ("http://192.168.1.20:3800", True),
-    ("http://10.0.0.5", True), ("http://172.20.1.1", True), ("https://rasa.rumat.id", False),
+    ("http://10.0.0.5", True), ("http://172.20.1.1", True), ("https://rusa.rumat.id", False),
     ("http://172.32.1.1", False), ("https://8.8.8.8", False),
 ])
 def test_local_addresses_are_recognised(base, local):
@@ -83,10 +83,10 @@ def test_approving_freezes_the_code_the_address_the_number_and_the_signer(monkey
 
     monkeypatch.setattr(verify, "next_doc_number", fake_next)
     slip = {"id": "s1", "employee": {"name": "Iis"}}
-    cfg = {"SLIP_VERIFY_BASE_URL": "https://rasa.rumat.id"}
+    cfg = {"SLIP_VERIFY_BASE_URL": "https://rusa.rumat.id"}
     period = {"id": "p1", "signer": SIGNER}
     st = asyncio.run(verify.stamp(slip, period, cfg))
-    assert st["verify_url"] == f"https://rasa.rumat.id/verifikasi/{st['verify_code']}"
+    assert st["verify_url"] == f"https://rusa.rumat.id/verifikasi/{st['verify_code']}"
     assert st["verify_signer"] == {"nama": "Meliawasni", "jabatan": "Manager HRD"}
     assert st["doc_number"] == "SG/RUMAT/2026/10/0001"
     again = asyncio.run(verify.stamp({**slip, "verify_code": "KodeLamaSaya1", "doc_number": "SG/RUMAT/2026/10/0001"},
@@ -100,7 +100,7 @@ def test_approving_freezes_the_code_the_address_the_number_and_the_signer(monkey
     ({"bulan": "2026-09", "company": {"id": "CP-001", "nama": "RUMAT"}}, 1, "SG/RUMAT/2026/09/0001"),
     ({"bulan": "2026-12", "company": {"nama": "Rumat Kita"}}, 237, "SG/RUMATKITA/2026/12/0237"),
     ({"start_date": "2026-10-01", "company": {"id": "CP-003"}}, 12, "SG/CP003/2026/10/0012"),   # older period: no bulan
-    ({"start_date": "2026-10-01"}, 1, "SG/RASA/2026/10/0001"),                                  # no company from ROSY
+    ({"start_date": "2026-10-01"}, 1, "SG/RUSA/2026/10/0001"),                                  # no company from ROSY
 ])
 def test_the_document_number_names_the_company_the_month_and_the_order(period, seq, expected):
     assert verify.doc_number(period, seq) == expected
@@ -122,7 +122,7 @@ def test_pdf_prints_the_qr_and_a_clickable_address():
     reader, page = _page({"verify_url": URL})
     assert len(reader.pages) == 1                                              # the QR must not push the slip to page 2
     text = " ".join(page.extract_text().split())
-    assert "Pindai QR untuk memverifikasi keaslian slip" in text and "rasa.rumat.id/verifikasi/AbCdEfGhIjKl" in text
+    assert "Pindai QR untuk memverifikasi keaslian slip" in text and "rusa.rumat.id/verifikasi/AbCdEfGhIjKl" in text
     assert "Meliawasni" in text and "Manager HRD" in text
     uris = [a.get_object().get("/A", {}).get("/URI") for a in (page.get("/Annots") or [])]
     assert uris == [URL]                                                       # the slip is read on a phone: tap the link
@@ -295,7 +295,7 @@ def test_approving_a_slip_stamps_the_qr_and_the_preview_has_the_same_one(monkeyp
                       "signer": SIGNER, "company": {"nama": "RUMAT"}}
             await tdb.payroll_periods.insert_one({**period})
             await tdb.payroll_configs.insert_one({"config_key": "SLIP_VERIFY_BASE_URL",
-                                                  "config_value": "https://rasa.rumat.id"})
+                                                  "config_value": "https://rusa.rumat.id"})
             emp = {**EMP, "id": "e1", "name": "Iis Kusmiyati Syafaat", "nik": "2020051", "birth_date": "1995-01-01"}
 
             # a draft gets its code when it is calculated, and keeps it through every recalculation
@@ -310,7 +310,7 @@ def test_approving_a_slip_stamps_the_qr_and_the_preview_has_the_same_one(monkeyp
             import core
             stored = await tdb.payslips.find_one({"id": first["id"]}, {"_id": 0})
             prev = await verify.with_preview(stored, await core.get_configs())
-            assert prev["verify_code"] == code and prev["verify_url"] == f"https://rasa.rumat.id/verifikasi/{code}"
+            assert prev["verify_code"] == code and prev["verify_url"] == f"https://rusa.rumat.id/verifikasi/{code}"
             assert "verify_url" not in await tdb.payslips.find_one({"id": first["id"]}, {"_id": 0})
             # a draft calculated before this feature gets its code on first preview and keeps it
             monkeypatch.delenv("CORS_ORIGINS", raising=False)                  # no frontend origin to fall back to either
@@ -326,7 +326,7 @@ def test_approving_a_slip_stamps_the_qr_and_the_preview_has_the_same_one(monkeyp
             approved = await pipeline.approve_slip(stored, period, {"id": "u1", "username": "melia", "role": "manager_hrd"})
             frozen = await tdb.payslips.find_one({"id": first["id"]}, {"_id": 0})
             assert frozen["status"] == "approved" and frozen["verify_code"] == code
-            assert frozen["verify_url"] == f"https://rasa.rumat.id/verifikasi/{code}"
+            assert frozen["verify_url"] == f"https://rusa.rumat.id/verifikasi/{code}"
             assert frozen["verify_signer"] == {"nama": "Meliawasni", "jabatan": "Manager HRD"}
             assert frozen["doc_number"] == "SG/RUMAT/2026/10/0001"
             assert printed[-1]["verify_url"] == frozen["verify_url"] and approved["verify_code"] == code
@@ -363,11 +363,11 @@ def test_the_address_setting_refuses_anything_but_a_web_address(monkeypatch):
         await _up(client)
         try:
             await tdb.payroll_configs.insert_one({"config_key": "SLIP_VERIFY_BASE_URL", "config_value": ""})
-            for bad in ("rasa.rumat.id", "javascript:alert(1)", "ftp://x.y"):
+            for bad in ("rusa.rumat.id", "javascript:alert(1)", "ftp://x.y"):
                 with pytest.raises(HTTPException) as e:
                     await routes_hr.update_configs({"SLIP_VERIFY_BASE_URL": bad})
                 assert e.value.status_code == 400 and "http" in e.value.detail
-            await routes_hr.update_configs({"SLIP_VERIFY_BASE_URL": "https://rasa.rumat.id"})
+            await routes_hr.update_configs({"SLIP_VERIFY_BASE_URL": "https://rusa.rumat.id"})
             await routes_hr.update_configs({"SLIP_VERIFY_BASE_URL": ""})            # blank = use the frontend's own address
         finally:
             await client.drop_database(tdb.name)

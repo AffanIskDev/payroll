@@ -38,8 +38,8 @@ export default function Login() {
           {/* [LOGO RUMAT] ganti ikon ini dengan logo resmi bila sudah ada */}
           <div className="h-11 w-11 rounded-xl bg-white text-brand-700 grid place-items-center"><Building2 className="h-5 w-5" /></div>
           <div>
-            <div className="text-xl font-extrabold tracking-[0.12em]">RASA</div>
-            <div className="text-sm text-brand-100">Aplikasi Penggajian RUMAT</div>
+            <div className="text-xl font-extrabold tracking-[0.12em]">RUSA</div>
+            <div className="text-sm text-brand-100">RUMAT Salary Administration</div>
           </div>
         </div>
         <div className="space-y-4 fade-up hidden sm:block">
@@ -53,7 +53,7 @@ export default function Login() {
         <div className="flex-1 flex items-center justify-center">
           <form onSubmit={submit} className="w-full max-w-sm space-y-5 fade-up" data-testid="login-form">
             <div className="space-y-1.5">
-              <h2 className="text-3xl font-extrabold text-slate-900">Masuk ke RASA</h2>
+              <h2 className="text-3xl font-extrabold text-slate-900">Masuk ke RUSA</h2>
               <p className="text-base text-slate-600">Gunakan akun ROSY Anda. Khusus Manager HRD dan Supervisor HRD.</p>
             </div>
             <div className="space-y-2">
@@ -75,10 +75,10 @@ export default function Login() {
             <button data-testid="login-submit-button" disabled={busy} className="w-full h-12 bg-brand-700 hover:bg-brand-800 text-white text-base font-bold rounded-xl transition-colors disabled:opacity-60">
               {busy ? "Memproses..." : "Masuk"}
             </button>
-            <div className="flex items-start gap-2 text-sm text-slate-600"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-brand-600" /> Kata sandi diperiksa langsung ke ROSY dan tidak disimpan di RASA. Setelah 5 kali gagal, akun dikunci 15 menit.</div>
+            <div className="flex items-start gap-2 text-sm text-slate-600"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-brand-600" /> Kata sandi diperiksa langsung ke ROSY dan tidak disimpan di RUSA. Setelah 5 kali gagal, akun dikunci 15 menit.</div>
           </form>
         </div>
-        <div className="text-center text-xs text-slate-500 pt-6">© 2026 PT Rumah Perawatan Indonesia · RASA</div>
+        <div className="text-center text-xs text-slate-500 pt-6">© 2026 PT Rumah Perawatan Indonesia · RUSA</div>
       </div>
     </div>
   );

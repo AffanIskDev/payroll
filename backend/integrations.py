@@ -34,11 +34,11 @@ LEAVE_MAP = {
     "ibadah": "religious_leave", "alfa": "alpha", "dispensasi": "dispensation", "libur": "day_off",
 }
 
-# Monthly ROSY components RASA takes over (HAM Tambahan Bulanan), component id -> period_components kode:
+# Monthly ROSY components RUSA takes over (HAM Tambahan Bulanan), component id -> period_components kode:
 # "Transport Rumat Kita" (shown as Transport Homecare), "Bonus" and "Potongan Tidak Mencapai Target" — Bonus is no
-# longer typed in RASA, it is ROSY's like transport (user decision 10 Oct 2026) — plus "THR" and "Cicilan / Pinjaman"
+# longer typed in RUSA, it is ROSY's like transport (user decision 10 Oct 2026) — plus "THR" and "Cicilan / Pinjaman"
 # (user 12 Oct 2026). Other monthly components are ignored: KOMP-00023 Lembur is paid from the HAM claims, and PPh 21 /
-# Potongan Presensi are calculated by RASA itself.
+# Potongan Presensi are calculated by RUSA itself.
 TRANSPORT_COMPONENT = "KOMP-00022"
 MONTHLY_COMPONENTS = {TRANSPORT_COMPONENT: "TRANSPORT_HOMECARE", "KOMP-00005": "BONUS",
                       "KOMP-00015": "TARGET_DEDUCTION", "KOMP-00014": "THR", "KOMP-00007": "LOAN_INSTALLMENT"}
@@ -116,7 +116,7 @@ async def verify_rosy_login(username: str, password: str, client_ip: str = "") -
         raise HTTPException(401, "Username atau password ROSY salah")
     if r.status_code in (403, 429) and code:
         raise HTTPException(r.status_code, body.get("message") or "Login ditolak ROSY")
-    # 401 without a code = HAM refused RASA's integration key: a configuration fault, not the user's
+    # 401 without a code = HAM refused RUSA's integration key: a configuration fault, not the user's
     logger.error("HAM auth/login %s: %s", r.status_code, str(body.get("message") if isinstance(body, dict) else "")[:200])
     raise HTTPException(503, "Login ROSY sedang bermasalah. Hubungi IT")
 

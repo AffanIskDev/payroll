@@ -21,8 +21,8 @@ function Guard({ children }) {
   if (!isHr(user)) return (
     <div className="min-h-screen grid place-items-center p-6 text-center" data-testid="no-access">
       <div className="space-y-3">
-        <div className="text-lg font-semibold">Akun ROSY Anda tidak memiliki akses ke RASA</div>
-        <div className="text-sm text-slate-500">RASA khusus Manager HRD dan Supervisor HRD sesuai jabatan di ROSY.</div>
+        <div className="text-lg font-semibold">Akun ROSY Anda tidak memiliki akses ke RUSA</div>
+        <div className="text-sm text-slate-500">RUSA khusus Manager HRD dan Supervisor HRD sesuai jabatan di ROSY.</div>
         <button onClick={logout} className="text-sm font-semibold text-brand-700 underline">Keluar</button>
       </div>
     </div>

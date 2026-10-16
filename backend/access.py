@@ -1,6 +1,6 @@
-"""Who may use RASA, decided from the ROSY position (jabatan) HAM returns at login.
+"""Who may use RUSA, decided from the ROSY position (jabatan) HAM returns at login.
 
-User decision 9 Oct 2026: no user management in RASA — access follows the employee's position in ROSY.
+User decision 9 Oct 2026: no user management in RUSA — access follows the employee's position in ROSY.
 - manager_hrd: level General Manager (oversees HRD), or a Manager-level HRD position in Human Capital
 - supervisor:  a Koordinator-level (SPV) HRD position in Human Capital
 Other Human Capital positions (Supervisor Klinik, Supervisor Diklat, staff) get no access: payroll shows

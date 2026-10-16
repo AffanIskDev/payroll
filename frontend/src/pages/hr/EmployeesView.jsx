@@ -62,7 +62,7 @@ export default function EmployeesView() {
 
   return (
     <div>
-      <PageTitle title="Data Karyawan & Gaji" titleExtra={<Chip tone="slate" title="Diubah di ROSY HRD, bukan di RASA">Hanya-lihat · dari ROSY</Chip>}
+      <PageTitle title="Data Karyawan & Gaji" titleExtra={<Chip tone="slate" title="Diubah di ROSY HRD, bukan di RUSA">Hanya-lihat · dari ROSY</Chip>}
         subtitle={status.synced_at ? (
           <span data-testid="employee-sync-status">
             {month && <><span className="block sm:inline whitespace-nowrap">Gaji: <span className="text-slate-700">{month}</span></span>{sep}</>}

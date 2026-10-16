@@ -1,4 +1,4 @@
-"""Verifikasi slip untuk umum (user 14 Okt 2026) — satu-satunya rute RASA tanpa login: siapa pun yang memindai QR di slip
+"""Verifikasi slip untuk umum (user 14 Okt 2026) — satu-satunya rute RUSA tanpa login: siapa pun yang memindai QR di slip
 mendapat jawabannya, jadi isinya hanya yang dikembalikan verify.lookup (tanpa nominal gaji, nama disamarkan)."""
 from fastapi import APIRouter, HTTPException, Response
 

@@ -170,7 +170,7 @@ def test_lock_and_approve_is_blocked_by_the_account_rules_only():
         _slip("zero", "Zaki", 0, status="draft"),                                 # Rp 0 is the slip's business
         _slip("u", "Umi", 0, status="draft", payroll_status="unpaid_leave"),      # nothing is transferred
         _slip("done", "Dewi", 1000, status="approved"),                           # already locked
-        _slip("ghost", "Gita", 1000, nik="N-ghost", status="draft")], emps)       # not in RASA's employees
+        _slip("ghost", "Gita", 1000, nik="N-ghost", status="draft")], emps)       # not in RUSA's employees
     assert [(b["name"], [p["kind"] for p in b["problems"]]) for b in res] == [
         ("Bayu", ["Bank bukan BSI", "Rekening kosong", "Nama rekening kosong"]),
         ("Gita", ["Karyawan tidak ditemukan"]),
