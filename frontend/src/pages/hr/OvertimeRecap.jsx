@@ -32,7 +32,7 @@ export default function OvertimeRecap() {
       <Panel>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="ot-table">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>{["Petugas", "Periode", "Jam Lembur", "Rate / Jam", "Nominal", "Status"].map((h, i) => <th key={h} className={`px-4 py-3 ${i > 1 && i < 5 ? "text-right" : "text-left"}`}>{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

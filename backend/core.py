@@ -76,6 +76,7 @@ DEFAULT_CONFIGS = {
     "CSV_DELIMITER": (",", "Pemisah kolom ekspor CSV: , atau ; atau | atau tab"),
     "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "NPWP pemotong pajak (1721-A1)"),
     "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),
+    "SLIP_VERIFY_BASE_URL": ("", "Alamat publik RASA untuk QR verifikasi slip, mis. https://rasa.rumat.id (kosong = alamat frontend pertama di CORS_ORIGINS)"),
 }
 
 # configs that only accept a fixed set of values: validated on save and sent to the Config page as `choices`

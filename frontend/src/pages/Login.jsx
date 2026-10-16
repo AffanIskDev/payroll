@@ -1,16 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, Lock, ShieldCheck } from "lucide-react";
+import { Building2, Eye, EyeOff, ShieldCheck, ArrowBigUp } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { errMsg } from "@/lib/api";
 
+// Tampilan login mengikuti pola halaman login ROSY baru (desain RUMAT, Okt 2026): panel brand di kiri, form di kanan,
+// satu kolom di HP/tablet. Logika login tidak berubah.
 export default function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
+  const [caps, setCaps] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -25,50 +29,56 @@ export default function Login() {
     }
   };
 
+  const field = "w-full h-12 border border-slate-300 rounded-xl px-4 text-base outline-none focus:border-brand-700 focus:ring-4 focus:ring-brand-100";
+
   return (
-    <div className="min-h-screen grid lg:grid-cols-[1.1fr_1fr] bg-white">
-      <div className="hidden lg:flex flex-col justify-between bg-slate-900 text-white p-12 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)", backgroundSize: "36px 36px" }} />
-        <div className="relative flex items-center gap-3">
-          <div className="h-10 w-10 rounded-md bg-blue-800 grid place-items-center"><Building2 className="h-5 w-5" /></div>
+    <div className="min-h-screen grid grid-rows-[auto_1fr] lg:grid-rows-1 lg:grid-cols-[minmax(0,560px)_1fr] bg-white">
+      <div className="bg-brand-700 text-white px-6 py-8 sm:px-10 lg:p-14 flex flex-col gap-8 lg:justify-between">
+        <div className="flex items-center gap-3">
+          {/* [LOGO RUMAT] ganti ikon ini dengan logo resmi bila sudah ada */}
+          <div className="h-11 w-11 rounded-xl bg-white text-brand-700 grid place-items-center"><Building2 className="h-5 w-5" /></div>
           <div>
-            <div className="font-bold tracking-tight">RASA</div>
-            <div className="text-xs text-slate-400">RUMAT Administration &amp; Salary Application</div>
+            <div className="text-xl font-extrabold tracking-[0.12em]">RASA</div>
+            <div className="text-sm text-brand-100">Aplikasi Penggajian RUMAT</div>
           </div>
         </div>
-        <div className="relative space-y-6 fade-up">
-          <h1 className="text-4xl xl:text-5xl font-extrabold leading-tight tracking-tight">Penggajian otomatis,<br />presisi sampai rupiah.</h1>
-          <p className="text-slate-400 max-w-md text-sm leading-relaxed">Waterfall denda disiplin, BPJS dengan floor UMK Kab. Bekasi, PPh 21 TER PP 58/2023, dan slip PDF terenkripsi DDMMYY.</p>
-          <div className="grid grid-cols-3 gap-3 max-w-lg">
-            {[["25", "hari kerja"], ["TER", "A · B · C"], ["AES", "PDF 256-bit"]].map(([a, b]) => (
-              <div key={a} className="border border-slate-700 rounded-md p-3">
-                <div className="num text-xl font-semibold text-emerald-400">{a}</div>
-                <div className="text-xs text-slate-400">{b}</div>
-              </div>
-            ))}
-          </div>
+        <div className="space-y-4 fade-up hidden sm:block">
+          <div className="text-sm font-bold uppercase tracking-[0.14em] text-brand-200">Bagian dari ekosistem ROSY</div>
+          <h1 className="text-3xl xl:text-4xl font-extrabold leading-tight">Gaji tim RUMAT, dihitung tepat dan tepat waktu.</h1>
+          <p className="text-brand-100 max-w-md text-base leading-relaxed">Data karyawan, presensi, dan lembur langsung dari ROSY. Slip gaji terkirim ke RUMATku dalam PDF terlindungi sandi.</p>
         </div>
-        <div className="relative text-xs text-slate-500">PP 35/2021 · PP 58/2023 · PMK 168/2023 · UU HPP 7/2021</div>
+        <div className="hidden lg:block text-xs text-brand-200">PP 35/2021 · PP 58/2023 · PMK 168/2023 · UU HPP 7/2021</div>
       </div>
-      <div className="flex items-center justify-center p-6">
-        <form onSubmit={submit} className="w-full max-w-sm space-y-5 fade-up" data-testid="login-form">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Masuk</h2>
-            <p className="text-sm text-slate-500 mt-1">Khusus Manager HRD & Supervisor HRD. Gunakan akun ROSY Anda.</p>
-          </div>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Username ROSY</span>
-            <input data-testid="login-username-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" autoFocus className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" placeholder="username ROSY" />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Password</span>
-            <input data-testid="login-password-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-sm outline-none focus:border-blue-800 focus:ring-2 focus:ring-blue-100" />
-          </label>
-          <button data-testid="login-submit-button" disabled={busy} className="w-full bg-blue-900 hover:bg-slate-900 text-white font-semibold py-2.5 rounded-md flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
-            <Lock className="h-4 w-4" /> {busy ? "Memproses..." : "Masuk"}
-          </button>
-          <div className="flex items-center gap-2 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-600" /> Password diperiksa langsung ke ROSY, tidak disimpan di RASA. 5x gagal = kunci 15 menit</div>
-        </form>
+      <div className="flex flex-col p-6 sm:p-10">
+        <div className="flex-1 flex items-center justify-center">
+          <form onSubmit={submit} className="w-full max-w-sm space-y-5 fade-up" data-testid="login-form">
+            <div className="space-y-1.5">
+              <h2 className="text-3xl font-extrabold text-slate-900">Masuk ke RASA</h2>
+              <p className="text-base text-slate-600">Gunakan akun ROSY Anda. Khusus Manager HRD dan Supervisor HRD.</p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="login-username" className="block text-sm font-bold text-slate-900">Username ROSY</label>
+              <input id="login-username" data-testid="login-username-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" autoFocus className={field} placeholder="username ROSY" />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="login-password" className="block text-sm font-bold text-slate-900">Kata sandi</label>
+              <div className="relative">
+                <input id="login-password" data-testid="login-password-input" type={show ? "text" : "password"} autoComplete="current-password" value={password}
+                  onChange={(e) => setPassword(e.target.value)} onKeyUp={(e) => setCaps(e.getModifierState?.("CapsLock"))} required className={`${field} pr-14`} />
+                <button type="button" onClick={() => setShow(!show)} aria-label={show ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"} data-testid="login-toggle-password"
+                  className="absolute right-1 top-1 h-10 w-11 grid place-items-center rounded-lg text-slate-500 hover:bg-slate-100">
+                  {show ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+              {caps && <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-700" data-testid="login-capslock"><ArrowBigUp className="h-4 w-4" /> Caps Lock aktif</div>}
+            </div>
+            <button data-testid="login-submit-button" disabled={busy} className="w-full h-12 bg-brand-700 hover:bg-brand-800 text-white text-base font-bold rounded-xl transition-colors disabled:opacity-60">
+              {busy ? "Memproses..." : "Masuk"}
+            </button>
+            <div className="flex items-start gap-2 text-sm text-slate-600"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-brand-600" /> Kata sandi diperiksa langsung ke ROSY dan tidak disimpan di RASA. Setelah 5 kali gagal, akun dikunci 15 menit.</div>
+          </form>
+        </div>
+        <div className="text-center text-xs text-slate-500 pt-6">© 2026 PT Rumah Perawatan Indonesia · RASA</div>
       </div>
     </div>
   );

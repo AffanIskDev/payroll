@@ -1,6 +1,8 @@
 """Payroll calculation engine (PP 35/2021, PP 58/2023, PMK 168/2023, UU Naker)."""
 import math
 import re
+from datetime import date, timedelta
+from typing import Optional
 
 from labels import is_pjunit
 
@@ -32,6 +34,7 @@ TER_TABLES = {"A": TER_A, "B": TER_B, "C": TER_C}
 # Cut only the attendance allowance (gapok & jabatan paid): cuti tahunan (incl. cuti bersama), sakit,
 # cuti khusus, cuti melahirkan, ibadah. Cut gapok + jabatan + attendance: alfa/mangkir, izin, unpaid leave.
 # Never cut: present, dinas, dispensasi, libur.
+# Exception (user 14 Oct 2026): cuti melahirkan for the whole period pays only gapok (maternity_all_period).
 ATT_CUT_LEAVES = ("sick_with_certificate", "annual_leave", "statutory_leave", "maternity_leave", "religious_leave")
 FULL_CUT_LEAVES = ("alpha", "permission_leave", "approved_unpaid_leave")
 BPJS_TK_PROGRAMS = ("jkk", "jkm", "jht", "jp")
@@ -124,6 +127,51 @@ def calc_discipline(logs: list) -> dict:
     }
 
 
+def maternity_all_period(logs: list) -> bool:
+    """Cuti melahirkan sepanjang periode (user 14 Okt 2026): ada hari cuti melahirkan dan tidak satu pun hari kerja lain
+    di periode itu — hari libur tidak dihitung. Cuti yang hanya sebagian periode tidak termasuk."""
+    kinds = {(lg.get("leave_type") or "present") for lg in logs}
+    return "maternity_leave" in kinds and kinds <= {"maternity_leave", "day_off"}
+
+
+def _calendar_work_days(start: str, end: str) -> int:
+    """Senin–Sabtu dari start s/d end: hari kerja bagi yang tidak punya presensi sama sekali (direksi bebas presensi) —
+    cadangan yang sama dengan ROSY ("semua hari kecuali Minggu")."""
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    return sum(1 for i in range((last - first).days + 1) if (first + timedelta(days=i)).weekday() != 6)
+
+
+def prorata(emp: dict, logs: list, period: Optional[dict], wd: int, status: str, maternity_only: bool) -> Optional[dict]:
+    """Gaji tidak penuh (user 15 Okt 2026): faktor = hari kerja di masa aktif ÷ wd (25), paling besar 1. None = sebulan penuh.
+    - Masuk dan/atau keluar di tengah periode (tanggal masuk/keluar ROSY): Gaji Pokok, Tunjangan Jabatan dan Tunjangan
+      Kehadiran ikut faktor itu; masa aktif = tanggal masuk s/d tanggal keluar di dalam periode.
+    - Cuti melahirkan yang mulai atau selesai di tengah periode: hanya Tunjangan Kehadiran, dari hari kerja di luar tanggal
+      cuti; Gaji Pokok & Jabatan penuh (keputusan HRD 23 Sep 2026). Cuti sepanjang periode tetap "gaji pokok saja"
+      (maternity_only), bukan prorata.
+    Hari kerja = hari terjadwal menurut presensi HAM: libur tidak dihitung; alfa/izin/sakit tetap hari kerja dan tetap
+    berpoin seperti biasa. Tanpa presensi sama sekali (direksi bebas presensi) = Senin–Sabtu di kalender."""
+    start, end = (period or {}).get("start_date"), (period or {}).get("end_date")
+    join, leave = emp.get("join_date"), emp.get("exit_date")
+    lo = join if start and join and start < join <= end else start
+    hi = leave if start and leave and start <= leave < end else end
+    window = bool(start) and (lo != start or hi != end)
+    if window and lo > hi:
+        return None  # keluar sebelum masuk: tanggal ROSY tidak wajar, dibiarkan untuk dicek HRD
+    inside = [lg for lg in logs if (not lo or lo <= lg["work_date"]) and (not hi or lg["work_date"] <= hi)]
+    maternity = sum(1 for lg in inside if lg.get("leave_type") == "maternity_leave")
+    if not window and (maternity_only or not maternity or status != "active"):
+        return None
+    from_logs = bool(inside) and not emp.get("attendance_exempt")
+    if not from_logs and not (lo and hi):
+        return None
+    days = sum(1 for lg in inside if lg.get("leave_type") != "day_off") if from_logs else _calendar_work_days(lo, hi)
+    kind = ("masuk_keluar" if lo != start and hi != end else "masuk" if lo != start else "keluar") if window \
+        else "cuti_melahirkan"
+    return {"kind": kind, "from": lo, "to": hi, "divisor": wd, "work_days": days, "maternity_days": maternity,
+            "basic_factor": min(days / wd, 1) if window else 1, "attendance_days": days - maternity,
+            "attendance_factor": min((days - maternity) / wd, 1), "source": "presensi" if from_logs else "kalender"}
+
+
 def wage_multiplier(status: str, month: int) -> float:
     month = max(int(month or 1), 1)
     if status == "unpaid_leave":
@@ -209,14 +257,30 @@ def december_reconciliation(ctx: dict, dec_taxable: float, dec_jht_jp: float, pt
     }
 
 
-def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict = None) -> dict:
+def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict = None,
+                    period: Optional[dict] = None) -> dict:
     wd = int(cfg.get("DEFAULT_WORK_DAYS", 25))
     status = emp.get("payroll_status", "active")
     mult = wage_multiplier(status, emp.get("prolonged_illness_month_count"))
+    # Cuti melahirkan sepanjang periode (user 14 Okt 2026, sama dengan aturan ROSY): hanya Gaji Pokok yang dibayarkan —
+    # tanpa tunjangan jabatan / Bonus Threshold dan tanpa Tunjangan Kehadiran. BPJS & PPh 21 tetap dihitung, komponen
+    # bulanan ROSY (Bonus, THR, Transport) tidak disentuh. Cuti yang mulai/selesai di tengah periode = prorata (di bawah)
+    maternity_only = status == "active" and maternity_all_period(logs)
+    # Gaji tidak penuh (user 15 Okt 2026): masuk / keluar / cuti melahirkan di tengah periode, prorata hari kerja ÷ wd
+    pr = prorata(emp, logs, period, wd, status, maternity_only)
+    if pr:
+        # hanya hari di masa aktif yang dinilai; hari cuti melahirkan sudah tidak ikut Tunjangan Kehadiran yang diprorata,
+        # jadi tidak diberi poin lagi
+        logs = [lg for lg in logs if (not pr["from"] or pr["from"] <= lg["work_date"])
+                and (not pr["to"] or lg["work_date"] <= pr["to"])
+                and (maternity_only or lg.get("leave_type") != "maternity_leave")]
     # directors exempt from attendance assessment in HAM (PresensiHelpers) are never penalised
     disc = calc_discipline([] if emp.get("attendance_exempt") else logs)
     basic = float(emp.get("basic_salary") or 0)
-    att = float(emp.get("monthly_attendance_allowance") or 0)
+    att_month = float(emp.get("monthly_attendance_allowance") or 0)
+    f_basic = pr["basic_factor"] if pr else 1
+    # Tunjangan Kehadiran yang dibayarkan sebelum potongan: diprorata hari kerja (cuti sepanjang periode dipotong habis)
+    att = round(att_month * (pr["attendance_factor"] if pr and not maternity_only else 1))
     unpaid = status == "unpaid_leave"
 
     hours = 0 if unpaid else float(adj.get("overtime_hours") or 0)
@@ -236,32 +300,40 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     transport = 0 if unpaid else round(float(adj.get("transport_homecare") or 0))
     overtime_pay = round(hours * float(emp.get("overtime_hourly_rate") or 0))
 
-    basic_paid = round(basic * mult)
+    basic_paid = round(basic * mult * f_basic)
     # PPT: during prolonged illness only gapok is paid (100/75/50/25%); jabatan and attendance are not
-    position_paid = 0 if status == "prolonged_illness" else round(float(emp.get("position_allowance") or 0) * mult)
+    position_month = (0 if status == "prolonged_illness" or maternity_only
+                      else round(float(emp.get("position_allowance") or 0) * mult))
+    position_paid = round(position_month * f_basic)
     # PJUnit (user 13 Oct 2026): Potongan Tidak Mencapai Target comes off their own Bonus Threshold — a bonus not earned
     # is no income, so it leaves the PPh 21 base, is not cut again for alfa/izin, and no longer shows as a potongan.
-    # Only as far as the Bonus Threshold goes; the rest (e.g. Bonus Threshold 0 in ROSY) stays a potongan
+    # Only as far as the Bonus Threshold goes; the rest (e.g. Bonus Threshold 0 in ROSY) stays a potongan.
+    # Except a PJUnit on maternity leave for the whole period (user 14 Oct 2026): no Bonus Threshold is paid, so there is
+    # nothing to take the potongan back from and it is not charged at all (target_waived tells the review page)
+    target_waived = target if maternity_only and is_pjunit(emp) else 0
+    target -= target_waived
     target_from_bonus = min(target, position_paid) if is_pjunit(emp) else 0
     position_paid -= target_from_bonus
     target -= target_from_bonus
     if status == "active":
-        # Poin Presensi + Poin Absensi each cost 1/wd of the attendance allowance
-        penalty_days = min(disc["presence_points"] + disc["absence_points"], wd)
-        penalty_amount = round(penalty_days / wd * att)
+        # Poin Presensi + Poin Absensi each cost 1/wd of the MONTHLY attendance allowance — in a prorated month too, so a
+        # day of alfa costs everyone the same — but never more than the (prorated) allowance paid
+        penalty_days = wd if maternity_only else min(disc["presence_points"] + disc["absence_points"], wd)
+        penalty_amount = min(round(penalty_days / wd * att_month), att)
         # split for the slip (Potongan Absensi = alfa/izin days / Potongan Presensi = lateness + sakit/cuti days);
         # absence days first, presensi takes the rest, so the two always add up to penalty_amount even when capped
-        absence_penalty = min(round(min(disc["absence_points"], wd) / wd * att), penalty_amount)
+        absence_penalty = min(round(min(disc["absence_points"], wd) / wd * att_month), penalty_amount)
         presence_penalty = penalty_amount - absence_penalty
-        # alfa/izin days cost gapok and jabatan too, capped at 100% (a month of alfa must not yield negative pay)
+        # alfa/izin days cost gapok and jabatan too: 1/wd of the monthly amount per day, never more than is paid (a month
+        # of alfa must not yield negative pay)
         cut_days = min(disc["basic_cut_days"], wd)
-        absent_deduction = round(cut_days / wd * basic)
-        position_deduction = round(cut_days / wd * position_paid)
+        absent_deduction = min(round(cut_days / wd * basic), basic_paid)
+        position_deduction = min(round(cut_days / wd * (position_month - target_from_bonus)), position_paid)
     else:
         penalty_days = wd
-        penalty_amount = round(att)
+        penalty_amount = att
         absent_deduction = position_deduction = absence_penalty = presence_penalty = 0
-    attendance_net = round(att - penalty_amount)
+    attendance_net = att - penalty_amount
 
     bp = calc_bpjs(emp, cfg) if not unpaid else calc_bpjs({}, {})
     bpjs_advance = 0
@@ -297,10 +369,14 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     thp = gross - total_ded
 
     return {
-        "payroll_status": status, "wage_multiplier": mult,
+        "payroll_status": status, "wage_multiplier": mult, "maternity_basic_only": maternity_only,
+        # gaji tidak penuh (user 15 Okt 2026): hari kerja & faktor prorata, None = sebulan penuh
+        "prorata": pr,
         "basic_salary": basic_paid, "basic_salary_contract": round(basic),
         "position_allowance": position_paid, "position_deduction_amount": position_deduction,
-        "attendance_allowance_base": round(att), "attendance_allowance": attendance_net,
+        "position_allowance_contract": round(float(emp.get("position_allowance") or 0)),
+        "attendance_allowance_base": att, "attendance_allowance": attendance_net,
+        "attendance_allowance_contract": round(att_month),
         "overtime_hours": hours, "overtime_pay": overtime_pay, "transport_homecare": transport,
         "kpi_incentive": kpi, "additional_bonus": bonus, "thr": thr,
         "tunjangan_bpjs_kes": tunj_kes, "tunjangan_bpjs_tk": tunj_tk,
@@ -314,6 +390,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
         "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
         "other_deductions": kasbon, "target_deduction": target, "target_from_bonus": target_from_bonus,
+        "target_waived": target_waived,
         "loan_installment": installment,
         "total_deductions": total_ded, "take_home_pay": thp,
         "bpjs_company_advance": bpjs_advance,

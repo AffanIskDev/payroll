@@ -31,14 +31,14 @@ export default function ShiftRecap() {
         <input data-testid="recap-month-input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
         <Btn variant="outline" data-testid="recap-export-button" onClick={exportCsv} disabled={!d?.rows.length}><FileDown className="h-4 w-4" /> Ekspor CSV</Btn>
       </PageTitle>
-      <div className="mb-4 flex gap-2 text-xs bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-4 py-3">
+      <div className="mb-4 flex gap-2 text-xs bg-brand-50 border border-brand-200 text-brand-700 rounded-md px-4 py-3">
         <Info className="h-4 w-4 shrink-0" />
         <span>Dihitung dari log presensi hasil fetching RUMATKU (shift, libur, cuti). "Tanpa Log" = hari tanpa catatan dari RUMATKU.</span>
       </div>
       <Panel>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="recap-table">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="text-left px-4 py-3">Petugas</th>
                 {cols.map(([k, l]) => <th key={k} className="text-right px-4 py-3">{l}{d.shift_codes.includes(k) && <span className="num text-slate-400"> ({k})</span>}</th>)}

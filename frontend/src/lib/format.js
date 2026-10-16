@@ -113,7 +113,7 @@ export const PERIOD_STATUS = {
 };
 
 export const DELIVERY_STATUS = {
-  queued: { label: "Mengirim...", cls: "text-blue-700", dot: "bg-blue-500" },
+  queued: { label: "Mengirim...", cls: "text-brand-700", dot: "bg-brand-500" },
   sent: { label: "Terkirim", cls: "text-emerald-700", dot: "bg-emerald-500" },
   failed: { label: "Gagal", cls: "text-rose-700", dot: "bg-rose-500" },
 };

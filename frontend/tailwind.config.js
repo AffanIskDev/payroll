@@ -14,7 +14,15 @@ module.exports = {
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)'
       },
+      // Warna brand RUMAT (keluarga teal, sama dengan RUMATku & halaman login ROSY baru). Pakai brand-*, JANGAN blue-*.
+      fontFamily: {
+        sans: ['"Nunito Sans Variable"', '"Nunito Sans"', 'system-ui', 'sans-serif'],
+      },
       colors: {
+        brand: {
+          50: '#EEF7F8', 100: '#D5ECEE', 200: '#ADD9DD', 300: '#7DBFC6', 400: '#4A9EA8',
+          500: '#2A818C', 600: '#176C78', 700: '#0E5E6B', 800: '#0B4A55', 900: '#093B44', 950: '#062A31'
+        },
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {

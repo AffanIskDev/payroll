@@ -47,12 +47,12 @@ def _month(month: str) -> tuple:
     return int(month[:4]), int(month[5:7])
 
 
-def account_name(slip: dict, emp: dict) -> str:
-    """HAM's "Nama di Rekening" (nama_rekening) when HRD filled it in, else the employee's name (ROSY's
-    batchNamaPenerima). Titles are not stripped here: an automatic cleaner got real names wrong, so HRD fixes the name
-    in ROSY where it can be seen."""
-    own = str(emp.get("bank_account_name") or "").strip()
-    return own or emp.get("name") or slip["employee"].get("name") or ""
+def account_name(emp: dict) -> str:
+    """HAM's "Nama di Rekening" (nama_rekening). Required since 14 Oct 2026 (user): account_problems() holds back an
+    employee without it, so the employee's name is no longer written in its place (ROSY's batchNamaPenerima still
+    does). Titles are not stripped here: an automatic cleaner got real names wrong, so HRD fixes the name in ROSY
+    where it can be seen."""
+    return str(emp.get("bank_account_name") or "").strip()
 
 
 def unpaid_zero(slip: dict) -> bool:
@@ -61,10 +61,11 @@ def unpaid_zero(slip: dict) -> bool:
     return slip.get("payroll_status") == "unpaid_leave" and float(slip.get("take_home_pay") or 0) <= 0
 
 
-def row_problems(slip: dict, emp) -> list:
-    """What keeps one slip out of the file, as (kind, note) pairs; empty = ready (ROSY's batchMasalahBaris)."""
-    if emp is None:
-        return [("Karyawan tidak ditemukan", f"employee_id {slip['employee_id']} tidak ada di data karyawan RASA")]
+def account_problems(emp: dict) -> list:
+    """What keeps an employee's pay from going out through Batch Payment BSI, as (kind, note) pairs; empty = ready.
+    ROSY's batchMasalahBaris rules for the account, plus "Nama di Rekening" (user 14 Oct 2026: no account number, no
+    account name or not BSI = the payroll cannot be processed). The bank file, "Ajukan ke Manager" and Lock & Approve
+    all use it."""
     out = []
     if str(emp.get("bank_code") or "").strip().upper() != BANK_CODE:
         bank = emp.get("bank_name") or emp.get("bank_code") or "bank belum diisi"
@@ -78,10 +79,43 @@ def row_problems(slip: dict, emp) -> list:
         out.append(("Panjang rekening ganjil", f"{acct} = {len(acct)} digit, seharusnya {ACCOUNT_LEN}"))
     elif not acct.strip("0"):
         out.append(("Rekening nol semua", f'"{acct}"'))
+    if not account_name(emp):
+        out.append(("Nama rekening kosong", "Nama di Rekening belum diisi di ROSY"))
+    return out
+
+
+def row_problems(slip: dict, emp) -> list:
+    """What keeps one slip out of the file, as (kind, note) pairs; empty = ready (ROSY's batchMasalahBaris)."""
+    if emp is None:
+        return [("Karyawan tidak ditemukan", f"employee_id {slip['employee_id']} tidak ada di data karyawan RASA")]
+    out = account_problems(emp)
     thp = float(slip.get("take_home_pay") or 0)
     if thp <= 0:
         out.append(("Nominal tidak wajar", f"Total Diterima = {_rp(thp)}"))
     return out
+
+
+def approval_blockers(slips: list, employees: dict) -> list:
+    """The employees whose account blocks "Ajukan ke Manager" and Lock & Approve (user 14 Oct 2026), one entry each with
+    all its problems: every slip not approved yet, except the Rp 0 unpaid-leave ones, which transfer nothing (the bank
+    file leaves them out too). Only the account rules — the amount is the slip's business, not the account's.
+    employees: RASA employee docs by id, bank data as last synced from ROSY (what the bank file reads, not the slip's
+    snapshot)."""
+    out = []
+    for s in slips:
+        if s.get("status") == "approved" or unpaid_zero(s):
+            continue
+        emp = employees.get(s["employee_id"])
+        found = account_problems(emp) if emp else [("Karyawan tidak ditemukan", "tidak ada di data karyawan RASA")]
+        if found:
+            emp, snap = emp or {}, s.get("employee") or {}
+            out.append({"employee_id": s["employee_id"], "nik": snap.get("nik") or emp.get("nik"),
+                        "name": snap.get("name") or emp.get("name") or s["employee_id"],
+                        "bank": emp.get("bank_name") or emp.get("bank_code") or "",
+                        "account_number": str(emp.get("bank_account_number") or "").strip(),
+                        "account_name": account_name(emp),
+                        "problems": [{"kind": k, "note": n} for k, n in found]})
+    return sorted(out, key=lambda b: str(b["name"]).casefold())
 
 
 def build(slips: list, employees: dict, month: str, upload_date: str) -> dict:
@@ -107,7 +141,7 @@ def build(slips: list, employees: dict, month: str, upload_date: str) -> dict:
         # CUST REF NO emptied in ROSY 8 Sep 2026 (the bank file carries no NIK) — emptied, not removed: the file is
         # positional and every row must stay aligned with HEADER. Extended detail, email and SMS stay empty as in the
         # official sample: filled in, the BANK notifies every employee (SMS is usually billed per message).
-        rows.append(["1", str(emp["bank_account_number"]).strip(), clean(account_name(s, emp), NAME_LEN), "IDR",
+        rows.append(["1", str(emp["bank_account_number"]).strip(), clean(account_name(emp), NAME_LEN), "IDR",
                      str(amount), "", message, "", "", ""])
     if problems:
         return {"problems": problems}

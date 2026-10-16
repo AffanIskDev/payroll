@@ -1,12 +1,15 @@
 """Slip labels that depend on who the employee is — one rule for the review page, the PDF and the dashboard."""
 
-# Divisi Pelayanan: tunjangan jabatannya disebut "Bonus Threshold" di review payroll & slip gaji (permintaan HRD
-# 10 Okt 2026, diterapkan 12 Okt). Uangnya sama, hanya namanya — perhitungan & pajaknya tetap tunjangan jabatan.
-BONUS_THRESHOLD_DEPARTMENTS = {"pelayanan"}
-
-# PJUnit = jabatan "Penanggung Jawab unit" di ROSY (13 Okt 2026). Potongan Tidak Mencapai Target-nya diambil dari
-# Bonus Threshold-nya sendiri — aturan hitungnya di engine.compute_payslip
+# PJUnit = jabatan "Penanggung Jawab unit" di ROSY (13 Okt 2026). Hanya PJUnit yang tunjangan jabatannya disebut
+# "Bonus Threshold" di review payroll & slip gaji (permintaan HRD 10 Okt 2026, diterapkan 12 Okt; sejak 14 Okt 2026
+# menurut JABATAN PJ Unit saja, bukan divisi/department — Manajer, Supervisor, atau Perawat Pelayanan tetap "Tunjangan
+# Jabatan"). Uangnya sama, hanya namanya — perhitungan & pajaknya tetap tunjangan jabatan. Potongan Tidak Mencapai
+# Target PJUnit diambil dari Bonus Threshold-nya sendiri — aturan hitungnya di engine.compute_payslip
 PJUNIT_POSITIONS = {"penanggung jawab unit", "pj unit", "pjunit"}
+
+# Keterangan di bawah baris Bonus Threshold PJUnit yang terpotong karena tidak mencapai target (user 14 Okt 2026; dulu
+# "Rp x, dipotong Rp y karena tidak mencapai target"). Review payroll (Workbench.jsx) memakai kalimat yang sama.
+PJUNIT_TARGET_NOTE = "Income Unit Minimal 20 jt"
 
 
 def _norm(v) -> str:
@@ -14,11 +17,8 @@ def _norm(v) -> str:
 
 
 def position_allowance_label(emp: dict) -> str:
-    dept = _norm((emp or {}).get("department"))
-    return "Bonus Threshold" if dept in BONUS_THRESHOLD_DEPARTMENTS else "Tunjangan Jabatan"
+    return "Bonus Threshold" if is_pjunit(emp) else "Tunjangan Jabatan"
 
 
 def is_pjunit(emp: dict) -> bool:
-    emp = emp or {}
-    return (_norm(emp.get("department")) in BONUS_THRESHOLD_DEPARTMENTS
-            and _norm(emp.get("position")) in PJUNIT_POSITIONS)
+    return _norm((emp or {}).get("position")) in PJUNIT_POSITIONS

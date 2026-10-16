@@ -5,7 +5,8 @@ Live endpoints (HAM, header X-Integrasi-Key, caller RASA, read-only):
   GET {HAM_API_URL}/api/ham/v2/payroll-feed/karyawan?payroll_company_id=&periode=YYYY-MM
   GET {HAM_API_URL}/api/ham/v2/payroll-feed/presensi?payroll_company_id=&start=&end=
   POST {HAM_API_URL}/api/ham/v2/payroll-feed/auth/login?payroll_company_id=  (verifies a ROSY login, writes nothing)
-  GET {HAM_API_URL}/api/ham/v2/payroll-feed/penandatangan[/foto]?payroll_company_id=  (slip signer + signature image)
+  GET {HAM_API_URL}/api/ham/v2/payroll-feed/penandatangan?payroll_company_id=  (slip signer: name & position; the slip is
+      signed with a QR since 14 Oct 2026, so the signature image of .../penandatangan/foto is no longer fetched)
 Payslip delivery still uses the legacy RUMATKU contract (RUMATKU_API_URL), mock until HAM's slip
 endpoint exists."""
 import hashlib
@@ -174,20 +175,6 @@ async def fetch_signer() -> tuple:
         return None, None
     body = await _get("/penandatangan", {"payroll_company_id": company_id()})
     return body.get("data"), (body.get("meta") or {}).get("company")
-
-
-async def fetch_signer_image():
-    """(image bytes, ttd_versi of the file actually sent) of the signer's signature, or None when ROSY has no
-    signature or cannot serve the file (404). Raises on any other failure."""
-    url = os.environ["HAM_API_URL"].rstrip("/") + FEED + "/penandatangan/foto"
-    headers = {"X-Integrasi-Key": os.environ.get("HAM_INTEGRASI_KEY", "")}
-    async with httpx.AsyncClient(timeout=60) as c:
-        r = await c.get(url, headers=headers, params={"payroll_company_id": company_id()})
-    if r.status_code == 404:
-        return None
-    if r.status_code != 200:
-        raise RuntimeError(f"HAM {r.status_code}")
-    return r.content, r.headers.get("x-ttd-versi")
 
 
 async def fetch_employees(periode: str) -> tuple:

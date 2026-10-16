@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth, isHr, isManager } from "@/context/AuthContext";
 import Login from "@/pages/Login";
+import Verify from "@/pages/Verify";
 import HrLayout from "@/components/HrLayout";
 import Dashboard from "@/pages/hr/Dashboard";
 import Periods from "@/pages/hr/Periods";
@@ -22,7 +23,7 @@ function Guard({ children }) {
       <div className="space-y-3">
         <div className="text-lg font-semibold">Akun ROSY Anda tidak memiliki akses ke RASA</div>
         <div className="text-sm text-slate-500">RASA khusus Manager HRD dan Supervisor HRD sesuai jabatan di ROSY.</div>
-        <button onClick={logout} className="text-sm font-semibold text-blue-900 underline">Keluar</button>
+        <button onClick={logout} className="text-sm font-semibold text-brand-700 underline">Keluar</button>
       </div>
     </div>
   );
@@ -48,6 +49,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
+          {/* publik, tanpa login: dibuka dari QR di slip gaji (user 14 Okt 2026) */}
+          <Route path="/verifikasi/:code" element={<Verify />} />
           <Route path="/hr-manager" element={<Guard><HrLayout /></Guard>}>
             <Route index element={<Dashboard />} />
             <Route path="payroll" element={<Periods />} />

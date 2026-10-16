@@ -1,27 +1,28 @@
 import io
-import re
 import secrets
+from datetime import date as date_cls, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
+from reportlab.graphics.barcode import qr
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
-from labels import position_allowance_label
+from labels import PJUNIT_TARGET_NOTE, position_allowance_label
+from periods import BULAN
 
 STORAGE = Path(__file__).parent / "storage" / "payslips"
 STORAGE.mkdir(parents=True, exist_ok=True)
-# Tanda tangan penandatangan slip dari ROSY, disimpan signer.py per versi berkas (ttd_versi HAM)
-SIGNATURES = Path(__file__).parent / "storage" / "signatures"
-SIGN_H = 13 * mm  # slip ROSY: 55 px (~14,5 mm); di sini muat di ruang tanda tangan 14 mm yang sudah ada
-_SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+# "Tanda tangan" slip = QR verifikasi per slip (user 14 Okt 2026, verify.py), bukan gambar tanda tangan. Ukuran sudah
+# termasuk zona tenang QR (4 modul di tiap sisi): ±0,6 mm per modul, aman dipindai dari kertas maupun layar HP.
+QR_SIZE = 24 * mm
 ASSETS = Path(__file__).parent / "assets"
 LOGO_H = 14 * mm  # same height as the e-recruitment offering letter header
 # logo RUMAT lebar (rasio 4:1): pada tinggi yang sama ia tiga kali luas logo RPI, jadi dibuat lebih pendek supaya
@@ -29,6 +30,7 @@ LOGO_H = 14 * mm  # same height as the e-recruitment offering letter header
 RUMAT_LOGO_H = 11 * mm
 LINE = 12  # one blank line (pt) at the slip's body text size
 NAVY = colors.HexColor("#0F172A")
+WIB = timezone(timedelta(hours=7))  # tanpa musim panas: offset tetap cukup
 
 
 def rp(v) -> str:
@@ -105,23 +107,39 @@ def _logo(name: str, max_w: float, logo_h: float = LOGO_H) -> Image:
     return Image(str(path), width=w * height / h, height=height, mask="auto")
 
 
-def signature_path(signer: Optional[dict]) -> Optional[Path]:
-    """The cached signature image of this signer version, or None (no signer, no signature in ROSY, not fetched)."""
-    sid, ver = str((signer or {}).get("id") or ""), str((signer or {}).get("ttd_versi") or "")
-    if not (_SAFE_ID.match(sid) and _SAFE_ID.match(ver)):
-        return None
-    path = SIGNATURES / f"{sid}-{ver}.png"
-    return path if path.is_file() else None
+def _qr(url: str) -> Drawing:
+    """The verification QR of a slip: vector, so it stays sharp when printed or zoomed on a phone."""
+    widget = qr.QrCodeWidget(url, barLevel="M")
+    x0, y0, x1, y1 = widget.getBounds()
+    d = Drawing(QR_SIZE, QR_SIZE, transform=[QR_SIZE / (x1 - x0), 0, 0, QR_SIZE / (y1 - y0), 0, 0])
+    d.hAlign = "CENTER"
+    d.add(widget)
+    return d
 
 
-def _signature(signer: dict):
-    """The signer's signature image (as on ROSY's slip), or an empty cell for a wet signature."""
-    path = signature_path(signer)
-    if not path:
-        return ""
-    w, h = ImageReader(str(path)).getSize()
-    height = SIGN_H if w * SIGN_H / h <= 56 * mm else 56 * mm * h / w
-    return Image(str(path), width=w * height / h, height=height, mask="auto")
+def _verify_note(url: str, style: ParagraphStyle) -> Paragraph:
+    """Under the QR: what it is, and the address itself as a link — the slip is read on a phone, which cannot scan its
+    own screen, and in a PDF viewer the link opens the same page."""
+    shown = escape(url.split("://", 1)[-1])
+    return Paragraph(f'Pindai QR untuk memverifikasi keaslian slip<br/><link href="{escape(url, {chr(34): "&quot;"})}" '
+                     f'color="#1D4ED8">{shown}</link>', style)
+
+
+def _tanggal(iso: str) -> str:
+    """'15 Oktober 2026': tanggal WIB dari waktu ISO (UTC) yang disimpan."""
+    d = datetime.fromisoformat(iso).astimezone(WIB)
+    return f"{d.day} {BULAN[d.month - 1]} {d.year}"
+
+
+def _doc_line(slip: dict) -> str:
+    """Di bawah judul: nomor dokumen & tanggal terbit yang juga ditampilkan halaman verifikasi (user 15 Okt 2026), supaya
+    keduanya bisa dicocokkan. Draft belum punya keduanya — dan memang bukan slip resmi."""
+    if slip.get("status") != "approved":
+        return "<b>DRAFT</b> — belum disetujui; nomor dokumen diberikan saat disetujui"
+    parts = [f"No. <b>{escape(slip['doc_number'])}</b>"] if slip.get("doc_number") else []  # approved sebelum 15 Okt: tanpa nomor
+    if slip.get("approved_at"):
+        parts.append(f"Diterbitkan {_tanggal(slip['approved_at'])}")
+    return " · ".join(parts)
 
 
 def _rekening(emp: dict) -> str:
@@ -139,29 +157,53 @@ def _jam_menit(h) -> str:
     return f"{j} jam" if j else f"{m} menit"
 
 
+def _prorata_details(slip: dict) -> tuple:
+    """(gapok, jabatan, kehadiran): keterangan gaji tidak penuh (user 15 Okt 2026, engine.prorata), '' bila penuh —
+    'prorata 15/25 hari kerja, masuk 14 Sep' di Gaji Pokok, angka hari kerjanya saja di jabatan & kehadiran."""
+    pr = slip.get("prorata") or {}
+    basic = att = jabatan = ""
+    if pr.get("basic_factor", 1) < 1:
+        jabatan = f"prorata {pr['work_days']}/{pr['divisor']} hari kerja"
+        when = {"masuk": f"masuk {_tanggal_pendek(pr['from'])}", "keluar": f"keluar {_tanggal_pendek(pr['to'])}",
+                "masuk_keluar": f"{_tanggal_pendek(pr['from'])} s/d {_tanggal_pendek(pr['to'])}"}.get(pr["kind"])
+        basic = f"{jabatan}, {when}" if when else jabatan
+    if pr.get("attendance_factor", 1) < 1:
+        att = f"prorata {pr['attendance_days']}/{pr['divisor']} hari kerja" + (
+            " di luar cuti melahirkan" if pr.get("kind") == "cuti_melahirkan" else "")
+    return basic, jabatan, att
+
+
+def _tanggal_pendek(iso: str) -> str:
+    """'14 Sep' — tahunnya sudah ada di Periode slip; dengan tahun keterangan Gaji Pokok turun ke baris ketiga."""
+    d = date_cls.fromisoformat(iso[:10])
+    return f"{d.day} {BULAN[d.month - 1][:3]}"
+
+
 def payslip_lines(slip: dict) -> tuple:
     """PENDAPATAN and POTONGAN rows as printed (user requests 9 Oct): allowances in full under PENDAPATAN; every
     attendance-related cut under POTONGAN as just two lines — Potongan Presensi (lateness points plus sakit/cuti
     days, which only cut the attendance allowance) and Potongan Absensi (alfa/izin/cuti tanpa upah days: their
     attendance-allowance cut plus the gaji pokok and tunjangan jabatan cuts of the PPT). Both totals carry the
     cuts, so TOTAL PENDAPATAN - TOTAL POTONGAN = TOTAL DITERIMA. THR and Cicilan / Pinjaman (ROSY Tambahan Bulanan,
-    12 Oct) print only when set; divisi Pelayanan reads "Bonus Threshold" for the tunjangan jabatan (labels.py).
+    12 Oct) print only when set; a PJUnit reads "Bonus Threshold" for the tunjangan jabatan (labels.py, by jabatan).
     A PJUnit's Potongan Tidak Mencapai Target is already off their Bonus Threshold (engine, 13 Oct): that row says so,
-    even at Rp 0, and the potongan row shows only what the Bonus Threshold could not cover."""
+    even at Rp 0, with the note "Income Unit Minimal 20 jt" (user 14 Oct), and the potongan row shows only what the
+    Bonus Threshold could not cover."""
     split = "presence_penalty_amount" in slip  # slips calculated before 9 Oct only have the net allowance
-    # slips calculated before 12 Oct carry no label yet: derive it from their employee snapshot
+    # slips calculated before 12 Oct carry no label yet; their snapshot has no jabatan, so they read "Tunjangan
+    # Jabatan" — as they were issued, before "Bonus Threshold" existed
     jabatan = slip.get("position_allowance_label") or position_allowance_label(slip.get("employee"))
     from_bonus = slip.get("target_from_bonus", 0)
-    jabatan_detail = (f"{rp(slip['position_allowance'] + from_bonus)}, dipotong {rp(from_bonus)} karena tidak "
-                      "mencapai target") if from_bonus else ""
+    basic_pr, jabatan_pr, att_pr = _prorata_details(slip)
+    jabatan_detail = ", ".join(x for x in (PJUNIT_TARGET_NOTE if from_bonus else "", jabatan_pr) if x)
     presensi = slip.get("presence_penalty_amount", 0)
     absensi = (slip.get("absence_penalty_amount", 0) + slip["absent_deduction_amount"]
                + slip.get("position_deduction_amount", 0))
     kehadiran = (("Tunjangan Kehadiran", slip["attendance_allowance_base"]) if split
                  else ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"]))
-    earn = _shown([("Gaji Pokok", slip["basic_salary"], False),
+    earn = _shown([("Gaji Pokok", slip["basic_salary"], False, basic_pr),
                    (jabatan, slip["position_allowance"], bool(from_bonus), jabatan_detail),
-                   (*kehadiran, False),
+                   (*kehadiran, False, att_pr),
                    (f"Lembur ({_jam_menit(slip['overtime_hours'])})", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus", slip["additional_bonus"], False),
@@ -200,8 +242,11 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                              ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                              ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
-    # jarak kop → judul → identitas: +1 baris di bawah logo (9 Okt pagi sempat +3 baris, dinilai terlalu jauh)
-    els = [kop, Spacer(1, 20 + LINE), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Spacer(1, 18)]
+    # jarak kop → judul → identitas: +1 baris di bawah logo (9 Okt pagi sempat +3 baris, dinilai terlalu jauh).
+    # Baris nomor dokumen (15 Okt) memakai sebagian jarak judul → identitas: blok identitas tidak bergeser
+    doc_no = ParagraphStyle("no", parent=small, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
+    els = [kop, Spacer(1, 20 + LINE), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Paragraph(_doc_line(slip), doc_no),
+           Spacer(1, 18 - doc_no.leading)]
     # 5 kolom = garis tabel di bawahnya: kiri sejajar PENDAPATAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
     info = [["NIK:", emp["nik"], "", "Periode:", period["period_name"]],
             ["Nama:", emp["name"], "", "Status PTKP:", f"{slip['ptkp_status']} (TER {slip['ter_category']})"],
@@ -246,15 +291,24 @@ def render_payslip(slip: dict, period: dict) -> bytes:
                                     ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
     els += [total, Spacer(1, 6), disclaimer, Spacer(1, 12)]
     # Penandatangan = Document Signer payroll di ROSY (disimpan di periode saat sinkron); kosong bila belum ada.
-    # Gambar tanda tangannya juga dari ROSY; tanpa gambar, ruangnya tetap kosong
+    # "Tanda tangan"-nya QR verifikasi slip ini (user 14 Okt 2026, verify.py), bukan gambar tanda tangan; tanpa
+    # alamat verifikasi (slip lama / alamat belum bisa ditentukan) ruangnya tetap kosong
     signer = period.get("signer") or {}
-    sign = Table([["", "Disetujui oleh,"], ["", _signature(signer)], ["", signer.get("nama") or ""],
-                  ["", signer.get("jabatan") or ""]], colWidths=[106 * mm, 60 * mm],
-                 rowHeights=[5 * mm, 14 * mm, 5 * mm, 7 * mm])  # baris jabatan 7 mm: ada jarak di bawah garis
+    verify_url = slip.get("verify_url") or ""
+    caption = ParagraphStyle("q", parent=small, fontSize=6.5, leading=8, alignment=TA_CENTER,
+                             textColor=colors.HexColor("#475569"))
+    rows = [["", "Disetujui oleh,"], ["", _qr(verify_url) if verify_url else ""], ["", signer.get("nama") or ""],
+            ["", signer.get("jabatan") or ""]]
+    heights = [5 * mm, QR_SIZE + 2 * mm if verify_url else 14 * mm, 5 * mm, 7 * mm]  # jabatan 7 mm: jarak di bawah garis
+    if verify_url:
+        rows.append(["", _verify_note(verify_url, caption)])
+        heights.append(None)
+    sign = Table(rows, colWidths=[106 * mm, 60 * mm], rowHeights=heights)
     sign.hAlign = "LEFT"
     sign.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 0), (1, -1), "CENTER"),
                               ("VALIGN", (1, 1), (1, 1), "MIDDLE"),
                               ("TOPPADDING", (1, 1), (1, 1), 0), ("BOTTOMPADDING", (1, 1), (1, 1), 0),
+                              ("TOPPADDING", (1, 4), (1, 4), 0), ("BOTTOMPADDING", (1, 4), (1, 4), 0),
                               ("FONTNAME", (1, 2), (1, 2), "Helvetica-Bold"),
                               ("LINEBELOW", (1, 2), (1, 2), 0.5, NAVY)]))
     # 7 pt: satu baris (154 mm) di dalam lebar isi 166 mm — pada 8 pt sisa "tanpa izin HRD." turun sendirian

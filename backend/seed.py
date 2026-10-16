@@ -57,6 +57,10 @@ async def seed():
     await migrate_periods()
     await migrate_leave_types()
     await db.payslips.create_index([("payroll_period_id", 1), ("employee_id", 1)], unique=True)
+    # kode QR verifikasi slip (verify.py): dicari dari halaman publik, jadi harus unik & cepat; slip lama belum punya
+    await db.payslips.create_index("verify_code", unique=True, sparse=True, name="verify_code_unique")
+    # nomor dokumen slip (verify.py, 15 Okt 2026): dicetak di slip & halaman verifikasi, tidak boleh kembar
+    await db.payslips.create_index("doc_number", unique=True, sparse=True, name="doc_number_unique")
     await db.attendance_daily_logs.create_index([("employee_id", 1), ("work_date", 1)], unique=True)
     await db.overtime_claims.create_index([("payroll_period_id", 1), ("employee_id", 1)])
     await db.period_components.create_index([("payroll_period_id", 1), ("employee_id", 1)])

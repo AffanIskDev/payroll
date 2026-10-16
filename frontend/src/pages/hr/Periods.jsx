@@ -98,14 +98,14 @@ export default function Periods() {
               {list.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <td className="px-3 sm:px-5 py-3">
-                    <Link to={`/hr-manager/payroll/${p.id}`} className="tap font-semibold text-slate-900 hover:text-blue-900 hover:underline" data-testid={`period-name-${p.id}`}>{p.period_name}</Link>
+                    <Link to={`/hr-manager/payroll/${p.id}`} className="tap font-semibold text-slate-900 hover:text-brand-700 hover:underline" data-testid={`period-name-${p.id}`}>{p.period_name}</Link>
                     <div className="sm:hidden text-xs text-slate-500">{formatDateRange(p.start_date, p.end_date)}{p.payment_date ? ` · transfer ${formatDate(p.payment_date)}` : ""}</div>
                   </td>
                   <td className="hidden sm:table-cell px-5 py-3 text-slate-600 whitespace-nowrap">{formatDateRange(p.start_date, p.end_date)}</td>
                   <td className="hidden sm:table-cell px-5 py-3 text-slate-600 whitespace-nowrap">{p.payment_date ? formatDate(p.payment_date) : "-"}</td>
                   <td className="px-3 sm:px-5 py-3"><StatusBadge map={PERIOD_STATUS} status={p.status} testId={`period-status-${p.id}`} /></td>
                   <td className="px-3 sm:px-5 py-3 text-right whitespace-nowrap">
-                    <Link data-testid={`open-period-${p.id}`} to={`/hr-manager/payroll/${p.id}`} className="tap hidden sm:inline text-blue-900 font-semibold hover:underline">Buka</Link>
+                    <Link data-testid={`open-period-${p.id}`} to={`/hr-manager/payroll/${p.id}`} className="tap hidden sm:inline text-brand-700 font-semibold hover:underline">Buka</Link>
                     {(["draft", "revision"].includes(p.status) || (p.status === "pending_approval" && isManager(user))) && (
                       <button data-testid={`delete-period-${p.id}`} onClick={() => setDel(p)} className="tap sm:ml-3 p-1 rounded text-rose-600 hover:bg-rose-50 align-middle" title="Hapus periode"><Trash2 className="h-4 w-4" /></button>
                     )}

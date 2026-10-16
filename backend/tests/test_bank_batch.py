@@ -16,15 +16,16 @@ os.environ.setdefault("DB_NAME", "rasa_unit")
 import pytest  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 
-from bank_batch import build, clean, file_name, row_problems  # noqa: E402
+from bank_batch import approval_blockers, build, clean, file_name, row_problems  # noqa: E402
 
 HEADER_LINE = ("0|BENEFICIARY ACCT (35)|BENEFICIARY ACCT NAME |CREDIT AMOUNT CCY|AMOUNT|CUST REF NO|MESSAGE (65)|"
                "EXTENDED PAYMENT DETAIL|BENEFICIARY NOTIF EMAIL(100)|SMS NOTIF (100)|")
 
 
 def _emp(eid, name, acct="7123456789", code="BSI", bank="Bank Syariah Indonesia", acct_name=None):
+    # Nama di Rekening is required since 14 Oct 2026 (user): filled in with the employee's name unless a test says otherwise
     return {"id": eid, "name": name, "bank_code": code, "bank_name": bank, "bank_account_number": acct,
-            "bank_account_name": acct_name}
+            "bank_account_name": name if acct_name is None else acct_name}
 
 
 def _slip(eid, name, thp, nik=None, payroll_status="active", status="approved"):
@@ -79,6 +80,8 @@ def test_amount_is_rounded_down_and_the_total_is_the_sum_of_the_rows():
     (_emp("e", "X", acct="76487"), "Panjang rekening ganjil"),
     (_emp("e", "X", acct="1"), "Panjang rekening ganjil"),
     (_emp("e", "X", acct="0000000000"), "Rekening nol semua"),
+    (_emp("e", "X", acct_name=""), "Nama rekening kosong"),      # user 14 Oct 2026
+    (_emp("e", "X", acct_name="   "), "Nama rekening kosong"),
 ])
 def test_each_rosy_rule_blocks_the_row(emp, kind):
     assert [k for k, _ in row_problems(_slip("e", "X", 5000000), emp)] == [kind]
@@ -120,12 +123,16 @@ def test_unpaid_leave_with_money_on_the_slip_is_still_paid():
 
 
 # ---------------------------------------------------------------- name
-def test_name_prefers_nama_di_rekening_then_the_employee_name():
+def test_nama_di_rekening_is_written_as_is_and_required():
+    """User 14 Oct 2026: an empty Nama di Rekening holds the row back; the employee's name is no longer used instead."""
     emps = {"a": _emp("a", "Muhammad Affan Iskandarsyah", acct_name="M Affan Iskandarsyah"),
-            "b": _emp("b", "Dadang Suharto", acct_name="   "), "c": _emp("c", "", acct_name=None)}
-    res = build([_slip("a", "Muhammad Affan Iskandarsyah", 1), _slip("b", "Dadang Suharto", 1),
-                 _slip("c", "Nama Di Slip", 1)], emps, "2026-09", "x")
-    assert sorted(r[2] for r in _rows(res["text"])) == ["Dadang Suharto", "M Affan Iskandarsyah", "Nama Di Slip"]
+            "b": _emp("b", "Dadang Suharto", acct_name="   ")}
+    res = build([_slip("a", "Muhammad Affan Iskandarsyah", 1), _slip("b", "Dadang Suharto", 1, nik="N2")],
+                emps, "2026-09", "x")
+    assert res["problems"] == [{"nik": "N2", "name": "Dadang Suharto", "kind": "Nama rekening kosong",
+                                "note": "Nama di Rekening belum diisi di ROSY"}]
+    res = build([_slip("a", "Muhammad Affan Iskandarsyah", 1)], emps, "2026-09", "x")
+    assert [r[2] for r in _rows(res["text"])] == ["M Affan Iskandarsyah"]
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -150,6 +157,28 @@ def test_file_name_matches_rosy():
     assert file_name({"nama": "PT Rumah Perawatan Indonesia"}, "2026-12") == \
         "BatchPayment-PT-Rumah-Perawatan-Indonesia-Desember-2026.txt"
     assert file_name(None, "2026-01") == "BatchPayment-Januari-2026.txt"
+
+
+# ---------------------------------------------------------------- Lock & Approve (user 14 Oct 2026)
+def test_lock_and_approve_is_blocked_by_the_account_rules_only():
+    emps = {"ok": _emp("ok", "Oke"), "nm": _emp("nm", "Nina", acct_name=""),
+            "bni": _emp("bni", "Bayu", code="BNI", bank="Bank Negara Indonesia", acct="", acct_name=""),
+            "zero": _emp("zero", "Zaki"), "u": _emp("u", "Umi", acct="", acct_name=""), "done": _emp("done", "Dewi", acct_name="")}
+    res = approval_blockers([
+        _slip("ok", "Oke", 1000, status="draft"), _slip("nm", "Nina", 1000, nik="N-nm", status="draft"),
+        _slip("bni", "Bayu", 1000, nik="N-bni", status="draft"),
+        _slip("zero", "Zaki", 0, status="draft"),                                 # Rp 0 is the slip's business
+        _slip("u", "Umi", 0, status="draft", payroll_status="unpaid_leave"),      # nothing is transferred
+        _slip("done", "Dewi", 1000, status="approved"),                           # already locked
+        _slip("ghost", "Gita", 1000, nik="N-ghost", status="draft")], emps)       # not in RASA's employees
+    assert [(b["name"], [p["kind"] for p in b["problems"]]) for b in res] == [
+        ("Bayu", ["Bank bukan BSI", "Rekening kosong", "Nama rekening kosong"]),
+        ("Gita", ["Karyawan tidak ditemukan"]),
+        ("Nina", ["Nama rekening kosong"])]
+    assert {k: res[2][k] for k in ("employee_id", "nik", "bank", "account_number", "account_name")} == {
+        "employee_id": "nm", "nik": "N-nm", "bank": "Bank Syariah Indonesia", "account_number": "7123456789",
+        "account_name": ""}
+    assert approval_blockers([_slip("ok", "Oke", 1000, status="draft")], emps) == []
 
 
 # ---------------------------------------------------------------- endpoint

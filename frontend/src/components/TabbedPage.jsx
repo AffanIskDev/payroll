@@ -9,7 +9,7 @@ export const TabbedPage = ({ tabs, defaultTab }) => {
       {/* di HP tab setinggi ±36px supaya mudah disentuh; mulai sm kembali ke ukuran bawaan */}
       <TabsList className="mb-5 bg-slate-200/60 h-auto sm:h-9">
         {tabs.map(([k, label]) => (
-          <TabsTrigger key={k} value={k} data-testid={`tab-${k}`} className="data-[state=active]:bg-white data-[state=active]:text-blue-900 font-semibold py-2 sm:py-1.5">{label}</TabsTrigger>
+          <TabsTrigger key={k} value={k} data-testid={`tab-${k}`} className="data-[state=active]:bg-white data-[state=active]:text-brand-700 font-semibold py-2 sm:py-1.5">{label}</TabsTrigger>
         ))}
       </TabsList>
       {tabs.map(([k, , Comp]) => <TabsContent key={k} value={k}><Comp /></TabsContent>)}

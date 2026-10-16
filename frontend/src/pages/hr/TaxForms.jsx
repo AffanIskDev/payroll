@@ -21,14 +21,14 @@ export default function TaxForms() {
           {[2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
       </PageTitle>
-      <div className="mb-4 flex gap-2 text-xs bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-4 py-3">
+      <div className="mb-4 flex gap-2 text-xs bg-brand-50 border border-brand-200 text-brand-700 rounded-md px-4 py-3">
         <Info className="h-4 w-4 shrink-0" />
         <span>Hanya slip berstatus approved yang dihitung. Status "Sementara" berarti masa Desember belum di-approve. Nama & NPWP pemotong diatur di Konfigurasi.</span>
       </div>
       <Panel>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="a1-table">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>{["Nomor", "NIK", "Nama", "Masa", "PTKP", "Bruto", "Neto", "PKP", "PPh Terutang", "PPh Dipotong", "Selisih", "Status", ""].map((h) => <th key={h} className="text-left px-3 py-3">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -46,9 +46,9 @@ export default function TaxForms() {
                   <td className="px-3 py-3 num">{rp(r.items.i20)}</td>
                   <td className={`px-3 py-3 num ${r.difference > 0 ? "text-rose-600" : r.difference < 0 ? "text-emerald-600" : ""}`}>{rp(r.difference)}</td>
                   <td className="px-3 py-3">
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${r.is_complete ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300"}`}>{r.is_complete ? "Final" : "Sementara"}</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${r.is_complete ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-amber-50 text-amber-700 border-amber-300"}`}>{r.is_complete ? "Final" : "Sementara"}</span>
                   </td>
-                  <td className="px-3 py-3"><button data-testid={`a1-download-${r.nik}`} onClick={() => pdf(r)} className="tap inline-flex items-center gap-1 text-blue-900 font-semibold hover:underline whitespace-nowrap"><FileDown className="h-4 w-4" /> PDF</button></td>
+                  <td className="px-3 py-3"><button data-testid={`a1-download-${r.nik}`} onClick={() => pdf(r)} className="tap inline-flex items-center gap-1 text-brand-700 font-semibold hover:underline whitespace-nowrap"><FileDown className="h-4 w-4" /> PDF</button></td>
                 </tr>
               ))}
               {rows && !rows.length && <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-500">Belum ada data pajak untuk tahun {year}.</td></tr>}

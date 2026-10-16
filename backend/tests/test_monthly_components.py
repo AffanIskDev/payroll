@@ -55,13 +55,18 @@ def test_build_slip_takes_bonus_and_target_deduction_from_rosy(monkeypatch):
             assert (empty["transport_homecare"], empty["additional_bonus"], empty["target_deduction"],
                     empty["thr"], empty["loan_installment"]) == (0, 0, 0, 0, 0)
 
-            # divisi Pelayanan: the label is stored on the slip, so review page & PDF agree
-            pelayanan = await pipeline.build_slip(PERIOD, {**EMP, "department": "Pelayanan"}, {}, CFG)
-            assert pelayanan["position_allowance_label"] == "Bonus Threshold"
+            # only a PJUnit reads Bonus Threshold, not the whole Pelayanan department (user 14 Okt 2026): a Manajer
+            # Pelayanan keeps "Tunjangan Jabatan" and the potongan stays a potongan
+            manajer = await pipeline.build_slip(
+                PERIOD, {**EMP, "department": "Pelayanan", "position": "Manajer Pelayanan"}, {}, CFG)
+            assert manajer["position_allowance_label"] == "Tunjangan Jabatan"
+            assert (manajer["target_from_bonus"], manajer["target_deduction"]) == (0, 500000)
 
-            # PJUnit (13 Okt): the same ROSY potongan comes off their Bonus Threshold instead
+            # PJUnit (13 Okt): the same ROSY potongan comes off their Bonus Threshold instead; the label is stored on
+            # the slip, so review page & PDF agree
             pjunit = await pipeline.build_slip(
                 PERIOD, {**EMP, "department": "Pelayanan", "position": "Penanggung Jawab unit"}, {}, CFG)
+            assert pjunit["position_allowance_label"] == "Bonus Threshold"
             assert (pjunit["position_allowance"], pjunit["target_from_bonus"], pjunit["target_deduction"]) == \
                 (0, 500000, 0)
         finally:

@@ -9,7 +9,7 @@ const inp = "border border-slate-300 rounded-md px-2.5 py-1.5 text-sm bg-white w
 const Evidence = ({ photo, loc, tid }) => (
   <span className="inline-flex items-center gap-1">
     {photo && <a data-testid={`${tid}-photo`} href={photo} target="_blank" rel="noreferrer" className="text-teal-700" title="Foto wajah"><Camera className="h-3.5 w-3.5" /></a>}
-    {loc && <a data-testid={`${tid}-location`} href={`https://www.google.com/maps?q=${encodeURIComponent(loc)}`} target="_blank" rel="noreferrer" className="text-blue-800" title={loc}><MapPin className="h-3.5 w-3.5" /></a>}
+    {loc && <a data-testid={`${tid}-location`} href={`https://www.google.com/maps?q=${encodeURIComponent(loc)}`} target="_blank" rel="noreferrer" className="text-brand-600" title={loc}><MapPin className="h-3.5 w-3.5" /></a>}
   </span>
 );
 
@@ -47,7 +47,7 @@ export default function AttendanceView() {
       <Panel title={eid ? `${logs.length} log · lembur ${jamMenit(sumOt)}` : "Log presensi"}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="attendance-table">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>{["Tanggal", "Shift", "Masuk", "Pulang", "Telat", "Pulang Cepat", "Lupa Tap", "Lembur", "Jenis"].map((h) => <th key={h} className="text-left px-4 py-2.5">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100 num">

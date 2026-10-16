@@ -19,6 +19,7 @@ import integrations  # noqa: E402
 import routes_hr  # noqa: E402
 import routes_tax  # noqa: E402
 import routes_recap  # noqa: E402
+import routes_verify  # noqa: E402
 
 app = FastAPI(title="RASA")
 auth = APIRouter(prefix="/api/auth")
@@ -92,6 +93,7 @@ app.include_router(auth)
 app.include_router(routes_hr.router)
 app.include_router(routes_tax.router)
 app.include_router(routes_recap.router)
+app.include_router(routes_verify.router)  # tanpa login: dibuka dari QR di slip (user 14 Okt 2026)
 
 # Real ROSY accounts log in here: limit cross-origin credentialed calls to the frontend origin(s)
 _origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]

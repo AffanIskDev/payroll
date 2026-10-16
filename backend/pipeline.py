@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from core import db, now_iso, get_configs, actor
 from engine import compute_payslip
+import verify
 from labels import position_allowance_label
 from pdf_service import save_encrypted
 
@@ -86,7 +87,8 @@ async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = N
            "transport_homecare": comp.get("TRANSPORT_HOMECARE", 0), "additional_bonus": comp.get("BONUS", 0),
            "thr": comp.get("THR", 0), "target_deduction": comp.get("TARGET_DEDUCTION", 0),
            "loan_installment": comp.get("LOAN_INSTALLMENT", 0)}
-    calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp))
+    # period: masuk/keluar di tengah periode = gaji diprorata hari kerja (engine.prorata, user 15 Okt 2026)
+    calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp), period)
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     calc["position_allowance_label"] = position_allowance_label(emp)
     return calc
@@ -101,7 +103,9 @@ async def recalc_and_save(period: dict, emp: dict, adj: dict, notes: Optional[st
     doc = {**calc, "payroll_period_id": period["id"], "employee_id": emp["id"], "status": "draft",
            "is_manually_adjusted": manual or bool(existing and existing.get("is_manually_adjusted")),
            "adjustment_notes": notes if notes is not None else (existing or {}).get("adjustment_notes", ""),
-           "updated_at": now_iso()}
+           "updated_at": now_iso(),
+           # kode QR verifikasi: dibuat sekali dan dipertahankan di setiap hitung ulang, supaya Preview PDF = slip akhir
+           "verify_code": (existing or {}).get("verify_code") or verify.new_code()}
     if existing:
         doc["id"] = existing["id"]
         await db.payslips.update_one({"id": existing["id"]}, {"$set": doc})
@@ -127,8 +131,12 @@ async def process_period(period: dict) -> int:
 
 
 async def approve_slip(slip: dict, period: dict, user: dict) -> dict:
-    path = save_encrypted(slip, period)
-    upd = {"status": "approved", "pdf_path": path, "approved_by": actor(user), "approved_at": now_iso()}
+    # QR verifikasi (user 14 Okt 2026): kode, alamat di QR, nomor dokumen (15 Okt) dan penandatangan dibekukan bersama
+    # PDF yang dikunci; PDF itu sudah berstatus approved, jadi mencetak nomor & tanggal terbitnya
+    stamp = await verify.stamp(slip, period, await get_configs())
+    upd = {"status": "approved", "approved_by": actor(user), "approved_at": now_iso(), **stamp}
+    slip = {**slip, **upd}
+    upd["pdf_path"] = save_encrypted(slip, period)
     await db.payslips.update_one({"id": slip["id"]}, {"$set": upd})
     remaining = await db.payslips.count_documents({"payroll_period_id": period["id"], "status": {"$ne": "approved"}})
     if remaining == 0:

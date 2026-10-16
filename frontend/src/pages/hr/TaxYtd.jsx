@@ -40,7 +40,7 @@ export default function TaxYtd() {
         <Btn onClick={() => fileRef.current?.click()} disabled={busy} data-testid="ytd-import-button"><Upload className="h-4 w-4" /> {busy ? "Mengimpor..." : "Impor CSV / Excel"}</Btn>
         <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={upload} data-testid="ytd-file-input" />
       </PageTitle>
-      <div className="mb-4 flex gap-2 text-xs bg-blue-50 border border-blue-200 text-blue-900 rounded-md px-4 py-3">
+      <div className="mb-4 flex gap-2 text-xs bg-brand-50 border border-brand-200 text-brand-700 rounded-md px-4 py-3">
         <Info className="h-4 w-4 shrink-0" />
         <span>Kolom: nik, tax_year, cutoff_month (1–11), ptkp_status, gross_income_ytd (bruto pajak), employee_jht_jp_ytd, biaya_jabatan_ytd, pph21_paid_ytd, notes. Saldo awal mencakup Januari s/d cutoff_month; bulan setelahnya diambil dari slip di sistem.</span>
       </div>
@@ -52,7 +52,7 @@ export default function TaxYtd() {
       <Panel>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="ytd-table">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>{["NIK", "Nama", "Cutoff", "PTKP", "Bruto YTD", "JHT+JP Pekerja", "Biaya Jabatan", "PPh 21 Dibayar", "Catatan", ""].map((h) => <th key={h} className="text-left px-4 py-3">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -70,8 +70,33 @@ otomatis di-skip bila Mongo mati.
 
 ## Peta kode
 - `backend/engine.py` — hitung slip (PPh 21 TER/Pasal 17, BPJS, poin presensi & absensi, aturan PJUnit); fungsi murni
-- `backend/pipeline.py` susun slip dari data tersinkron · `integrations.py` feed HAM · `labels.py` aturan per divisi/jabatan
+  · gaji tidak penuh (`engine.prorata`, user 15 Okt 2026): faktor = hari kerja di masa aktif ÷ `DEFAULT_WORK_DAYS` (25), maks 1.
+  Masuk/keluar di tengah periode → gapok, jabatan & kehadiran × faktor; kembali dari cuti melahirkan di tengah periode → hanya
+  kehadiran (hari kerja di luar cuti), gapok & jabatan penuh; cuti melahirkan sepanjang periode tetap gapok saja. Hari kerja =
+  log HAM selain libur (alfa/izin/sakit tetap dihitung & tetap berpoin; poin/alfa = 1/25 nilai BULANAN, dibatasi nilai yang
+  diprorata); tanpa log (direksi bebas presensi) = Senin–Sabtu. BPJS tidak diprorata. Slip menyimpan `prorata`.
+- `backend/pipeline.py` susun slip dari data tersinkron · `integrations.py` feed HAM · `labels.py` label per jabatan (Bonus Threshold = PJ Unit)
 - `backend/routes_hr.py` API utama · `routes_tax.py` saldo YTD, 1721-A1, ekspor BSI · `pdf_service.py` slip PDF ·
   `bank_batch.py` TXT Batch Payment BSI
+- `backend/verify.py` + `routes_verify.py` — slip "ditandatangani" dengan QR per slip (bukan gambar tanda tangan). QR berisi
+  `{alamat}/verifikasi/{kode}`; halaman publik `frontend/src/pages/Verify.jsx` (tanpa login, tanpa nominal gaji) memanggil
+  `GET /api/verify/{kode}`. Alamat = setelan `SLIP_VERIFY_BASE_URL` (Konfigurasi), kosong = alamat frontend pertama di
+  `CORS_ORIGINS`; QR dibekukan saat slip di-approve. Alamat itu harus bisa dibuka dari HP karyawan (bukan localhost).
+  Saat di-approve slip juga mendapat nomor dokumen `doc_number` (`SG/RUMAT/2026/09/0001`, urutan per periode lewat
+  `$inc` atomik `payroll_periods.doc_seq`, Lock & Approve urut NIK) yang dicetak di bawah judul PDF bersama tanggal terbit
+  (draft: "DRAFT — belum disetujui"); halaman verifikasi menampilkan nomor, tanggal terbit, status penerbitan & persetujuan,
+  dan waktu pemeriksaan. Slip yang di-approve sebelum fitur nomor tidak punya nomor (baris ID Dokumen disembunyikan).
 - `frontend/src/pages/hr/*.jsx` — satu berkas per menu; `Workbench.jsx` = review slip per karyawan
 - Komentar bertanggal (mis. "user 13 Oct 2026") = keputusan bisnis dari user; jangan diubah tanpa konfirmasi.
+
+## Aturan tampilan (desain RUMAT, 14 Okt 2026) — wajib diikuti
+RASA harus terasa satu keluarga dengan ROSY dan RUMATku. Detail token ada di `design_guidelines.json`; ringkasnya:
+- **Warna**: hanya `brand-*` (teal RUMAT, `tailwind.config.js`) untuk primary, link, menu aktif, fokus. Jangan pakai `blue-*`/`indigo-*` atau hex baru di JSX.
+- **Font**: Nunito Sans (file di `src/fonts`, tanpa Google Fonts). Angka & rupiah: kelas `.num` (tabular-nums), **bukan** monospace.
+- **Ukuran teks** minimal `text-xs`. Huruf kapital semua hanya untuk header tabel.
+- **Merah (`rose-*`) hanya untuk masalah** (poin denda, ditolak, gagal). Potongan rutin seperti BPJS, PPh, Total Potongan ditulis `slate-700`.
+- **Tombol**: pakai komponen `Btn` di `components/common.jsx`. Satu baris aksi maksimal 3 gaya: primary, outline netral, bahaya. Tinggi minimal 40px.
+- **Kartu & panel**: `rounded-xl`, `border-slate-200`, `shadow-sm`; pakai `Panel`, `SummaryCard`, `PageTitle` yang sudah ada, jangan membuat versi sendiri.
+- **Logo**: ikon sementara di `HrLayout.jsx` dan `Login.jsx` (komentar `[LOGO RUMAT]`) diganti logo resmi saat filenya tersedia.
+- **Kartu angka** (Dashboard, halaman periode): pakai `AccentBody`/`SummaryCard` dengan prop `accent` — garis warna di kiri + angka berwarna. Warna hanya untuk makna, **cukup 4**: `brand` informasi biasa, `emerald` baik/selesai, `amber` perlu dicek, `rose` masalah. Jangan menambah warna per jenis angka (pajak, BPJS, dll). Angka 0 otomatis abu-abu.
+- **Menu**: warna teal medis `brand-700`, menu aktif putih. Sidebar kiri di layar ≥1024px (`HrLayout.jsx`), bar ikon di atas untuk tablet/HP. Satu elemen yang berubah bentuk, jadi `data-testid` menu tidak ganda. Menu baru cukup ditambahkan ke array `NAV`. Sidebar bisa diciutkan jadi ikon saja (tombol `sidebar-toggle`, pilihan disimpan di localStorage `rasa.menu.ciut`); lebarnya variabel CSS `--sidebar-w`, jadi elemen `fixed` di halaman memakai `lg:left-[var(--sidebar-w)]`.

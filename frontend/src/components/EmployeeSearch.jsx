@@ -24,7 +24,7 @@ export const EmployeeSearch = ({ employees, value, onChange }) => {
                 <Check className={`h-4 w-4 mr-2 ${e.id === value ? "opacity-100" : "opacity-0"}`} />
                 <div>
                   <div className="text-sm font-medium">{e.name}</div>
-                  <div className="text-[11px] text-slate-500 num">{e.nik} · {e.department}</div>
+                  <div className="text-xs text-slate-500 num">{e.nik} · {e.department}</div>
                 </div>
               </CommandItem>
             ))}

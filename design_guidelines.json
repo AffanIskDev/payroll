@@ -1,53 +1,51 @@
 {
   "app_identity": {
-    "name": "ROSY & Rumatku Payroll HRIS",
+    "name": "RASA — Aplikasi Penggajian RUMAT",
     "description": "Automated Indonesian Payroll HRIS system featuring waterfall attendance penalty, BPJS calculation with UMK Bekasi floor, PPh21 TER (Taraf Efektif Rata-Rata), HRD review/approve/lock workbench with two-column split, sticky real-time THP bar with terbilang rupiah, and employee mobile PWA interface with password-protected PDF payslips.",
-    "persona": "E1 Executive Corporate Precision & Modern Fintech Synergy",
+    "persona": "RUMAT: tenang, klinis, terpercaya — satu keluarga visual dengan ROSY & RUMATku",
     "language": "Bahasa Indonesia"
   },
   "color_system": {
-    "hrd_portal_rosy": {
-      "page_background": "#F8FAFC",
-      "card_background": "#FFFFFF",
-      "header_navy": "#0F172A",
-      "navigation_accent": "#1E3A8A",
-      "border": "#E2E8F0",
-      "editable_input_bg": "#FEF3C7",
-      "editable_input_border": "#F59E0B",
-      "editable_input_focus": "#D97706",
-      "thp_take_home_pay": "#059669",
-      "thp_bg_light": "#ECFDF5",
-      "penalty_deduction": "#DC2626",
-      "penalty_bg_light": "#FEF2F2"
+    "_aturan": "Satu warna brand untuk SEMUA aplikasi RUMAT (ROSY, RASA, RUMATku). Pakai kelas Tailwind brand-* dari tailwind.config.js. DILARANG blue-*, indigo-*, atau hex baru di JSX.",
+    "brand": {
+      "50": "#EEF7F8",
+      "100": "#D5ECEE",
+      "200": "#ADD9DD",
+      "300": "#7DBFC6",
+      "400": "#4A9EA8",
+      "500": "#2A818C",
+      "600": "#176C78",
+      "700": "#0E5E6B",
+      "800": "#0B4A55",
+      "900": "#093B44",
+      "950": "#062A31"
     },
-    "employee_portal_rumatku": {
-      "primary_teal": "#0D9488",
-      "accent_teal_light": "#14B8A6",
-      "soft_teal_bg": "#CCFBF1",
-      "hero_card_gradient": "linear-gradient(135deg, #0F766E 0%, #0D9488 50%, #14B8A6 100%)",
-      "card_white": "#FFFFFF",
-      "badge_security": "#FEF3C7",
-      "badge_security_text": "#92400E"
+    "peran": {
+      "primary_tombol_link_aktif": "brand-700 (hover brand-800)",
+      "header_aplikasi": "brand-700 (teal medis), menu aktif putih dengan teks brand-700",
+      "halaman": "#F6F8F8 (bg-background)",
+      "kartu": "white + border-slate-200 + rounded-xl",
+      "teks_utama": "slate-900",
+      "teks_sekunder": "slate-600"
     },
-    "status_colors": {
-      "draft": { "bg": "#F1F5F9", "text": "#475569", "border": "#CBD5E1" },
-      "calculated": { "bg": "#EFF6FF", "text": "#1D4ED8", "border": "#93C5FD" },
-      "reviewed": { "bg": "#FEF3C7", "text": "#B45309", "border": "#FCD34D" },
-      "approved": { "bg": "#ECFDF5", "text": "#047857", "border": "#6EE7B7" },
-      "locked": { "bg": "#F3E8FF", "text": "#6B21A8", "border": "#D8B4FE" }
+    "makna_status": {
+      "sukses_thp": "emerald-600/700",
+      "peringatan": "amber-50 latar, amber-700/900 teks",
+      "bahaya_hanya_untuk_masalah": "rose-600/700 (poin denda, ditolak, gagal). Potongan normal (BPJS, PPh, total potongan) BUKAN merah: slate-700",
+      "input_editable": "amber (khusus workbench, tetap)"
     }
   },
   "typography": {
-    "primary_font": "Plus Jakarta Sans, Inter, system-ui, sans-serif",
-    "tabular_numbers": "font-mono tabular-nums",
+    "_aturan": "Satu font: Nunito Sans (di-host sendiri di src/fonts, tanpa Google Fonts). Angka/rupiah memakai font yang sama + kelas .num (tabular-nums). DILARANG font monospace untuk angka.",
+    "primary_font": "Nunito Sans Variable, Nunito Sans, system-ui, sans-serif",
+    "ukuran_minimum": "text-xs (12px). DILARANG text-[10px] / text-[11px].",
     "hierarchy": {
-      "h1_dashboard_title": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
-      "h2_section_header": "text-lg sm:text-xl font-semibold text-slate-800",
-      "h3_card_header": "text-base font-medium text-slate-700",
-      "body": "text-sm text-slate-600 leading-normal",
-      "caption_label": "text-xs font-medium text-slate-500 uppercase tracking-wider",
-      "currency_large": "text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums",
-      "currency_thp_sticky": "text-xl sm:text-2xl font-black tabular-nums text-emerald-600"
+      "h1": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+      "judul_panel": "text-base font-bold text-slate-900 (bukan huruf kapital semua)",
+      "label_kartu": "text-sm font-semibold text-slate-600 (bukan huruf kapital semua)",
+      "header_tabel": "text-xs uppercase tracking-wider text-slate-500 (satu-satunya tempat huruf kapital semua)",
+      "body": "text-sm text-slate-700",
+      "angka_kartu": "num text-2xl font-extrabold"
     }
   },
   "layout_and_spacing": {
@@ -114,7 +112,12 @@
       "classes": "bg-amber-100/80 border-2 border-amber-400 focus:border-amber-600 focus:bg-amber-50 text-slate-900 font-semibold px-3 py-1.5 rounded text-right tabular-nums transition-all outline-none shadow-inner",
       "usage": "Used ONLY for editable values in HRD Workbench (Lembur, KPI, Bonus, Kompensasi Denda, Kasbon)."
     },
-    "data_testid_convention": "All interactive elements (buttons, inputs, select, modal triggers, tables, switches) MUST include kebab-case data-testid attributes (e.g., data-testid='input-overtime-hours', data-testid='btn-approve-payroll', data-testid='download-pdf-fab')."
+    "data_testid_convention": "All interactive elements (buttons, inputs, select, modal triggers, tables, switches) MUST include kebab-case data-testid attributes (e.g., data-testid='input-overtime-hours', data-testid='btn-approve-payroll', data-testid='download-pdf-fab').",
+    "tombol": {
+      "_aturan": "Maksimal 3 gaya tombol di satu baris aksi: primary (Btn variant=primary, brand-700), outline netral (variant=outline), dan bahaya (outline rose) hanya untuk aksi menolak/menghapus. Tinggi minimal 40px (sentuh di tablet).",
+      "ekspor_unduh": "outline netral, bukan hijau"
+    },
+    "bahasa_ui": "Bahasa Indonesia baku. Istilah Inggris hanya yang sudah baku di HRD RUMAT dan disepakati tim (lihat glosarium di CLAUDE.md)."
   },
   "image_urls": [
     {
