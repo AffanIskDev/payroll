@@ -4,7 +4,10 @@ User decision 9 Oct 2026: no user management in RUSA — access follows the empl
 - manager_hrd: level General Manager (oversees HRD), or a Manager-level HRD position in Human Capital
 - supervisor:  a Koordinator-level (SPV) HRD position in Human Capital
 Other Human Capital positions (Supervisor Klinik, Supervisor Diklat, staff) get no access: payroll shows
-everyone's salary."""
+everyone's salary.
+Test accounts (user 16 Oct 2026, for IT testing on production): HAM marks the accounts listed in its
+PAYROLL_AUTH_AKUN_UJI as akun_uji (they may log in although their employee is inactive, so they never enter
+the payroll feed). They are always a Supervisor, whatever their position: approving stays with the Manager HRD."""
 import os
 
 ROLE_LABELS = {"manager_hrd": "Manager HRD", "supervisor": "Supervisor"}
@@ -15,8 +18,10 @@ def _norm(v) -> str:
     return " ".join(str(v or "").split()).lower()
 
 
-def role_for(jabatan: list) -> str | None:
-    """Highest role over the employee's positions; None = no access."""
+def role_for(jabatan: list, akun_uji: bool = False) -> str | None:
+    """Highest role over the employee's positions; None = no access. A test account is always a Supervisor."""
+    if akun_uji:
+        return "supervisor"
     dept_ham = _norm(os.environ.get("RASA_DEPT_HAM", "DEP-0001"))
     best = None
     for j in jabatan or []:

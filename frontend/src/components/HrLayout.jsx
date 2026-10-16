@@ -69,6 +69,12 @@ export default function HrLayout() {
         </div>
       </aside>
       <main className="flex-1 min-w-0">
+        {/* Akun uji IT (user 16 Okt 2026, HAM PAYROLL_AUTH_AKUN_UJI): selalu Supervisor, tapi datanya data gaji asli */}
+        {user?.akun_uji && (
+          <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 sm:px-6 py-2" data-testid="akun-uji-banner">
+            <b>Akun uji</b> — peran Supervisor untuk pengujian. Data yang tampil adalah data gaji asli; approve tetap oleh Manager HRD.
+          </div>
+        )}
         {/* 1600 px (dulu 1400, user 15 Okt 2026): tabel review periode yang penuh angka muat tanpa digeser di layar lebar */}
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
           <Outlet />

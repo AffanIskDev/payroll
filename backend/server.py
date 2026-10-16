@@ -51,10 +51,11 @@ async def login(body: LoginIn, request: Request, response: Response):
                 "$inc": {"count": 1}, "$set": {"locked_until": (now + timedelta(minutes=15)).isoformat()}}, upsert=True)
         raise
     await db.login_attempts.delete_one({"identifier": key})
-    role = role_for(acc.get("jabatan"))
+    akun_uji = acc.get("akun_uji") is True   # HAM PAYROLL_AUTH_AKUN_UJI (user 16 Oct 2026): IT's test account
+    role = role_for(acc.get("jabatan"), akun_uji)
     fields = {"username": acc.get("username") or username, "name": acc.get("nama") or username, "role": role,
               "rosy_employee_id": acc.get("employee_id"), "jabatan": acc.get("jabatan") or [],
-              "last_login_at": now_iso()}
+              "akun_uji": akun_uji, "last_login_at": now_iso()}
     # Upsert even without access: a known user whose position no longer qualifies loses the role at once,
     # which also invalidates the tokens they still hold (get_current_user re-reads the role every request)
     await db.users.update_one({"rosy_user_id": acc["user_id"]}, {
@@ -70,7 +71,7 @@ async def login(body: LoginIn, request: Request, response: Response):
 def _issue(user: dict, response: Response) -> dict:
     token = create_access_token(user["id"], user["role"])
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none", max_age=43200, path="/")
-    return {"token": token, "user": {k: user.get(k) for k in ("id", "username", "name", "role")}}
+    return {"token": token, "user": {k: user.get(k) for k in ("id", "username", "name", "role", "akun_uji")}}
 
 
 @auth.post("/logout")

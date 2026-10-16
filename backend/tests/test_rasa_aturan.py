@@ -60,6 +60,15 @@ def test_access_department_comes_from_env(monkeypatch):
     assert role_for([_pos("Supervisor HRD", "Koordinator", "DEP-0099")]) == "supervisor"
 
 
+def test_a_test_account_is_always_a_supervisor():
+    """HAM akun_uji (user 16 Oct 2026): IT's test account masterdata holds the Manajer HRD position of an inactive
+    employee; it may test, but approving stays with the real Manager HRD."""
+    assert role_for([_pos("Manajer HRD", "Manager", "DEP-0001")], akun_uji=True) == "supervisor"
+    assert role_for([_pos("Staff IT Support", "Staff", "DEP-0007")], akun_uji=True) == "supervisor"
+    assert role_for([], akun_uji=True) == "supervisor"
+    assert role_for([_pos("Manajer HRD", "Manager", "DEP-0001")]) == "manager_hrd"   # without the flag: unchanged
+
+
 # ---------------------------------------------------------------- periods
 def test_period_name_is_automatic_within_one_month():
     assert period_name_for("2026-10-01", "2026-10-31") == "Oktober 2026"
