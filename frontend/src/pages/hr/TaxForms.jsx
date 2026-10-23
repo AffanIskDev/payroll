@@ -3,11 +3,13 @@ import { FileDown, Info } from "lucide-react";
 import { toast } from "sonner";
 import { api, saveFile, blobErrMsg } from "@/lib/api";
 import { rp } from "@/lib/format";
-import { PageTitle, Panel } from "@/components/common";
+import { PageTitle, Panel, NameFilter, matchName } from "@/components/common";
 
 export default function TaxForms() {
   const [year, setYear] = useState(2026);
   const [rows, setRows] = useState(null);
+  const [nameQ, setNameQ] = useState("");
+  const shown = rows?.filter((r) => matchName(r.name, nameQ));
   const load = useCallback(() => api.get("/hr/tax-forms/1721a1", { params: { year } }).then((r) => setRows(r.data)), [year]);
   useEffect(() => { load(); }, [load]);
 
@@ -17,6 +19,7 @@ export default function TaxForms() {
   return (
     <div>
       <PageTitle title="Bukti Potong 1721-A1" subtitle="Rekap tahunan dari slip approved + saldo awal YTD">
+        <NameFilter value={nameQ} onChange={setNameQ} testId="a1-name-filter" />
         <select data-testid="a1-year-select" value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white">
           {[2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
@@ -32,7 +35,7 @@ export default function TaxForms() {
               <tr>{["Nomor", "NIK", "Nama", "Masa", "PTKP", "Bruto", "Neto", "PKP", "PPh Terutang", "PPh Dipotong", "Selisih", "Status", ""].map((h) => <th key={h} className="text-left px-3 py-3">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows?.map((r) => (
+              {shown?.map((r) => (
                 <tr key={r.employee_id} className="hover:bg-slate-50" data-testid={`a1-row-${r.nik}`}>
                   <td className="px-3 py-3 num text-xs">{r.number}</td>
                   <td className="px-3 py-3 num">{r.nik}</td>
@@ -52,6 +55,7 @@ export default function TaxForms() {
                 </tr>
               ))}
               {rows && !rows.length && <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-500">Belum ada data pajak untuk tahun {year}.</td></tr>}
+              {rows?.length > 0 && !shown.length && <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-500" data-testid="a1-name-empty">Tidak ada nama yang cocok dengan "{nameQ}".</td></tr>}
             </tbody>
           </table>
         </div>

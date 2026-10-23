@@ -46,7 +46,7 @@ async def dashboard():
     stats = {"employees": await db.employees.count_documents({}), "periods": len(periods), "latest_period": latest}
     if latest:
         slips = await db.payslips.find({"payroll_period_id": latest["id"]}, {"_id": 0}).to_list(2000)
-        stats.update(total_thp=sum(s["take_home_pay"] for s in slips), total_pph21=sum(s["pph21_amount"] for s in slips),
+        stats.update(total_thp=sum(s["take_home_pay"] for s in slips), total_pph21=sum(s.get("pph21_withheld", s["pph21_amount"]) for s in slips),
                      total_gross=sum(s["gross_earnings"] for s in slips),
                      total_bpjs_kes=sum(s["iuran_bpjs_kes_total"] for s in slips),
                      total_bpjs_tk=sum(s["iuran_bpjs_tk_total"] for s in slips),
@@ -102,8 +102,16 @@ PAYROLL_TOTALS = (("thp", "take_home_pay"), ("pph21", "pph21_amount"), ("bpjs_ke
                   ("bpjs_tk", "iuran_bpjs_tk_total"))
 
 
+def _total_of(s: dict, field: str) -> float:
+    # PPh 21 on the cards = what is withheld, never negative (a final-month overpayment is paid back as income, 21 Oct 2026);
+    # slips calculated before that have no pph21_withheld and keep their signed amount
+    if field == "pph21_amount" and "pph21_withheld" in s:
+        return s["pph21_withheld"] or 0
+    return s.get(field) or 0
+
+
 def _totals(slips: list) -> dict:
-    return {f"total_{k}": sum(s.get(f) or 0 for s in slips) for k, f in PAYROLL_TOTALS}
+    return {f"total_{k}": sum(_total_of(s, f) for s in slips) for k, f in PAYROLL_TOTALS}
 
 
 def _delta(now: float, before: float) -> dict:
@@ -140,7 +148,7 @@ async def dashboard_employees(pid: Optional[str] = None):
     slips = {s["employee_id"]: s async for s in db.payslips.find({"payroll_period_id": period["id"]}, {
         "_id": 0, "employee_id": 1, "employee.nik": 1, "employee.name": 1, "status": 1, "payroll_status": 1,
         "wage_multiplier": 1, "maternity_basic_only": 1, "discipline.presence_by_type": 1, "prorata": 1, "take_home_pay": 1,
-        "pph21_amount": 1, "iuran_bpjs_kes_total": 1, "iuran_bpjs_tk_total": 1})}
+        "pph21_amount": 1, "pph21_withheld": 1, "iuran_bpjs_kes_total": 1, "iuran_bpjs_tk_total": 1})}
 
     def item(e: dict, note: str) -> dict:
         return {"employee_id": e.get("id"), "nik": e.get("nik"), "name": e.get("name"), "note": note,
@@ -198,7 +206,8 @@ async def dashboard_employees(pid: Optional[str] = None):
     compare = None
     if prev:
         before = _totals(await db.payslips.find({"payroll_period_id": prev["id"]},
-                                                {"_id": 0, **{f: 1 for _, f in PAYROLL_TOTALS}}).to_list(2000))
+                                                {"_id": 0, "pph21_withheld": 1,
+                                                 **{f: 1 for _, f in PAYROLL_TOTALS}}).to_list(2000))
         compare = {"period_name": prev["period_name"],
                    "in_period": _delta(len(ids), len(prev.get("employee_ids") or [])),
                    **{k: _delta(payroll[k], v) for k, v in before.items()}}

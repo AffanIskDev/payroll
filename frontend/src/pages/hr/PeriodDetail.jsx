@@ -44,8 +44,15 @@ const nameList = (rows) => {
 // Tampilan tabel (cari, departemen, filter, halaman) diingat per periode selama tab terbuka, supaya kembali dari Review
 // ke posisi yang sama; baris per halaman diingat di peramban ini. Penyimpanan ditolak peramban → pakai bawaan.
 const viewKey = (pid) => `rasa.periode.${pid}`;
+// Dipulihkan HANYA saat kembali dari Review karyawan (user 21 Okt 2026: membuka periode lagi dari daftar Payroll harus mulai
+// dari "Semua" tanpa cari/filter yang tersisa). Penanda dipasang saat halaman periode ditinggalkan menuju Review, dipakai
+// sekali oleh kunjungan berikutnya, lalu dihapus.
+const returnKey = (pid) => `${viewKey(pid)}.kembali`;
 const readView = (pid) => {
-  try { return JSON.parse(sessionStorage.getItem(viewKey(pid))) || {}; } catch { return {}; }
+  try {
+    if (sessionStorage.getItem(returnKey(pid)) !== "1") return {};
+    return JSON.parse(sessionStorage.getItem(viewKey(pid))) || {};
+  } catch { return {}; }
 };
 const PER_PAGE_KEY = "rasa.periode.perHalaman";
 const PER_PAGE = [25, 50, 100, 0]; // 0 = semua
@@ -63,6 +70,10 @@ const pageItems = (cur, total) => {
 };
 
 // angka 0 dipudarkan supaya yang berisi menonjol
+// PPh 21 yang dipotong, tak pernah minus: lebih bayar masa terakhir dikembalikan sebagai Pendapatan (user 21 Okt 2026);
+// slip lama tanpa `pph21_withheld` tetap memakai angka bertandanya
+const pphOf = (s) => s.pph21_withheld ?? s.pph21_amount;
+
 const RpCell = ({ v, tone }) => <td className={`px-3 py-3 num text-right whitespace-nowrap ${v ? tone : "text-slate-400"}`}>{rp(v)}</td>;
 
 const PageBtn = ({ active, className = "", ...p }) => (
@@ -105,6 +116,14 @@ function PeriodDetail({ pid }) {
   useEffect(() => {
     try { sessionStorage.setItem(viewKey(pid), JSON.stringify({ q, dept, filter, page })); } catch { /* tanpa penyimpanan: tetap jalan */ }
   }, [pid, q, dept, filter, page]);
+  // penanda "kembali dari Review": dihapus begitu halaman terbuka (keadaan awal sudah dibaca saat render pertama), dipasang
+  // lagi hanya bila halaman ini ditinggalkan menuju Review karyawan — lewat klik tautan maupun tombol maju/mundur peramban
+  useEffect(() => {
+    try { sessionStorage.removeItem(returnKey(pid)); } catch { /* tanpa penyimpanan: tetap jalan */ }
+    return () => {
+      try { if (window.location.pathname.includes("/employee/")) sessionStorage.setItem(returnKey(pid), "1"); } catch { /* idem */ }
+    };
+  }, [pid]);
 
   const act = async (path, msg, body) => {
     setBusy(true);
@@ -198,12 +217,18 @@ function PeriodDetail({ pid }) {
   // kartu nominal (seluruh periode)
   const sum = (f) => payslips.reduce((a, s) => a + (f(s) || 0), 0);
   const kpi = {
-    thp: sum((s) => s.take_home_pay), gross: sum((s) => s.gross_earnings), pph: sum((s) => s.pph21_amount),
+    thp: sum((s) => s.take_home_pay), gross: sum((s) => s.gross_earnings), pph: sum(pphOf),
     bpjsCo: sum((s) => (s.tunjangan_bpjs_kes || 0) + (s.tunjangan_bpjs_tk || 0)),
     kes: sum((s) => s.iuran_bpjs_kes_total), tk: sum((s) => s.iuran_bpjs_tk_total),
   };
-  const taxed = payslips.filter((s) => s.pph21_amount > 0).length;
-  const december = payslips.some((s) => s.pph21_method === "pasal17");
+  const taxed = payslips.filter((s) => pphOf(s) > 0).length;
+  // slip Pasal 17 di luar Desember = masa pajak terakhir karyawan keluar (user 20 Okt 2026); slip lama tanpa kind = Desember
+  const december = payslips.some((s) => s.pph21_method === "pasal17" && s.tax_reconciliation?.kind !== "keluar");
+  const finalExits = payslips.filter((s) => s.tax_reconciliation?.kind === "keluar").length;
+  // lebih bayar PPh 21 masa terakhir: dikembalikan ke karyawan sebagai Pendapatan (user 21 Okt 2026); kartu PPh 21 tetap
+  // setoran neto, jadi jumlah ini dijelaskan di keterangannya
+  const refunds = payslips.filter((s) => s.pph21_refund > 0);
+  const refundTotal = refunds.reduce((a, s) => a + s.pph21_refund, 0);
   const wd = payslips[0]?.work_days || 25;
   const kotor = payslips[0]?.pph21_basis === "kotor";
 
@@ -301,7 +326,7 @@ function PeriodDetail({ pid }) {
         <KpiCard accent="brand" label="Total Bruto (Penghasilan)" value={rp(kpi.gross)} testId="kpi-gross"
           sub={<>Termasuk iuran BPJS perusahaan <span className="num">{rp(kpi.bpjsCo)}</span></>} />
         <KpiCard accent="brand" label={december ? "Total PPh 21 (Desember · Pasal 17)" : "Total PPh 21 (TER Bulanan)"} value={rp(kpi.pph)} testId="kpi-pph21"
-          sub={<><span className="num">{taxed}</span> dari <span className="num">{payslips.length}</span> karyawan kena pajak · PP 58/2023</>} />
+          sub={<><span className="num">{taxed}</span> dari <span className="num">{payslips.length}</span> karyawan kena pajak · PP 58/2023{!december && finalExits > 0 && <> · <span className="num">{finalExits}</span> karyawan keluar: masa terakhir Pasal 17</>}{refunds.length > 0 && <> · lebih bayar <span className="num">{rp(refundTotal)}</span> dikembalikan ke <span className="num">{refunds.length}</span> karyawan (masuk Pendapatan)</>}</>} />
         <KpiCard accent="brand" label="Total BPJS (Kes + TK)" value={rp(kpi.kes + kpi.tk)} testId="kpi-bpjs"
           sub={<>Kes <span className="num">{rp(kpi.kes)}</span> · TK <span className="num">{rp(kpi.tk)}</span></>} />
       </div>
@@ -455,14 +480,16 @@ function PeriodDetail({ pid }) {
                       <td className={`px-3 py-2.5 min-w-[11rem] bg-white group-hover:bg-slate-50 ${STICKY}`}>
                         <div className="font-semibold leading-snug">
                           <Link to={link} className="tap text-slate-900 hover:text-brand-700 hover:underline">{s.employee.name}</Link>
+                          {s.employment?.status === "keluar" && <span title={`Karyawan keluar ${formatDate(s.employment.exit_date)}${s.employment.final_tax ? " — PPh 21 dihitung masa pajak terakhir (Pasal 17), bukan TER bulanan" : ""}`} className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-xs font-semibold text-slate-700" data-testid={`keluar-badge-${nik}`}>KELUAR {formatDate(s.employment.exit_date)}</span>}
                           {s.is_manually_adjusted && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">EDIT</span>}
                           {blocker && <span title={blocker.problems.map((p) => `${p.kind}: ${p.note}`).join("\n")} className="ml-2 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700" data-testid={`bank-badge-${nik}`}>REKENING</span>}
                         </div>
                         <div className="num text-xs text-slate-500 whitespace-nowrap">{nik} · {s.ptkp_status}</div>
+                        {s.employee.position && <div data-testid={`position-${nik}`} className="text-xs text-slate-500 whitespace-nowrap">{s.employee.position}</div>}
                       </td>
                       <RpCell v={s.gross_earnings} tone={MONEY[0][1]} />
                       <RpCell v={s.taxable_gross} tone={MONEY[1][1]} />
-                      <RpCell v={s.pph21_amount} tone={MONEY[2][1]} />
+                      <RpCell v={pphOf(s)} tone={MONEY[2][1]} />
                       <td className={`px-3 py-3 num text-right ${s.late_penalty_points ? "font-semibold text-rose-600" : "text-slate-400"}`} data-testid={`poin-presensi-${nik}`}>{s.late_penalty_points || 0}</td>
                       <td className={`px-3 py-3 num text-right ${s.absence_points ? "font-semibold text-rose-600" : "text-slate-400"}`} data-testid={`poin-absensi-${nik}`}>{s.absence_points ?? 0}</td>
                       <RpCell v={s.total_deductions} tone={MONEY[5][1]} />
@@ -483,7 +510,7 @@ function PeriodDetail({ pid }) {
                   <tr>
                     <td className={`px-3 py-3 text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap bg-slate-50 ${STICKY}`}>Total <span className="num">{rows.length}</span> karyawan</td>
                     {MONEY.map((m, i) => (m
-                      ? <td key={m[0]} className="px-3 py-3 num text-xs text-right whitespace-nowrap text-slate-900" data-testid={`total-${m[0]}`}>{rp(rows.reduce((a, s) => a + (s[m[0]] || 0), 0))}</td>
+                      ? <td key={m[0]} className="px-3 py-3 num text-xs text-right whitespace-nowrap text-slate-900" data-testid={`total-${m[0]}`}>{rp(rows.reduce((a, s) => a + ((m[0] === "pph21_amount" ? pphOf(s) : s[m[0]]) || 0), 0))}</td>
                       : <td key={`poin-${i}`} />))}
                     <td />
                   </tr>

@@ -12,7 +12,7 @@ from pdf_service import save_encrypted
 
 ADJ_KEYS = ("overtime_hours", "kpi_incentive", "additional_bonus", "other_deductions")
 EMP_SNAPSHOT = ("id", "nik", "name", "email", "department", "birth_date", "bank_name", "bank_code", "bank_account_number",
-                "gender")
+                "gender", "position")
 
 
 async def period_logs(emp_id: str, period: dict) -> list:
@@ -35,14 +35,42 @@ async def get_employee(eid: str) -> dict:
     return e
 
 
+def final_tax_kind(period: dict, emp: dict) -> Optional[str]:
+    """Masa pajak terakhir PPh 21 (PMK 168/2023): "desember", atau "keluar" bila tanggal keluar karyawan (ROSY) jatuh di
+    periode ini sebelum Desember (user 20 Okt 2026) — slip itu dihitung Pasal 17 atas penghasilan Januari s/d bulan
+    keluar, sehingga lebih/kurang bayarnya selesai di slip terakhir. None = bulan biasa (TER)."""
+    if period["end_date"][5:7] == "12":
+        return "desember"
+    leave = emp.get("exit_date")
+    if leave and period["start_date"] <= leave <= period["end_date"] and leave[:4] == period["end_date"][:4]:
+        return "keluar"
+    return None
+
+
+def employment_info(period: dict, emp: dict) -> dict:
+    """Status kerja karyawan terhadap periode ini, untuk HRD (user 21 Okt 2026): kenapa PPh 21-nya dihitung lain.
+    status "keluar" = tanggal keluar ROSY sudah lewat atau jatuh di periode (masa pajak terakhir); "aktif" = sisanya,
+    `exit_planned` bila tanggal keluarnya baru di periode berikutnya (slip ini masih TER)."""
+    leave, start, end = emp.get("exit_date"), period["start_date"], period["end_date"]
+    left = bool(leave) and leave <= end
+    return {"status": "keluar" if left else "aktif", "exit_date": leave if left else None,
+            "exit_planned": leave if leave and not left else None, "join_date": emp.get("join_date"),
+            "joined_in_period": bool(emp.get("join_date")) and start < emp["join_date"] <= end,
+            "final_tax": final_tax_kind(period, emp)}
+
+
 async def december_context(period: dict, emp: dict) -> Optional[dict]:
-    if period["end_date"][5:7] != "12":
+    """Bahan rekonsiliasi masa pajak terakhir (Desember atau bulan keluar, lihat final_tax_kind): saldo awal YTD +
+    slip sistem sesudah cutoff s/d sebelum bulan periode ini."""
+    kind = final_tax_kind(period, emp)
+    if not kind:
         return None
-    year = int(period["end_date"][:4])
+    year, month = int(period["end_date"][:4]), int(period["end_date"][5:7])
     init = await db.employee_tax_initial_balances.find_one({"employee_id": emp["id"], "tax_year": year}, {"_id": 0})
     cutoff = int((init or {}).get("cutoff_month") or 0)
     pids = {p["id"] async for p in db.payroll_periods.find(
-        {"id": {"$ne": period["id"]}, "end_date": {"$gte": f"{year}-{cutoff + 1:02d}-01", "$lt": f"{year}-12-01"}},
+        {"id": {"$ne": period["id"]},
+         "end_date": {"$gte": f"{year}-{cutoff + 1:02d}-01", "$lt": f"{year}-{month:02d}-01"}},
         {"_id": 0, "id": 1})}
     slips = await db.payslips.find({"employee_id": emp["id"], "payroll_period_id": {"$in": list(pids)}},
                                    {"_id": 0, "taxable_gross": 1, "pph21_amount": 1, "bpjs": 1}).to_list(12)
@@ -54,6 +82,7 @@ async def december_context(period: dict, emp: dict) -> Optional[dict]:
         "system_gross": sum(s["taxable_gross"] for s in slips),
         "system_jht_jp": sum(s["bpjs"]["jht_employee"] + s["bpjs"]["jp_employee"] for s in slips),
         "system_pph21": sum(s["pph21_amount"] for s in slips), "system_months": len(slips),
+        "kind": kind, "final_month": month,
     }
 
 
@@ -90,6 +119,7 @@ async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = N
     # period: masuk/keluar di tengah periode = gaji diprorata hari kerja (engine.prorata, user 15 Okt 2026)
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp), period)
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
+    calc["employment"] = employment_info(period, emp)
     calc["position_allowance_label"] = position_allowance_label(emp)
     return calc
 

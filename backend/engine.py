@@ -240,7 +240,9 @@ def annual_tax_summary(gross_year: float, jht_jp_year: float, months: int, ptkp:
 
 
 def december_reconciliation(ctx: dict, dec_taxable: float, dec_jht_jp: float, ptkp: str) -> dict:
-    """Rekonsiliasi PPh 21 masa Desember (Pasal 17 UU HPP)."""
+    """Rekonsiliasi PPh 21 masa pajak terakhir (Pasal 17 UU HPP): Desember, atau bulan karyawan keluar (PMK 168/2023,
+    user 20 Okt 2026) — penghasilan Januari s/d bulan itu apa adanya (tidak disetahunkan), PTKP setahun penuh.
+    Kunci "december_*" / "pph21_paid_jan_nov" tetap dipakai (slip lama); `kind` & `final_month` membedakannya."""
     gross_year = ctx["initial_gross"] + ctx["system_gross"] + dec_taxable
     jht_jp_year = ctx["initial_jht_jp"] + ctx["system_jht_jp"] + dec_jht_jp
     months = ctx.get("initial_months", 0) + ctx["system_months"] + 1
@@ -254,6 +256,7 @@ def december_reconciliation(ctx: dict, dec_taxable: float, dec_jht_jp: float, pt
         "biaya_jabatan": biaya_jabatan, "jht_jp_year": jht_jp_year, "neto_year": neto, "ptkp_amount": ptkp_val,
         "pkp": pkp, "annual_tax": annual_tax, "pph21_paid_jan_nov": paid, "pph21_december": annual_tax - paid,
         "has_initial_balance": ctx["has_initial_balance"],
+        "kind": ctx.get("kind", "desember"), "final_month": ctx.get("final_month", 12),
     }
 
 
@@ -279,9 +282,13 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     basic = float(emp.get("basic_salary") or 0)
     att_month = float(emp.get("monthly_attendance_allowance") or 0)
     f_basic = pr["basic_factor"] if pr else 1
-    # Tunjangan Kehadiran yang dibayarkan sebelum potongan: diprorata hari kerja (cuti sepanjang periode dipotong habis)
-    att = round(att_month * (pr["attendance_factor"] if pr and not maternity_only else 1))
+    # Tunjangan Kehadiran yang dibayarkan sebelum potongan: diprorata hari kerja. Cuti melahirkan sepanjang periode
+    # (user 21 Okt 2026): hak itu memang tidak diberikan, jadi 0 sejak awal — bukan dibayar penuh lalu dipotong habis —
+    # supaya pendapatan kotor di slip (dan dasar PPh 21 "kotor") tidak membengkak. Prorata (cuti mulai/selesai di tengah
+    # periode) tetap memakai faktor hari kerja di luar cuti. Sama untuk Unpaid / cuti di luar tanggungan (user 23 Okt 2026):
+    # semua Rp 0 — bukan Tunjangan Kehadiran penuh yang lalu dipotong habis oleh Potongan Presensi.
     unpaid = status == "unpaid_leave"
+    att = 0 if maternity_only or unpaid else round(att_month * (pr["attendance_factor"] if pr else 1))
 
     hours = 0 if unpaid else float(adj.get("overtime_hours") or 0)
     kpi = 0 if unpaid else round(float(adj.get("kpi_incentive") or 0))
@@ -310,7 +317,10 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     # Only as far as the Bonus Threshold goes; the rest (e.g. Bonus Threshold 0 in ROSY) stays a potongan.
     # Except a PJUnit on maternity leave for the whole period (user 14 Oct 2026): no Bonus Threshold is paid, so there is
     # nothing to take the potongan back from and it is not charged at all (target_waived tells the review page)
-    target_waived = target if maternity_only and is_pjunit(emp) else 0
+    # Likewise a PJUnit with no Bonus Threshold at all this period (ROSY sends 0; user 21 Okt 2026): no bonus to lose, so
+    # the potongan is not charged and no longer makes the slip look like a big cut. Where a bonus exists but is smaller
+    # than the potongan, the rest stays a potongan as decided on 13 Oct
+    target_waived = target if is_pjunit(emp) and (maternity_only or position_paid <= 0) else 0
     target -= target_waived
     target_from_bonus = min(target, position_paid) if is_pjunit(emp) else 0
     position_paid -= target_from_bonus
@@ -318,7 +328,7 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     if status == "active":
         # Poin Presensi + Poin Absensi each cost 1/wd of the MONTHLY attendance allowance — in a prorated month too, so a
         # day of alfa costs everyone the same — but never more than the (prorated) allowance paid
-        penalty_days = wd if maternity_only else min(disc["presence_points"] + disc["absence_points"], wd)
+        penalty_days = 0 if maternity_only else min(disc["presence_points"] + disc["absence_points"], wd)
         penalty_amount = min(round(penalty_days / wd * att_month), att)
         # split for the slip (Potongan Absensi = alfa/izin days / Potongan Presensi = lateness + sakit/cuti days);
         # absence days first, presensi takes the rest, so the two always add up to penalty_amount even when capped
@@ -365,8 +375,13 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
 
     iuran_kes = bp["kes_company"] + bp["kes_employee"]
     iuran_tk = bp["jkk"] + bp["jkm"] + bp["jht_company"] + bp["jht_employee"] + bp["jp_company"] + bp["jp_employee"]
-    total_ded = iuran_kes + iuran_tk + pph21 + kasbon + target + installment
-    thp = gross - total_ded
+    # Lebih bayar PPh 21 masa terakhir (user 21 Okt 2026): uang yang dikembalikan perusahaan ke karyawan, tampil sebagai
+    # PENDAPATAN ("Pengembalian Perusahaan"), bukan potongan negatif; ia tidak masuk bruto/dasar pajak (taxable
+    # sudah dihitung di atas) dan tidak mengubah gross_earnings. Kurang bayar tetap potongan PPh 21. `pph21_amount`
+    # tetap bertanda (negatif = lebih bayar): itulah PPh yang disetor neto bulan itu, dipakai 1721-A1 & rekap.
+    refund = max(-pph21, 0) if recon else 0
+    total_ded = iuran_kes + iuran_tk + max(pph21, 0) + kasbon + target + installment
+    thp = gross + refund - total_ded
 
     return {
         "payroll_status": status, "wage_multiplier": mult, "maternity_basic_only": maternity_only,
@@ -387,7 +402,11 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
         "presence_penalty_amount": presence_penalty, "absence_penalty_amount": absence_penalty,
         "absent_days": disc["basic_cut_days"], "absent_deduction_amount": absent_deduction,
         "iuran_bpjs_kes_total": iuran_kes, "iuran_bpjs_tk_total": iuran_tk,
-        "pph21_amount": pph21, "pph21_method": "pasal17" if recon else "ter", "tax_reconciliation": recon,
+        # pph21_withheld = PPh 21 yang benar-benar dipotong (tak pernah minus) — untuk tampilan tabel & total; pph21_amount
+        # tetap bertanda untuk 1721-A1 / hitungan Desember
+        "pph21_amount": pph21, "pph21_withheld": max(pph21, 0), "pph21_refund": refund,
+        "pph21_method": "pasal17" if recon else "ter",
+        "tax_reconciliation": recon,
         "ptkp_status": ptkp, "ter_category": cat, "ter_rate": rate,
         "other_deductions": kasbon, "target_deduction": target, "target_from_bonus": target_from_bonus,
         "target_waived": target_waived,

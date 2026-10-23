@@ -1,4 +1,21 @@
+import { Search, X } from "lucide-react";
 import { PERIOD_STATUS } from "@/lib/format";
+
+// Filter Nama (user 21 Okt 2026, menu Pajak): kotak cari di atas tabel; hurufnya tak dibedakan besar-kecil dan tiap kata yang
+// diketik harus ada di nama ("budi san" cocok dengan "Budi Santoso"). Penyaringnya dipakai bersama lewat matchName.
+export const matchName = (name, query) => {
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = String(name || "").toLowerCase();
+  return words.every((w) => hay.includes(w));
+};
+
+export const NameFilter = ({ value, onChange, testId }) => (
+  <label className="flex items-center gap-2 border-2 border-slate-400 rounded-md px-3 py-[7px] bg-white w-full sm:w-56 focus-within:border-brand-700 focus-within:ring-2 focus-within:ring-brand-700/10">
+    <Search className="h-4 w-4 text-slate-400 shrink-0" />
+    <input data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Filter Nama..." aria-label="Filter Nama" className="outline-none text-sm w-full bg-transparent" />
+    {value && <button type="button" onClick={() => onChange("")} aria-label="Hapus filter nama" data-testid={`${testId}-clear`} className="text-slate-400 hover:text-slate-700"><X className="h-4 w-4" /></button>}
+  </label>
+);
 
 // Status sebagai LABEL, bukan kotak (user 13 Okt 2026): titik berwarna + teks tanpa bingkai atau latar, kursor panah,
 // supaya tidak disangka tombol yang bisa diklik. caption = awalan abu-abu ("Status:"), large = ukuran untuk di samping judul;

@@ -3,11 +3,13 @@ import { Upload, FileDown, Trash2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp } from "@/lib/format";
-import { PageTitle, Panel, Btn } from "@/components/common";
+import { PageTitle, Panel, Btn, NameFilter, matchName } from "@/components/common";
 
 export default function TaxYtd() {
   const [year, setYear] = useState(2026);
   const [rows, setRows] = useState([]);
+  const [nameQ, setNameQ] = useState("");
+  const shown = rows.filter((r) => matchName(r.name, nameQ));
   const [errors, setErrors] = useState([]);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -33,6 +35,7 @@ export default function TaxYtd() {
   return (
     <div>
       <PageTitle title="Saldo Awal Pajak YTD" subtitle="employee_tax_initial_balances — dipakai untuk rekonsiliasi PPh 21 Desember (Pasal 17)">
+        <NameFilter value={nameQ} onChange={setNameQ} testId="ytd-name-filter" />
         <select data-testid="ytd-year-select" value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white">
           {[2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
@@ -56,7 +59,7 @@ export default function TaxYtd() {
               <tr>{["NIK", "Nama", "Cutoff", "PTKP", "Bruto YTD", "JHT+JP Pekerja", "Biaya Jabatan", "PPh 21 Dibayar", "Catatan", ""].map((h) => <th key={h} className="text-left px-4 py-3">{h}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((r) => (
+              {shown.map((r) => (
                 <tr key={r.id} data-testid={`ytd-row-${r.nik}`} className="hover:bg-slate-50">
                   <td className="px-4 py-3 num">{r.nik}</td>
                   <td className="px-4 py-3 font-semibold">{r.name}</td>
@@ -71,6 +74,7 @@ export default function TaxYtd() {
                 </tr>
               ))}
               {!rows.length && <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500">Belum ada saldo awal untuk tahun {year}.</td></tr>}
+              {rows.length > 0 && !shown.length && <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500" data-testid="ytd-name-empty">Tidak ada nama yang cocok dengan "{nameQ}".</td></tr>}
             </tbody>
           </table>
         </div>

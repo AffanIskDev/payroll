@@ -65,6 +65,22 @@ def _col(rows, title):
     return t
 
 
+REFUND_LABEL = "Pengembalian Perusahaan"
+REFUND_NOTE = "lebih bayar PPh 21"  # keterangan di bawah baris Pengembalian Perusahaan (user 21 Okt 2026)
+
+
+def tk_rate_label(slip: dict) -> str:
+    """Persen iuran BPJS Ketenagakerjaan (perusahaan + karyawan) terhadap upah terdaftar, seperti "(5%)" di Kesehatan.
+    Upah terdaftar dibaca balik dari program yang iurannya bukan persen JP (JHT karyawan 2%, JKM 0,3%, JKK 0,24%);
+    slip lama tanpa rincian BPJS tampil tanpa persen."""
+    bp = slip.get("bpjs") or {}
+    base = next((bp[k] / r for k, r in (("jht_employee", 0.02), ("jkm", 0.003), ("jkk", 0.0024)) if bp.get(k)), 0)
+    if not base:
+        return ""
+    pct = round(slip["iuran_bpjs_tk_total"] / base * 100, 2)
+    return f" ({f'{pct:.2f}'.rstrip('0').rstrip('.').replace('.', ',')}%)"
+
+
 def _shown(rows):
     """Rows worth printing: a zero amount says nothing to the employee — except PPh 21 and the totals.
     Rows are (label, value, always[, detail]); returns (label, value, detail)."""
@@ -201,23 +217,32 @@ def payslip_lines(slip: dict) -> tuple:
                + slip.get("position_deduction_amount", 0))
     kehadiran = (("Tunjangan Kehadiran", slip["attendance_allowance_base"]) if split
                  else ("Tunj. Kehadiran (bersih)", slip["attendance_allowance"]))
-    earn = _shown([("Gaji Pokok", slip["basic_salary"], False, basic_pr),
-                   (jabatan, slip["position_allowance"], bool(from_bonus), jabatan_detail),
-                   (*kehadiran, False, att_pr),
+    # Lebih bayar PPh 21 masa terakhir = pendapatan, bukan potongan negatif (user 21 Okt 2026). Slip yang dihitung
+    # sebelum itu tak punya `pph21_refund`: PPh minusnya tetap di Potongan, seperti saat diterbitkan
+    refund = slip.get("pph21_refund", 0)
+    pph21 = slip["pph21_amount"] if "pph21_refund" not in slip else max(slip["pph21_amount"], 0)
+    # Unpaid / cuti di luar tanggungan (user 23 Okt 2026): tiga komponen tetap dicetak dengan Rp 0, bukan dihilangkan
+    unpaid = slip.get("payroll_status") == "unpaid_leave"
+    earn = _shown([("Gaji Pokok", slip["basic_salary"], unpaid, basic_pr),
+                   (jabatan, slip["position_allowance"], bool(from_bonus) or unpaid, jabatan_detail),
+                   (*kehadiran, unpaid, att_pr),
                    (f"Lembur ({_jam_menit(slip['overtime_hours'])})", slip["overtime_pay"], False),
                    ("Transport Homecare", slip.get("transport_homecare", 0), False),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus", slip["additional_bonus"], False),
                    ("THR", slip.get("thr", 0), False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
                    ("Tunj. BPJS Ketenagakerjaan", slip["tunjangan_bpjs_tk"], False),
-                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + presensi + absensi, True)])
+                   (REFUND_LABEL, refund, False, REFUND_NOTE),
+                   ("TOTAL PENDAPATAN", slip["gross_earnings"] + presensi + absensi + refund, True)])
     ded = _shown([("Potongan Presensi", presensi, False, _presence_detail(slip)),
                   ("Potongan Absensi", absensi, False, _absence_detail(slip)),
                   ("Potongan Tidak Mencapai Target", slip.get("target_deduction", 0), False),
                   ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
-                  ("Iuran BPJS Ketenagakerjaan", slip["iuran_bpjs_tk_total"], False),
-                  (("PPh 21 Desember (Pasal 17)" if slip.get("pph21_method") == "pasal17"
-                    else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), slip["pph21_amount"], True),
+                  (f"Iuran BPJS Ketenagakerjaan{tk_rate_label(slip)}", slip["iuran_bpjs_tk_total"], False),
+                  ((("PPh 21 Masa Terakhir (Pasal 17)"
+                     if (slip.get("tax_reconciliation") or {}).get("kind") == "keluar"
+                     else "PPh 21 Desember (Pasal 17)") if slip.get("pph21_method") == "pasal17"
+                    else f"PPh 21 TER {slip['ter_category']} ({slip['ter_rate']}%)"), pph21, True),
                   ("Cicilan / Pinjaman", slip.get("loan_installment", 0), False),
                   ("Kasbon / Potongan Lain", slip["other_deductions"], False),
                   ("TOTAL POTONGAN", slip["total_deductions"] + presensi + absensi, True)])

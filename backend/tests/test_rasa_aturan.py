@@ -177,8 +177,10 @@ def test_maternity_for_the_whole_period_pays_only_gapok():
     assert slip["maternity_basic_only"] is True and base["maternity_basic_only"] is False
     assert slip["basic_salary"] == EMP["basic_salary"]
     assert slip["position_allowance"] == 0 and slip["position_deduction_amount"] == 0
-    # 11 of 25 days is only 11 poin, yet the whole attendance allowance goes — it is a month on leave
-    assert slip["attendance_allowance"] == 0 and slip["presence_penalty_amount"] == EMP["monthly_attendance_allowance"]
+    # 11 of 25 days is only 11 poin, yet no attendance allowance is given — it is a month on leave. Since 21 Okt 2026 it
+    # is Rp 0 from the start (not paid in full and then cut), so the slip's pendapatan stays small for the PPh 21 base
+    assert slip["attendance_allowance_base"] == 0 and slip["attendance_allowance"] == 0
+    assert slip["presence_penalty_amount"] == 0 and slip["late_penalty_amount"] == 0
     assert slip["absence_penalty_amount"] == 0 and slip["absent_deduction_amount"] == 0
     # BPJS (on gapok) and PPh 21 are still calculated; what is not paid is jabatan + kehadiran only
     assert slip["bpjs"] == base["bpjs"] and slip["iuran_bpjs_kes_total"] > 0 and slip["iuran_bpjs_tk_total"] > 0
@@ -375,6 +377,26 @@ def test_unpaid_leave_gets_no_transport():
     assert slip["transport_homecare"] == 0
 
 
+def test_unpaid_leave_earns_no_attendance_allowance_instead_of_cutting_it_to_zero():
+    # user 23 Okt 2026: Unpaid = semua Rp 0. Dulu Tunjangan Kehadiran tampil penuh lalu dikurangi Potongan Presensi yang sama
+    from pdf_service import payslip_lines
+    for logs in ([], _leave_days("melahirkan", 5)):
+        slip = compute_payslip({**EMP, "payroll_status": "unpaid_leave"}, logs, CFG, {})
+        assert slip["attendance_allowance_base"] == slip["attendance_allowance"] == 0
+        assert slip["late_penalty_amount"] == slip["presence_penalty_amount"] == slip["absence_penalty_amount"] == 0
+        assert slip["gross_earnings"] == slip["total_deductions"] == slip["take_home_pay"] == 0
+        earn, ded = payslip_lines({**slip, "employee": {}})
+        # slip tetap mencetak ketiga komponen, semuanya Rp 0; yang tidak ada hanya potongannya
+        assert [(label, v) for label, v, _ in earn[:3]] == [("Gaji Pokok", 0), ("Tunjangan Jabatan", 0),
+                                                            ("Tunjangan Kehadiran", 0)]
+        assert not any(label == "Potongan Presensi" for label, _, _ in ded)
+    paid = compute_payslip(EMP, [], CFG, {})
+    assert "Tunjangan Kehadiran" in [label for label, _, _ in payslip_lines({**paid, "employee": {}})[0]]
+    # the contract amount is still on record, and the allowance of someone who is paid is untouched
+    assert compute_payslip({**EMP, "payroll_status": "unpaid_leave"}, [], CFG, {})["attendance_allowance_contract"] > 0
+    assert compute_payslip(EMP, [], CFG, {})["attendance_allowance"] > 0
+
+
 def test_kompensasi_denda_is_gone():
     slip = compute_payslip(EMP, [_day("hadir", minutes_late=75)], CFG, {"late_penalty_compensation": 30000})
     assert "late_penalty_compensation" not in slip
@@ -458,11 +480,22 @@ def test_pjunit_target_deduction_comes_off_the_bonus_threshold():
 @pytest.mark.parametrize("allowance,expected", [
     (1000000, (500000, 500000, 0)),     # bonus left over
     (300000, (0, 300000, 200000)),      # only the Bonus Threshold there is; the rest stays a potongan
-    (0, (0, 0, 500000)),                # ROSY Sep 2026 has PJUnit with Bonus Threshold 0: never a negative income
+    (0, (0, 0, 0)),                     # ROSY Sep 2026 has PJUnit with Bonus Threshold 0: no bonus to lose, not charged (21 Okt)
 ])
 def test_pjunit_target_comes_off_only_as_far_as_the_bonus_threshold_goes(allowance, expected):
     slip = compute_payslip({**PJUNIT, "position_allowance": allowance}, [], CFG, {"target_deduction": 500000})
     assert (slip["position_allowance"], slip["target_from_bonus"], slip["target_deduction"]) == expected
+
+
+def test_pjunit_without_bonus_threshold_is_not_charged_the_target_cut_and_the_slip_still_adds_up():
+    # user 21 Okt: Bonus Threshold 0 -> the 500 rb potongan is dropped (not hidden), so the slip rows still add up
+    without = compute_payslip({**PJUNIT, "position_allowance": 0}, [], CFG, {})
+    slip = compute_payslip({**PJUNIT, "position_allowance": 0}, [], CFG, {"target_deduction": 500000})
+    assert (slip["target_deduction"], slip["target_waived"]) == (0, 500000)
+    assert slip["take_home_pay"] == without["take_home_pay"] and slip["total_deductions"] == without["total_deductions"]
+    # a non-PJUnit keeps whatever potongan ROSY sends
+    spv = {**EMP, "department": "Pelayanan", "position": "Supervisor Pelayanan", "position_allowance": 0}
+    assert compute_payslip(spv, [], CFG, {"target_deduction": 500000})["target_deduction"] == 500000
 
 
 def test_pjunit_bonus_threshold_lost_to_the_target_is_not_cut_again_for_alfa():

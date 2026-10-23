@@ -70,11 +70,14 @@ async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
               i19=t["annual_tax"], i20=float((init or {}).get("pph21_paid_ytd") or 0) + sm(lambda s: s["pph21_amount"]))
     start = 1 if init else (months[0] if months else 1)
     end = months[-1] if months else cutoff
+    # masa pajak terakhir: Desember, atau bulan keluar bagi yang berhenti bekerja tahun ini (user 20 Okt 2026)
+    leave = emp.get("exit_date") or ""
+    final_month = int(leave[5:7]) if leave[:4] == str(year) else 12
     return {
         "employee_id": emp["id"], "nik": emp["nik"], "name": emp["name"], "npwp": emp.get("npwp") or "",
         "department": emp.get("department") or "", "gender": emp.get("gender"), "ptkp_status": ptkp,
         "tax_year": year, "masa_start": start, "masa_end": end, "months_worked": worked,
-        "is_complete": end == 12, "has_initial_balance": bool(init),
+        "is_complete": end == final_month, "has_initial_balance": bool(init),
         "number": f"1.1-{end:02d}.{str(year)[2:]}-{seq:07d}", "items": it,
         "difference": it["i19"] - it["i20"],
     }
