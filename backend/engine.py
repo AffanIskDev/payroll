@@ -445,3 +445,51 @@ def terbilang(amount: float) -> str:
         return "Nol Rupiah"
     prefix = "Minus " if n < 0 else ""
     return f"{prefix}{_words(abs(n))} Rupiah"
+
+
+# Run khusus di luar gaji (user 30 Okt 2026): THR dan Bonus Tahunan dibayar lewat run sendiri, tapi pajaknya tetap satu
+# paket dengan gaji bulan DIBAYARKAN (PMK 168/2023: TER dikenakan atas total bruto bulan itu, bukan atas THR/bonusnya
+# saja). Kunci = run_type; nilai = (nama di slip, nama field nominal di slip)
+SPECIAL_RUNS = {"thr": ("THR", "thr"), "bonus_tahunan": ("Bonus Tahunan", "bonus_tahunan")}
+SPECIAL_ZERO_KEYS = (
+    "basic_salary", "basic_salary_contract", "position_allowance", "position_deduction_amount", "attendance_allowance",
+    "attendance_allowance_base", "overtime_hours", "overtime_pay", "transport_homecare", "kpi_incentive",
+    "additional_bonus", "thr", "bonus_tahunan", "tunjangan_bpjs_kes", "tunjangan_bpjs_tk", "presence_penalty_amount",
+    "absence_penalty_amount", "absent_deduction_amount", "iuran_bpjs_kes_total", "iuran_bpjs_tk_total",
+    "other_deductions", "target_deduction", "loan_installment", "pph21_refund")
+
+
+def special_tax(category: str, baseline_gross: float, nominal: float) -> dict:
+    """PPh 21 sebuah run THR / Bonus Tahunan = TER(bruto gaji bulan itu + nominal) − TER(bruto gaji bulan itu). Ditambah pajak
+    gaji (yang dihitung run gaji dengan TER atas gaji saja), totalnya sama dengan TER atas bruto gabungan. Bruto gaji
+    di sini perkiraan bila slip gaji bulan itu belum ada; sisa selisihnya dibereskan rekonsiliasi Pasal 17 Desember."""
+    base = max(float(baseline_gross or 0), 0.0)
+    total = base + nominal
+    rate_total, rate_base = ter_rate(category, total), ter_rate(category, base)
+    tax_total = math.floor(total * rate_total / 100)
+    tax_base = math.floor(base * rate_base / 100) if base else 0
+    return {"baseline_gross": base, "total_gross": total, "baseline_rate": rate_base, "total_rate": rate_total,
+            "baseline_tax": tax_base, "total_tax": tax_total, "pph21": max(tax_total - tax_base, 0)}
+
+
+def compute_special_slip(emp: dict, run_type: str, nominal: float, baseline_gross: float = 0.0,
+                         baseline_source: str = "tidak_ada") -> dict:
+    """Slip run THR / Bonus Tahunan: satu baris pendapatan, tanpa BPJS dan tanpa potongan presensi. Semua kunci angka slip gaji
+    diisi 0 supaya 1721-A1, rekap, dan batch BSI membacanya tanpa cabang khusus."""
+    label, field = SPECIAL_RUNS[run_type]
+    nominal = round(float(nominal or 0))
+    ptkp = resolve_ptkp(emp)
+    cat = ter_category(ptkp)
+    tax = special_tax(cat, baseline_gross, nominal)
+    thp = nominal - tax["pph21"]
+    out = dict.fromkeys(SPECIAL_ZERO_KEYS, 0)
+    out.update({
+        "run_type": run_type, "payroll_status": "active", "wage_multiplier": 1, "prorata": None,
+        field: nominal, "special_label": label,
+        "gross_earnings": nominal, "taxable_gross": nominal,
+        "pph21_amount": tax["pph21"], "pph21_withheld": tax["pph21"], "pph21_method": "ter_selisih",
+        "special_tax": {**tax, "baseline_source": baseline_source}, "tax_reconciliation": None,
+        "ptkp_status": ptkp, "ter_category": cat, "ter_rate": tax["total_rate"],
+        "total_deductions": tax["pph21"], "take_home_pay": thp,
+        "bpjs": calc_bpjs({}, {}), "bpjs_company_advance": 0, "terbilang": terbilang(thp)})
+    return out

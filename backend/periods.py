@@ -7,6 +7,22 @@ BULAN = ("Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustu
          "November", "Desember")
 MAX_DAYS = 31  # HAM presensi refuses longer ranges
 
+# Jenis run (user 30 Okt 2026): gaji = siklus bulanan seperti biasa; THR & Bonus Tahunan = run sendiri yang dibayar di
+# tanggal berbeda. Periode lama tanpa field run_type = gaji.
+RUN_GAJI = "gaji"
+RUN_SPECIAL = ("thr", "bonus_tahunan")
+RUN_TYPES = (RUN_GAJI, *RUN_SPECIAL)
+# THR dibaca run khusus mulai bulan ini; periode gaji sebelumnya tetap membawa THR di slipnya seperti saat diterbitkan
+THR_RUN_FROM = "2026-11"
+
+
+def run_type_of(doc: dict) -> str:
+    return (doc or {}).get("run_type") or RUN_GAJI
+
+
+def is_special(doc: dict) -> bool:
+    return run_type_of(doc) in RUN_SPECIAL
+
 
 def payroll_month(start: str) -> str:
     """The month a period belongs to — the same key used for HAM's employee, overtime and component feeds."""

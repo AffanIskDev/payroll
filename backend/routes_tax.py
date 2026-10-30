@@ -11,7 +11,7 @@ from tax_forms import list_1721a1, render_1721a1
 
 import bank_batch
 from core import db, now_iso, require_manager, get_configs, csv_delimiter
-from periods import payroll_month
+from periods import payroll_month, run_type_of
 from pipeline import get_period
 
 # Pajak (saldo awal YTD, 1721-A1) and the BSI transfer export are Manager HRD only (user decision 9 Oct 2026)
@@ -167,8 +167,10 @@ async def export_batch_bsi(pid: str):
         {"id": {"$in": [s["employee_id"] for s in slips]}},
         {"_id": 0, "id": 1, "name": 1, "bank_code": 1, "bank_name": 1, "bank_account_number": 1, "bank_account_name": 1})}
     month = payroll_month(period["start_date"])
+    # (pesan & awalan ID unggah, nama berkas): THR / Bonus Tahunan dibayar di tanggalnya sendiri, jangan tertukar dengan gaji
+    kind = {"thr": ("THR", "THR"), "bonus_tahunan": ("BONUS", "Bonus Tahunan")}.get(run_type_of(period), ("GAJI", ""))
     try:
-        res = bank_batch.build(slips, emps, month, datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat())
+        res = bank_batch.build(slips, emps, month, datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat(), kind[0])
     except ValueError as e:
         raise HTTPException(422, str(e))
     if res["problems"]:
@@ -178,6 +180,6 @@ async def export_batch_bsi(pid: str):
     if not res["count"]:
         raise HTTPException(400, "Tidak ada yang ditransfer: seluruh slip periode ini Rp 0")
     return Response(res["text"], media_type="text/plain", headers={
-        "Content-Disposition": f'attachment; filename="{bank_batch.file_name(period.get("company"), month)}"',
+        "Content-Disposition": f'attachment; filename="{bank_batch.file_name(period.get("company"), month, kind[1])}"',
         "X-Exported-Count": str(res["count"]), "X-Total-Amount": str(res["total"]),
         "X-Skipped-Niks": ",".join(res["skipped"]), "Cache-Control": "no-store"})

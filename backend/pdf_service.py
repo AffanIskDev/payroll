@@ -195,6 +195,26 @@ def _tanggal_pendek(iso: str) -> str:
     return f"{d.day} {BULAN[d.month - 1][:3]}"
 
 
+def special_lines(slip: dict) -> tuple:
+    """Slip run THR / Bonus Tahunan (user 30 Okt 2026): satu baris pendapatan, satu baris PPh 21. Keterangan pajaknya menyebut
+    bahwa TER dihitung atas gaji bulan dibayar + nominal ini, dan dari mana perkiraan gaji itu diambil bila slip gajinya
+    belum ada."""
+    tax = slip.get("special_tax") or {}
+    label = slip.get("special_label") or "THR"
+    src = tax.get("baseline_source") or ""
+    base_note = {"slip_bulan_ini": "gaji bulan ini", "tidak_ada": "tanpa dasar gaji"}.get(
+        src, "perkiraan dari " + src.split(":", 1)[-1] if src.startswith("slip_terakhir") else "gaji bulan ini")
+    amount = slip[SPECIAL_FIELD.get(slip["run_type"], "thr")]
+    earn = _shown([(label, amount, True), ("TOTAL PENDAPATAN", slip["gross_earnings"], True)])
+    ded = _shown([(f"PPh 21 TER {slip['ter_category']} ({tax.get('total_rate', slip['ter_rate'])}%)", slip["pph21_amount"],
+                   True, f"atas {base_note} + {label}"),
+                  ("TOTAL POTONGAN", slip["total_deductions"], True)])
+    return earn, ded
+
+
+SPECIAL_FIELD = {"thr": "thr", "bonus_tahunan": "bonus_tahunan"}
+
+
 def payslip_lines(slip: dict) -> tuple:
     """PENDAPATAN and POTONGAN rows as printed (user requests 9 Oct): allowances in full under PENDAPATAN; every
     attendance-related cut under POTONGAN as just two lines — Potongan Presensi (lateness points plus sakit/cuti
@@ -205,6 +225,8 @@ def payslip_lines(slip: dict) -> tuple:
     A PJUnit's Potongan Tidak Mencapai Target is already off their Bonus Threshold (engine, 13 Oct): that row says so,
     even at Rp 0, with the note "Income Unit Minimal 20 jt" (user 14 Oct), and the potongan row shows only what the
     Bonus Threshold could not cover."""
+    if slip.get("run_type") in SPECIAL_FIELD:
+        return special_lines(slip)
     split = "presence_penalty_amount" in slip  # slips calculated before 9 Oct only have the net allowance
     # slips calculated before 12 Oct carry no label yet; their snapshot has no jabatan, so they read "Tunjangan
     # Jabatan" — as they were issued, before "Bonus Threshold" existed
@@ -270,7 +292,7 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     # jarak kop → judul → identitas: +1 baris di bawah logo (9 Okt pagi sempat +3 baris, dinilai terlalu jauh).
     # Baris nomor dokumen (15 Okt) memakai sebagian jarak judul → identitas: blok identitas tidak bergeser
     doc_no = ParagraphStyle("no", parent=small, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
-    els = [kop, Spacer(1, 20 + LINE), Paragraph("<b>SLIP GAJI KARYAWAN</b>", title), Paragraph(_doc_line(slip), doc_no),
+    els = [kop, Spacer(1, 20 + LINE), Paragraph(f"<b>{('SLIP ' + slip['special_label'].upper()) if slip.get('run_type') in SPECIAL_FIELD else 'SLIP GAJI KARYAWAN'}</b>", title), Paragraph(_doc_line(slip), doc_no),
            Spacer(1, 18 - doc_no.leading)]
     # 5 kolom = garis tabel di bawahnya: kiri sejajar PENDAPATAN (76 mm), jarak 14 mm, kanan sejajar POTONGAN
     info = [["NIK:", emp["nik"], "", "Periode:", period["period_name"]],

@@ -5,7 +5,8 @@ from typing import Optional
 from fastapi import HTTPException
 
 from core import db, now_iso, get_configs, actor
-from engine import compute_payslip
+from engine import compute_payslip, compute_special_slip, SPECIAL_RUNS
+from periods import RUN_GAJI, THR_RUN_FROM, run_type_of, is_special
 import verify
 from labels import position_allowance_label
 from pdf_service import save_encrypted
@@ -61,7 +62,9 @@ def employment_info(period: dict, emp: dict) -> dict:
 
 async def december_context(period: dict, emp: dict) -> Optional[dict]:
     """Bahan rekonsiliasi masa pajak terakhir (Desember atau bulan keluar, lihat final_tax_kind): saldo awal YTD +
-    slip sistem sesudah cutoff s/d sebelum bulan periode ini."""
+    slip sistem sesudah cutoff s/d sebelum bulan periode ini. Run THR / Bonus Tahunan (user 30 Okt 2026) ikut dijumlahkan
+    menurut BULAN DIBAYAR, termasuk yang dibayar di bulan masa pajak terakhir itu sendiri; hanya slip gaji yang menambah
+    hitungan bulan kerja (biaya jabatan maksimal Rp 500.000 per bulan kerja)."""
     kind = final_tax_kind(period, emp)
     if not kind:
         return None
@@ -69,11 +72,15 @@ async def december_context(period: dict, emp: dict) -> Optional[dict]:
     init = await db.employee_tax_initial_balances.find_one({"employee_id": emp["id"], "tax_year": year}, {"_id": 0})
     cutoff = int((init or {}).get("cutoff_month") or 0)
     pids = {p["id"] async for p in db.payroll_periods.find(
-        {"id": {"$ne": period["id"]},
+        {"id": {"$ne": period["id"]}, "run_type": {"$in": [RUN_GAJI, None]},
          "end_date": {"$gte": f"{year}-{cutoff + 1:02d}-01", "$lt": f"{year}-{month:02d}-01"}},
         {"_id": 0, "id": 1})}
-    slips = await db.payslips.find({"employee_id": emp["id"], "payroll_period_id": {"$in": list(pids)}},
-                                   {"_id": 0, "taxable_gross": 1, "pph21_amount": 1, "bpjs": 1}).to_list(12)
+    special = {p["id"] async for p in db.payroll_periods.find(
+        {"id": {"$ne": period["id"]}, "run_type": {"$in": list(SPECIAL_RUNS)},
+         "bulan": {"$gte": f"{year}-{cutoff + 1:02d}", "$lte": f"{year}-{month:02d}"}}, {"_id": 0, "id": 1})}
+    slips = await db.payslips.find({"employee_id": emp["id"], "payroll_period_id": {"$in": list(pids | special)}},
+                                   {"_id": 0, "taxable_gross": 1, "pph21_amount": 1, "bpjs": 1,
+                                    "payroll_period_id": 1}).to_list(40)
     return {
         "tax_year": year, "has_initial_balance": bool(init), "initial_months": cutoff,
         "initial_gross": float((init or {}).get("gross_income_ytd") or 0),
@@ -81,7 +88,9 @@ async def december_context(period: dict, emp: dict) -> Optional[dict]:
         "initial_pph21": float((init or {}).get("pph21_paid_ytd") or 0),
         "system_gross": sum(s["taxable_gross"] for s in slips),
         "system_jht_jp": sum(s["bpjs"]["jht_employee"] + s["bpjs"]["jp_employee"] for s in slips),
-        "system_pph21": sum(s["pph21_amount"] for s in slips), "system_months": len(slips),
+        "system_pph21": sum(s["pph21_amount"] for s in slips),
+        "system_months": sum(1 for s in slips if s["payroll_period_id"] in pids),
+        "special_gross": sum(s["taxable_gross"] for s in slips if s["payroll_period_id"] in special),
         "kind": kind, "final_month": month,
     }
 
@@ -114,7 +123,9 @@ async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = N
     # never from the review page
     adj = {**adj, "overtime_hours": await overtime_hours(period, emp["id"], logs),
            "transport_homecare": comp.get("TRANSPORT_HOMECARE", 0), "additional_bonus": comp.get("BONUS", 0),
-           "thr": comp.get("THR", 0), "target_deduction": comp.get("TARGET_DEDUCTION", 0),
+           # THR dibayar lewat run THR sendiri sejak THR_RUN_FROM (user 30 Okt 2026); periode sebelumnya tetap seperti dulu
+           "thr": comp.get("THR", 0) if (period.get("bulan") or "") < THR_RUN_FROM else 0,
+           "target_deduction": comp.get("TARGET_DEDUCTION", 0),
            "loan_installment": comp.get("LOAN_INSTALLMENT", 0)}
     # period: masuk/keluar di tengah periode = gaji diprorata hari kerja (engine.prorata, user 15 Okt 2026)
     calc = compute_payslip(emp, logs, cfg, adj, await december_context(period, emp), period)
@@ -147,6 +158,8 @@ async def recalc_and_save(period: dict, emp: dict, adj: dict, notes: Optional[st
 
 
 async def process_period(period: dict) -> int:
+    if is_special(period):
+        return await process_special(period)
     cfg = await get_configs()
     count = 0
     if not period.get("employee_ids"):
@@ -216,3 +229,83 @@ async def queue_delivery(pid: str, query: Optional[dict] = None, attempts: int =
     await db.payroll_periods.update_one({"id": pid}, {"$set": {"delivery_started_at": now_iso()}})
     asyncio.create_task(_deliver_period(pid, attempts))
     return res.modified_count
+
+
+# ---- Run THR / Bonus Tahunan (user 30 Okt 2026) -------------------------------------------------------------------
+
+async def special_amounts(period: dict) -> dict:
+    """Nominal run ini per karyawan: {employee_id: (nominal, sumber)}. Input di RUSA (special_inputs) menang atas nominal
+    ROSY (period_components, kode THR / BONUS_TAHUNAN); nominal 0 berarti tidak dapat slip."""
+    kode = "THR" if run_type_of(period) == "thr" else "BONUS_TAHUNAN"
+    out = {}
+    async for d in db.period_components.find({"payroll_period_id": period["id"], "kode": kode},
+                                             {"_id": 0, "employee_id": 1, "nominal": 1}):
+        out[d["employee_id"]] = (out.get(d["employee_id"], (0, "rosy"))[0] + float(d["nominal"]), "rosy")
+    async for d in db.special_inputs.find({"payroll_period_id": period["id"]}, {"_id": 0, "employee_id": 1, "nominal": 1}):
+        out[d["employee_id"]] = (float(d["nominal"]), "rusa")
+    return out
+
+
+async def special_baseline(period: dict, emp_id: str) -> tuple:
+    """Bruto gaji yang dipakai sebagai dasar selisih TER: (bruto, sumber). Urutan: slip gaji bulan dibayar; bila belum ada,
+    slip gaji terakhir sebelumnya (perkiraan); ditambah run khusus lain di bulan yang sama yang dibuat lebih dulu, supaya
+    dua run dalam satu bulan tidak masing-masing memakai tarif terendah."""
+    gaji = {p["id"]: p async for p in db.payroll_periods.find(
+        {"run_type": {"$in": [RUN_GAJI, None]}, "bulan": {"$lte": period["bulan"]}},
+        {"_id": 0, "id": 1, "bulan": 1, "period_name": 1})}
+    slips = await db.payslips.find({"employee_id": emp_id, "payroll_period_id": {"$in": list(gaji)}},
+                                   {"_id": 0, "taxable_gross": 1, "payroll_period_id": 1}).to_list(60)
+    slips.sort(key=lambda s: gaji[s["payroll_period_id"]]["bulan"])
+    same = next((s for s in slips if gaji[s["payroll_period_id"]]["bulan"] == period["bulan"]), None)
+    last = slips[-1] if slips else None
+    if same:
+        base, source = same["taxable_gross"], "slip_bulan_ini"
+    elif last:
+        base, source = last["taxable_gross"], f"slip_terakhir:{gaji[last['payroll_period_id']]['period_name']}"
+    else:
+        base, source = 0, "tidak_ada"
+    earlier = {p["id"] async for p in db.payroll_periods.find(
+        {"id": {"$ne": period["id"]}, "run_type": {"$in": list(SPECIAL_RUNS)}, "bulan": period["bulan"],
+         "created_at": {"$lt": period["created_at"]}}, {"_id": 0, "id": 1})}
+    if earlier:
+        prior = await db.payslips.find({"employee_id": emp_id, "payroll_period_id": {"$in": list(earlier)}},
+                                       {"_id": 0, "taxable_gross": 1}).to_list(10)
+        base += sum(s["taxable_gross"] for s in prior)
+    return base, source
+
+
+async def build_special_slip(period: dict, emp: dict, nominal: float) -> dict:
+    base, source = await special_baseline(period, emp["id"])
+    calc = compute_special_slip(emp, run_type_of(period), nominal, base, source)
+    calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
+    return calc
+
+
+async def process_special(period: dict) -> int:
+    """Hitung ulang slip run khusus dari nominalnya. Slip approved tidak disentuh; karyawan yang nominalnya 0 (atau
+    sudah tidak ada di populasi) kehilangan slip draft-nya."""
+    amounts = await special_amounts(period)
+    count = 0
+    keep = set()
+    async for emp in db.employees.find({"id": {"$in": period.get("employee_ids") or []}}, {"_id": 0}):
+        nominal, source = amounts.get(emp["id"], (0, None))
+        if nominal <= 0:
+            continue
+        existing = await db.payslips.find_one({"payroll_period_id": period["id"], "employee_id": emp["id"]}, {"_id": 0})
+        keep.add(emp["id"])
+        if existing and existing.get("status") == "approved":
+            continue
+        doc = {**await build_special_slip(period, emp, nominal), "payroll_period_id": period["id"],
+               "employee_id": emp["id"], "status": "draft", "amount_source": source, "updated_at": now_iso(),
+               "verify_code": (existing or {}).get("verify_code") or verify.new_code()}
+        if existing:
+            doc["id"] = existing["id"]
+            await db.payslips.update_one({"id": existing["id"]}, {"$set": doc})
+        else:
+            doc["id"] = str(uuid.uuid4())
+            doc["created_at"] = now_iso()
+            await db.payslips.insert_one({**doc})
+        count += 1
+    await db.payslips.delete_many({"payroll_period_id": period["id"], "status": {"$ne": "approved"},
+                                   "employee_id": {"$nin": list(keep)}})
+    return count

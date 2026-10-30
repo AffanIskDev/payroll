@@ -118,12 +118,12 @@ def approval_blockers(slips: list, employees: dict) -> list:
     return sorted(out, key=lambda b: str(b["name"]).casefold())
 
 
-def build(slips: list, employees: dict, month: str, upload_date: str) -> dict:
+def build(slips: list, employees: dict, month: str, upload_date: str, label: str = "GAJI") -> dict:
     """slips: the payslips of one period, any status (as in ROSY); employees: RUSA employee docs by id (bank data as
     last synced from ROSY); month: 'YYYY-MM'. Returns {"problems": [...]} when any row blocks the file, else the file text and its
     summary. Raises ValueError when the rows exceed what one file may hold."""
     year, mon = _month(month)
-    message = clean(f"GAJI {BULAN[mon - 1].upper()} {year}", 65)
+    message = clean(f"{label} {BULAN[mon - 1].upper()} {year}", 65)
     problems, rows, skipped, total = [], [], [], 0
     for s in sorted(slips, key=lambda s: (s["employee"].get("name") or "").casefold()):
         if unpaid_zero(s):
@@ -148,13 +148,14 @@ def build(slips: list, employees: dict, month: str, upload_date: str) -> dict:
     if len(rows) > MAX_ROWS:
         raise ValueError(f"Jumlah baris {len(rows)} melebihi batas {MAX_ROWS} per berkas")
     # UPLOAD FILE ID: max 10 characters, unique per upload date; derived from the month so HRD can predict it
-    lines = [f"0|GAJI{year % 100:02d}{mon:02d}|{upload_date}|{len(rows)}|{total}|", "0|" + "|".join(HEADER) + "|"]
+    lines = [f"0|{label.replace(' ', '')[:6]}{year % 100:02d}{mon:02d}|{upload_date}|{len(rows)}|{total}|", "0|" + "|".join(HEADER) + "|"]
     lines += ["|".join(r) + "|" for r in rows]
     return {"problems": [], "text": "\r\n".join(lines), "count": len(rows), "total": total, "skipped": skipped}
 
 
-def file_name(company, month: str) -> str:
+def file_name(company, month: str, label: str = "") -> str:
     """'BatchPayment-RUMAT-September-2026.txt', ROSY's name for the same file."""
     year, mon = _month(month)
     slug = re.sub(r"[^A-Za-z0-9]+", "-", (company or {}).get("nama") or "").strip("-")
-    return f"BatchPayment-{slug + '-' if slug else ''}{BULAN[mon - 1]}-{year}.txt"
+    kind = re.sub(r"[^A-Za-z0-9]+", "-", label).strip("-")  # "THR", "Bonus-Tahunan"; kosong = gaji, nama seperti dulu
+    return f"BatchPayment-{slug + '-' if slug else ''}{kind + '-' if kind else ''}{BULAN[mon - 1]}-{year}.txt"

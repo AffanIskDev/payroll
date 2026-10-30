@@ -53,7 +53,8 @@ async def shift_recap(month: str):
 async def overtime_recap(month: str):
     first, nxt = _month(month)
     periods = {p["id"]: p async for p in db.payroll_periods.find(
-        {"end_date": {"$gte": first.isoformat(), "$lt": nxt.isoformat()}}, {"_id": 0})}
+        {"end_date": {"$gte": first.isoformat(), "$lt": nxt.isoformat()},
+         "run_type": {"$in": ["gaji", None]}}, {"_id": 0})}
     slips = await db.payslips.find({"payroll_period_id": {"$in": list(periods)}}, {"_id": 0}) \
         .sort("employee.nik", 1).to_list(5000)
     emps = {e["id"]: e async for e in db.employees.find({}, {"_id": 0, "id": 1, "overtime_hourly_rate": 1})}

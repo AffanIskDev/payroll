@@ -15,13 +15,17 @@ from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
 from labels import position_allowance_label
-from periods import BULAN, payroll_month, period_name_for, validate_dates, overlaps
+from periods import BULAN, payroll_month, period_name_for, validate_dates, overlaps, run_type_of, RUN_TYPES, RUN_SPECIAL
 from bank_batch import approval_blockers
 import integrations
 import signer as signer_mod
 import verify
 
 router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_hr)])
+
+# Dashboard, daftar Payroll, dan cek tumpang tindih hanya melihat run gaji; THR & Bonus Tahunan punya halaman sendiri
+# (special_runs.py). Periode lama tanpa field run_type = gaji.
+GAJI_ONLY = {"run_type": {"$in": ["gaji", None]}}
 
 
 class PeriodIn(BaseModel):
@@ -41,7 +45,7 @@ class AdjustIn(BaseModel):
 
 @router.get("/dashboard")
 async def dashboard():
-    periods = await db.payroll_periods.find({}, {"_id": 0}).sort("start_date", -1).to_list(50)
+    periods = await db.payroll_periods.find(GAJI_ONLY, {"_id": 0}).sort("start_date", -1).to_list(50)
     latest = periods[0] if periods else None
     stats = {"employees": await db.employees.count_documents({}), "periods": len(periods), "latest_period": latest}
     if latest:
@@ -134,7 +138,7 @@ async def dashboard_employees(pid: Optional[str] = None):
     tidak penuh", not "Tidak ikut digaji". `compare` sets the nominal cards and the headcount against the period before
     (None for the first period). "Rekening belum siap" (first group): the accounts that block "Ajukan ke Manager" and
     Lock & Approve — no account number, no account name or not BSI (bank_batch.approval_blockers)."""
-    periods = await db.payroll_periods.find({}, {"_id": 0, "review_history": 0}).sort("start_date", -1).to_list(100)
+    periods = await db.payroll_periods.find(GAJI_ONLY, {"_id": 0, "review_history": 0}).sort("start_date", -1).to_list(100)
     period = next((p for p in periods if p["id"] == pid), None) if pid else (periods[0] if periods else None)
     if not period:
         if pid:
@@ -228,7 +232,7 @@ async def notifications(user: dict = Depends(require_hr)):
     else:
         q, kind = {"status": "revision"}, "rejected"
     periods = await db.payroll_periods.find(q, {"_id": 0}).sort("start_date", -1).to_list(100)
-    return [{"kind": kind, "period_id": p["id"], "period_name": p["period_name"],
+    return [{"kind": kind, "period_id": p["id"], "period_name": p["period_name"], "run_type": run_type_of(p),
              "by": (p.get("submitted_by_name") or p.get("submitted_by")) if kind == "submitted"
              else (p.get("rejected_by_name") or p.get("rejected_by")),
              "at": p.get("submitted_at") if kind == "submitted" else p.get("rejected_at"),
@@ -334,8 +338,11 @@ async def list_attendance(employee_id: str, start: str, end: str):
 
 
 @router.get("/periods")
-async def list_periods():
-    return await db.payroll_periods.find({}, {"_id": 0}).sort("start_date", -1).to_list(100)
+async def list_periods(run_type: str = "gaji"):
+    if run_type not in RUN_TYPES:
+        raise HTTPException(400, "run_type tidak dikenal")
+    return await db.payroll_periods.find({"run_type": {"$in": ["gaji", None]}} if run_type == "gaji" else {"run_type": run_type},
+                                         {"_id": 0}).sort("start_date", -1).to_list(100)
 
 
 @router.post("/periods")
@@ -347,14 +354,14 @@ async def create_period(body: PeriodIn):
     if not name:
         raise HTTPException(400, "Periode lintas bulan wajib diberi nama")
     bulan = payroll_month(body.start_date)
-    async for other in db.payroll_periods.find({}, {"_id": 0, "period_name": 1, "bulan": 1, "start_date": 1,
-                                                    "end_date": 1}):
+    async for other in db.payroll_periods.find(GAJI_ONLY, {"_id": 0, "period_name": 1, "bulan": 1, "start_date": 1,
+                                                          "end_date": 1}):
         if other.get("bulan") == bulan:
             raise HTTPException(409, f"Periode {other['period_name']} sudah ada — satu bulan hanya satu periode")
         if overlaps(body.start_date, body.end_date, other):
             raise HTTPException(409, f"Tanggal bertumpuk dengan periode {other['period_name']}")
     data = body.model_dump()
-    data.update(id=str(uuid.uuid4()), period_name=name, bulan=bulan, status="draft", approved_by=None,
+    data.update(id=str(uuid.uuid4()), run_type="gaji", period_name=name, bulan=bulan, status="draft", approved_by=None,
                 approved_at=None, created_at=now_iso(), employee_ids=[], employee_count=0, attendance_synced_at=None)
     try:
         await db.payroll_periods.insert_one({**data})
@@ -544,6 +551,7 @@ async def delete_period(pid: str, user: dict = Depends(require_hr)):
     res = await db.payslips.delete_many({"payroll_period_id": pid})
     await db.overtime_claims.delete_many({"payroll_period_id": pid})
     await db.period_components.delete_many({"payroll_period_id": pid})
+    await db.special_inputs.delete_many({"payroll_period_id": pid})
     await db.payroll_periods.delete_one({"id": pid})
     return {"ok": True, "deleted_payslips": res.deleted_count}
 
@@ -605,6 +613,22 @@ async def reject_period(pid: str, body: RejectIn, user: dict = Depends(require_m
     return await get_period(pid)
 
 
+async def _december_runs_pending(period: dict):
+    """Slip gaji Desember menanggung Pasal 17 setahun (pipeline.december_context) — termasuk THR / Bonus Tahunan yang dibayar
+    di Desember. Selama run itu belum di-approve, angkanya masih bisa berubah, jadi gaji Desember belum boleh dikunci
+    (user 30 Okt 2026)."""
+    if run_type_of(period) != "gaji" or period["end_date"][5:7] != "12":
+        return
+    names = []
+    async for p in db.payroll_periods.find({"run_type": {"$in": list(RUN_SPECIAL)}, "bulan": period["bulan"],
+                                            "status": {"$ne": "approved"}}, {"_id": 0, "id": 1, "period_name": 1}):
+        if await db.payslips.count_documents({"payroll_period_id": p["id"]}):
+            names.append(p["period_name"])
+    if names:
+        raise HTTPException(400, f"Lock & Approve diblokir: {', '.join(names)} (dibayar Desember) belum di-approve. "
+                                 "PPh 21 Desember (Pasal 17) menjumlahkan penghasilan itu; approve dulu, baru gaji Desember")
+
+
 def _ensure_synced(period: dict):
     """The gate submitting applies, for a Manager approving straight from draft."""
     if period.get("last_sync_error") or not period.get("attendance_synced_at"):
@@ -642,6 +666,7 @@ async def approve_all(pid: str, user: dict = Depends(require_manager)):
     period = await get_period(pid)
     if period["status"] == "approved":
         raise HTTPException(400, "Periode sudah dikunci & di-approve")
+    await _december_runs_pending(period)
     if not await db.payslips.count_documents({"payroll_period_id": pid}):
         raise HTTPException(400, "Belum ada slip. Jalankan proses payroll terlebih dahulu")
     moved_from = period["status"] if period["status"] in EDITABLE_STATUSES else None
@@ -726,6 +751,7 @@ async def save_draft(pid: str, eid: str, body: AdjustIn, user: dict = Depends(re
 @router.post("/periods/{pid}/employees/{eid}/approve")
 async def approve_one(pid: str, eid: str, user: dict = Depends(require_manager)):
     period = await get_period(pid)
+    await _december_runs_pending(period)
     if period["status"] in EDITABLE_STATUSES:  # straight from draft too (user 10 Oct 2026)
         _ensure_synced(period)
     slip = await _slip(pid, eid)

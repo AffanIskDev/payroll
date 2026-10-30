@@ -1,12 +1,17 @@
-import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, BarChart3, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Building2, ChevronDown, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, BarChart3, PanelLeftClose, PanelLeftOpen, Gift, Award } from "lucide-react";
 import { useAuth, isManager, ROLE_LABELS } from "@/context/AuthContext";
 
-// [path, label, icon, end, khusus Manager HRD]
+// [path, label, icon, end, khusus Manager HRD]; { group, icon, items } = menu bersubmenu (Payroll: Gaji, THR, Bonus Tahunan —
+// user 30 Okt 2026). Di bar ikon (HP/tablet) dan sidebar yang diciutkan judul grupnya hilang dan submenu tampil sebagai ikon biasa
 const NAV = [
   ["/hr-manager", "Dashboard", LayoutDashboard, true],
-  ["/hr-manager/payroll", "Payroll", Wallet],
+  { group: "Payroll", icon: Wallet, items: [
+    ["/hr-manager/payroll", "Payroll Gaji", Wallet],
+    ["/hr-manager/payroll/thr", "Payroll THR", Gift],
+    ["/hr-manager/payroll/bonus-tahunan", "Payroll Bonus Tahunan", Award],
+  ] },
   ["/hr-manager/employees", "Karyawan", Users],
   ["/hr-manager/attendance", "Presensi", CalendarClock],
   ["/hr-manager/recap", "Rekap", BarChart3],
@@ -23,7 +28,24 @@ const readCiut = () => {
 
 export default function HrLayout() {
   const { user, logout } = useAuth();
-  const nav = NAV.filter(([, , , , managerOnly]) => !managerOnly || isManager(user));
+  const nav = NAV.filter((item) => item.group || !item[4] || isManager(user));
+  const { pathname } = useLocation();
+  // /payroll/:pid (periode gaji) berada di bawah /payroll, tapi /payroll/thr dan /payroll/bonus-tahunan menu sendiri
+  const gajiActive = (to) => to === "/hr-manager/payroll" ? /^\/hr-manager\/payroll(\/|$)/.test(pathname) && !/^\/hr-manager\/payroll\/(thr|bonus-tahunan)(\/|$)/.test(pathname) : null;
+  // Payroll = dropdown (user 30 Okt 2026): terbuka sendiri saat berada di halaman Payroll, bisa dilipat. Hanya di sidebar lebar yang
+  // tidak diciutkan; di bar ikon dan sidebar ciut submenu selalu tampil sebagai ikon.
+  const inPayroll = /^\/hr-manager\/payroll(\/|$)/.test(pathname);
+  const [openGroup, setOpenGroup] = useState(inPayroll);
+  useEffect(() => { if (inPayroll) setOpenGroup(true); }, [inPayroll]);
+  const link = ([to, label, Icon, end], sub) => (
+    <NavLink key={to} to={to} end={end} title={label} aria-label={label} data-testid={`nav-${label.toLowerCase().replace(/\s/g, "-")}`}
+      className={({ isActive }) => {
+        const active = gajiActive(to) ?? isActive;
+        return `flex items-center gap-3 px-2 sm:px-3 py-3 lg:py-2.5 rounded-lg text-sm whitespace-nowrap transition-colors ${ciut ? "lg:justify-center" : sub ? `lg:pl-8 ${openGroup ? "" : "lg:hidden"}` : ""} ${active ? "bg-white text-brand-700 font-bold shadow-sm" : "text-brand-50 hover:bg-white/15 hover:text-white"}`;
+      }}>
+      <Icon className="h-4 w-4 shrink-0" /> <span className={`hidden ${ciut ? "" : "lg:inline"}`}>{sub ? label.replace(/^Payroll /, "") : label}</span>
+    </NavLink>
+  );
   const [ciut, setCiut] = useState(readCiut);
   const toggle = () => setCiut((c) => {
     try { localStorage.setItem(CIUT_KEY, c ? "0" : "1"); } catch { /* tanpa penyimpanan: tetap jalan */ }
@@ -45,12 +67,16 @@ export default function HrLayout() {
             </div>
           </div>
           <nav id="main-nav" className="flex lg:flex-col items-center lg:items-stretch gap-0.5 sm:gap-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:flex-1" data-testid="main-nav" aria-label="Menu utama">
-            {nav.map(([to, label, Icon, end]) => (
-              <NavLink key={to} to={to} end={end} title={label} aria-label={label} data-testid={`nav-${label.toLowerCase().replace(/\s/g, "-")}`}
-                className={({ isActive }) => `flex items-center gap-3 px-2 sm:px-3 py-3 lg:py-2.5 rounded-lg text-sm whitespace-nowrap transition-colors ${ciut ? "lg:justify-center" : ""} ${isActive ? "bg-white text-brand-700 font-bold shadow-sm" : "text-brand-50 hover:bg-white/15 hover:text-white"}`}>
-                <Icon className="h-4 w-4 shrink-0" /> <span className={`hidden ${ciut ? "" : "lg:inline"}`}>{label}</span>
-              </NavLink>
-            ))}
+            {nav.map((item) => item.group ? (
+              <div key={item.group} className="contents">
+                <button type="button" data-testid="nav-payroll" onClick={() => setOpenGroup((o) => !o)} aria-expanded={openGroup} aria-controls="nav-group-payroll"
+                  className={`hidden ${ciut ? "" : "lg:flex"} w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left transition-colors ${inPayroll && !openGroup ? "bg-white/15 text-white font-bold" : "text-brand-50 hover:bg-white/15 hover:text-white"}`}>
+                  <item.icon className="h-4 w-4 shrink-0" /> <span className="flex-1">{item.group}</span>
+                  <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${openGroup ? "rotate-180" : ""}`} />
+                </button>
+                {item.items.map((it) => link(it, true))}
+              </div>
+            ) : link(item))}
           </nav>
           <div className="ml-auto lg:ml-0 flex flex-col gap-2 lg:border-t lg:border-white/20 lg:pt-3">
             {/* hanya di layar lebar; tablet/HP tetap bar ikon di atas */}

@@ -7,6 +7,8 @@ import HrLayout from "@/components/HrLayout";
 import Dashboard from "@/pages/hr/Dashboard";
 import Periods from "@/pages/hr/Periods";
 import PeriodDetail from "@/pages/hr/PeriodDetail";
+import SpecialRuns from "@/pages/hr/SpecialRuns";
+import SpecialRunDetail from "@/pages/hr/SpecialRunDetail";
 import Workbench from "@/pages/hr/Workbench";
 import Employees from "@/pages/hr/EmployeesView";
 import Attendance from "@/pages/hr/AttendanceView";
@@ -54,6 +56,11 @@ export default function App() {
           <Route path="/hr-manager" element={<Guard><HrLayout /></Guard>}>
             <Route index element={<Dashboard />} />
             <Route path="payroll" element={<Periods />} />
+            {/* THR & Bonus Tahunan (30 Okt 2026): rute tetap menang atas payroll/:pid */}
+            <Route path="payroll/thr" element={<SpecialRuns runType="thr" />} />
+            <Route path="payroll/thr/:pid" element={<SpecialRunDetail runType="thr" />} />
+            <Route path="payroll/bonus-tahunan" element={<SpecialRuns runType="bonus_tahunan" />} />
+            <Route path="payroll/bonus-tahunan/:pid" element={<SpecialRunDetail runType="bonus_tahunan" />} />
             <Route path="payroll/:pid" element={<PeriodDetail />} />
             <Route path="payroll/:pid/employee/:eid" element={<Workbench />} />
             <Route path="employees" element={<Employees />} />

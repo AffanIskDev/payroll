@@ -37,8 +37,15 @@ async def migrate_periods():
         if p["period_name"] in BULAN and period_name_for(p["start_date"], p["end_date"]):
             upd["period_name"] = period_name_for(p["start_date"], p["end_date"])
         await db.payroll_periods.update_one({"id": p["id"]}, {"$set": upd})
+    # periode lama = gaji; THR & Bonus Tahunan (user 30 Okt 2026) hidup di koleksi yang sama dengan run_type sendiri, jadi
+    # keunikan per bulan berlaku per jenis run: satu gaji, satu THR, satu Bonus Tahunan per bulan
+    await db.payroll_periods.update_many({"run_type": {"$exists": False}}, {"$set": {"run_type": "gaji"}})
     try:
-        await db.payroll_periods.create_index("bulan", unique=True, name="bulan_unique",
+        await db.payroll_periods.drop_index("bulan_unique")
+    except OperationFailure:
+        pass  # sudah diganti
+    try:
+        await db.payroll_periods.create_index([("bulan", 1), ("run_type", 1)], unique=True, name="bulan_run_unique",
                                               partialFilterExpression={"bulan": {"$type": "string"}})
     except OperationFailure as e:
         logger.warning("Indeks unik bulan periode tidak dibuat (ada periode ganda di satu bulan): %s", e)

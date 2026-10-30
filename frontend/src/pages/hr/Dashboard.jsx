@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Users, UserPlus, UserMinus, UserX, AlertTriangle, Wallet, Receipt, HeartPulse, HardHat, ArrowRight, BellRing, XCircle, ChevronDown, LockKeyhole, TrendingUp, TrendingDown, Minus, Hourglass, ClipboardList, Landmark } from "lucide-react";
 import { api } from "@/lib/api";
+import { runPath } from "@/lib/runs";
 import { rp, PERIOD_STATUS, DATA_ISSUE_LABELS, formatDate, formatDateRange, localIso } from "@/lib/format";
 import { PageTitle, Panel, StatusBadge, PeriodStatusChip, AccentBody } from "@/components/common";
 
@@ -42,7 +43,7 @@ const Delta = ({ d, prev, orang, testId }) => {
 const Notice = ({ n }) => {
   const rejected = n.kind === "rejected";
   return (
-    <Link to={`/hr-manager/payroll/${n.period_id}`} data-testid={`notification-${n.period_id}`} className={`flex items-start gap-3 rounded-lg border px-4 py-3 transition-colors fade-up ${rejected ? "bg-rose-50 border-rose-200 hover:bg-rose-100" : "bg-amber-50 border-amber-200 hover:bg-amber-100"}`}>
+    <Link to={runPath(n.run_type, n.period_id)} data-testid={`notification-${n.period_id}`} className={`flex items-start gap-3 rounded-lg border px-4 py-3 transition-colors fade-up ${rejected ? "bg-rose-50 border-rose-200 hover:bg-rose-100" : "bg-amber-50 border-amber-200 hover:bg-amber-100"}`}>
       {rejected ? <XCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" /> : <BellRing className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />}
       <div className="text-sm flex-1">
         <div className={`font-semibold ${rejected ? "text-rose-800" : "text-amber-900"}`}>{rejected ? `Draft ${n.period_name} ditolak — perlu dikoreksi` : `Draft ${n.period_name} diajukan — menunggu approval Anda`}</div>

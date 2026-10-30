@@ -42,6 +42,12 @@ LEAVE_MAP = {
 TRANSPORT_COMPONENT = "KOMP-00022"
 MONTHLY_COMPONENTS = {TRANSPORT_COMPONENT: "TRANSPORT_HOMECARE", "KOMP-00005": "BONUS",
                       "KOMP-00015": "TARGET_DEDUCTION", "KOMP-00014": "THR", "KOMP-00007": "LOAN_INSTALLMENT"}
+# Bonus Tahunan (user 30 Okt 2026) bukan "Bonus" bulanan KOMP-00005: komponen ROSY-nya sendiri. Belum ada di ROSY, jadi id-nya
+# diisi lewat env ROSY_KOMP_BONUS_TAHUNAN begitu dibuat; kosong = nominal Bonus Tahunan hanya diinput di RUSA. Run gaji
+# tidak membacanya (build_slip hanya mengambil kode yang dikenalnya).
+BONUS_TAHUNAN_COMPONENT = os.environ.get("ROSY_KOMP_BONUS_TAHUNAN", "").strip()
+if BONUS_TAHUNAN_COMPONENT:
+    MONTHLY_COMPONENTS[BONUS_TAHUNAN_COMPONENT] = "BONUS_TAHUNAN"
 
 # Simulation sample (mock mode only)
 EMPLOYEES = [

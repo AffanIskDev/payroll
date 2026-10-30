@@ -43,7 +43,9 @@ async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
     slips = [s for s in slips if int(pids[s["payroll_period_id"]]["end_date"][5:7]) > cutoff]
     if not slips and not init:
         return None
-    months = sorted(int(pids[s["payroll_period_id"]]["end_date"][5:7]) for s in slips)
+    # bulan kerja = slip gaji saja: run THR / Bonus Tahunan (30 Okt 2026) menambah penghasilan, bukan bulan kerja
+    gaji = [s for s in slips if pids[s["payroll_period_id"]].get("run_type") not in ("thr", "bonus_tahunan")]
+    months = sorted(int(pids[s["payroll_period_id"]]["end_date"][5:7]) for s in gaji)
     sm = lambda f: sum(f(s) for s in slips)  # noqa: E731
     it = {
         "i1": sm(lambda s: s["basic_salary"] - s["absent_deduction_amount"] + _kept(s, "absent_deduction_amount")),
@@ -56,14 +58,14 @@ async def build_1721a1(emp: dict, year: int, seq: int) -> Optional[dict]:
                  + s["overtime_pay"] + s.get("transport_homecare", 0)), "i4": 0,
         "i5": sm(lambda s: s["tunjangan_bpjs_kes"] + s["bpjs"]["jkk"] + s["bpjs"]["jkm"]), "i6": 0,
         # angka 7 = "Tantiem, Bonus, Gratifikasi, Jasa Produksi dan THR" (THR dari ROSY sejak 12 Okt 2026)
-        "i7": sm(lambda s: s["kpi_incentive"] + s["additional_bonus"] + s.get("thr", 0)),
+        "i7": sm(lambda s: s["kpi_incentive"] + s["additional_bonus"] + s.get("thr", 0) + s.get("bonus_tahunan", 0)),
         "i7a": float((init or {}).get("gross_income_ytd") or 0),
     }
     it["i8"] = sum(it[k] for k in ("i1", "i2", "i3", "i4", "i5", "i6", "i7", "i7a"))
     it["i10"] = float((init or {}).get("employee_jht_jp_ytd") or 0) + \
         sm(lambda s: s["bpjs"]["jht_employee"] + s["bpjs"]["jp_employee"])
     ptkp = resolve_ptkp(emp)
-    worked = cutoff + len(slips)
+    worked = cutoff + len(gaji)
     t = annual_tax_summary(it["i8"], it["i10"], worked, ptkp)
     it.update(i9=t["biaya_jabatan"], i11=t["biaya_jabatan"] + it["i10"], i12=t["neto_year"], i13=0,
               i14=t["neto_year"], i15=t["ptkp_amount"], i16=t["pkp"], i17=t["annual_tax"], i18=0,

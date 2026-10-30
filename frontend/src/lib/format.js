@@ -27,10 +27,10 @@ export const LEAVE_LABELS = {
 };
 
 // Nama periode otomatis bila mulai & selesai di bulan yang sama (aturan yang sama dengan backend periods.py)
-const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober",
+export const BULAN_NAMA = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober",
   "November", "Desember"];
 export const periodNameFor = (start, end) =>
-  start && end && start.slice(0, 7) === end.slice(0, 7) ? `${BULAN[Number(start.slice(5, 7)) - 1]} ${start.slice(0, 4)}` : null;
+  start && end && start.slice(0, 7) === end.slice(0, 7) ? `${BULAN_NAMA[Number(start.slice(5, 7)) - 1]} ${start.slice(0, 4)}` : null;
 
 // Periode baru cukup pilih satu bulan kalender (user 13 Okt 2026): "2026-09" → { start: "2026-09-01", end: "2026-09-30" }
 export const monthRange = (month) => {
@@ -46,13 +46,13 @@ export const firstDayAfter = (month) => {
 
 // "2026-10-01" → "1 Oktober 2026"
 export const formatDate = (iso) =>
-  iso ? `${Number(iso.slice(8, 10))} ${BULAN[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}` : "-";
+  iso ? `${Number(iso.slice(8, 10))} ${BULAN_NAMA[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}` : "-";
 
 // Rentang periode: "1–30 September 2026"; lintas bulan "26 Agustus – 25 September 2026"; lintas tahun lengkap keduanya
 export const formatDateRange = (start, end) => {
   if (!start || !end) return "-";
   if (start === end) return formatDate(start);
-  const month = BULAN[Number(start.slice(5, 7)) - 1];
+  const month = BULAN_NAMA[Number(start.slice(5, 7)) - 1];
   if (start.slice(0, 7) === end.slice(0, 7)) return `${Number(start.slice(8, 10))}–${formatDate(end)}`;
   if (start.slice(0, 4) === end.slice(0, 4)) return `${Number(start.slice(8, 10))} ${month} – ${formatDate(end)}`;
   return `${formatDate(start)} – ${formatDate(end)}`;

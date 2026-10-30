@@ -76,9 +76,11 @@ def company_code(period: dict) -> str:
 
 
 def doc_number(period: dict, seq: int) -> str:
-    """'SG/RUMAT/2026/09/0001': Slip Gaji, perusahaan, bulan gaji, urutan terbit di periode itu."""
+    """'SG/RUMAT/2026/09/0001': Slip Gaji, perusahaan, bulan gaji, urutan terbit di periode itu. Run THR / Bonus Tahunan
+    (30 Okt 2026) memakai awalan sendiri: 'THR/…', 'BT/…'."""
     month = period.get("bulan") or (period.get("start_date") or "")[:7]
-    return f"SG/{company_code(period)}/{month.replace('-', '/')}/{seq:04d}"
+    prefix = {"thr": "THR", "bonus_tahunan": "BT"}.get(period.get("run_type"), "SG")
+    return f"{prefix}/{company_code(period)}/{month.replace('-', '/')}/{seq:04d}"
 
 
 async def next_doc_number(period: dict) -> str:
@@ -129,11 +131,11 @@ async def lookup(code: str) -> Optional[dict]:
         return {"status": "belum_disetujui", "status_penerbitan": "belum_diterbitkan", "status_persetujuan": "menunggu",
                 "kode": code, "diperiksa_pada": checked}
     period = await db.payroll_periods.find_one({"id": slip["payroll_period_id"]},
-                                               {"_id": 0, "period_name": 1, "company": 1, "signer": 1}) or {}
+                                               {"_id": 0, "period_name": 1, "company": 1, "signer": 1, "run_type": 1}) or {}
     signer = slip.get("verify_signer") or period.get("signer") or {}
     company = period.get("company") or {}
     # slip yang di-approve sebelum 15 Okt 2026 belum punya nomor dokumen: id_dokumen None, halaman tidak menampilkannya
-    return {"status": "sah", "dokumen": "Slip Gaji", "id_dokumen": slip.get("doc_number"),
+    return {"status": "sah", "dokumen": {"thr": "Slip THR", "bonus_tahunan": "Slip Bonus Tahunan"}.get(period.get("run_type"), "Slip Gaji"), "id_dokumen": slip.get("doc_number"),
             "diterbitkan_pada": slip.get("approved_at"), "status_penerbitan": "diterbitkan",
             "status_persetujuan": "disetujui", "perusahaan": company.get("nama_legal") or company.get("nama"),
             "periode": period.get("period_name"), "karyawan": mask_name((slip.get("employee") or {}).get("name")),
