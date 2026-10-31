@@ -498,7 +498,10 @@ async def period_detail(pid: str):
         .sort("employee.nik", 1).to_list(2000)
     present = await _present_days(period, [s["employee_id"] for s in slips])
     dates = {e["id"]: e async for e in db.employees.find({"id": {"$in": [s["employee_id"] for s in slips]}},
-                                                         {"_id": 0, "id": 1, "join_date": 1, "exit_date": 1})}
+                                                         {"_id": 0, "id": 1, "join_date": 1, "exit_date": 1,
+                                                          "bank_account_name": 1})}
+    for s in slips:   # tabel memakai nama rekening (tanpa gelar, user 31 Okt 2026); kosong = nama karyawan
+        s["display_name"] = (dates.get(s["employee_id"], {}).get("bank_account_name") or "").strip() or (s.get("employee") or {}).get("name")
     # summary cards on top of the period, which also filter the table (user requests 10 Oct 2026): employee ids per card
     groups = {k: [] for k in ("overtime", "homecare", "unpaid", "maternity", "partial")}
     hours = overtime_pay = homecare = 0
