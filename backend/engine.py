@@ -95,18 +95,22 @@ def calc_discipline(logs: list) -> dict:
         if lt != "present":
             continue
         events = []
-        if log.get("is_missing_check_in"):
-            r1 += 1
-        elif (log.get("minutes_late") or 0) > 0:
+        missing = bool(log.get("is_missing_check_in") or log.get("is_missing_check_out"))
+        if not log.get("is_missing_check_in") and (log.get("minutes_late") or 0) > 0:
             events.append(int(log["minutes_late"]))
-        if log.get("is_missing_check_out"):
-            r1 += 1
-        elif (log.get("minutes_early_leave") or 0) > 0:
+        if not log.get("is_missing_check_out") and (log.get("minutes_early_leave") or 0) > 0:
             events.append(int(log["minutes_early_leave"]))
+        # maksimal 1 poin per hari (aturan ROSY, AbsensiModules::hitungPoin; user 31 Okt 2026): lupa absen, atau telat /
+        # pulang cepat 60 menit atau lebih, memberi 1 poin SEHARI walau terjadi bersamaan, dan menit hari itu tidak
+        # ikut diakumulasi lagi
+        if missing:
+            r1 += 1
+            continue
+        if any(m >= 60 for m in events):
+            r2 += 1
+            continue
         for m in events:
-            if m >= 60:
-                r2 += 1
-            elif m >= 15:
+            if m >= 15:
                 mid.append(m)
             else:
                 small_minutes += m

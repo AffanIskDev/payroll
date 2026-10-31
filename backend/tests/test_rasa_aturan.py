@@ -718,3 +718,31 @@ def test_all_cuts_sit_under_potongan_and_totals_still_add_up():
     assert sum(v for _, v, _ in earn[:-1]) == earn[-1][1]       # TOTAL PENDAPATAN = its rows
     assert sum(v for _, v, _ in ded[:-1]) == ded[-1][1]         # TOTAL POTONGAN = its rows
     assert earn[-1][1] - ded[-1][1] == s["take_home_pay"]       # = TOTAL DITERIMA
+
+
+def _hari(tgl, **kw):
+    return {"work_date": tgl, "leave_type": "present", **kw}
+
+
+def test_discipline_max_one_point_per_day():
+    """Maksimal 1 poin per hari (aturan ROSY hitungPoin; user 31 Okt 2026): telat / pulang cepat 60 menit atau lebih bersama
+    lupa absen pulang di hari yang sama = 1 poin, bukan 2; menit hari itu tidak ikut diakumulasi."""
+    logs = [
+        _hari("2026-10-07", minutes_late=481, is_missing_check_out=True),                         # telat berat + lupa pulang
+        _hari("2026-10-08", minutes_late=90, minutes_early_leave=120),                             # dua pelanggaran >= 60 menit
+        _hari("2026-10-09", is_missing_check_in=True, is_missing_check_out=True),                  # lupa masuk dan pulang
+        _hari("2026-10-12", minutes_late=20, is_missing_check_out=True),                           # lupa pulang + telat ringan
+        _hari("2026-10-13", minutes_late=70),                                                      # satu pelanggaran berat
+    ]
+    d = calc_discipline(logs)
+    assert d["total_points"] == 5                       # 5 hari berpoin, masing-masing 1
+    assert d["rule3_events"] == 0 and d["rule4_minutes"] == 0   # menit 20 pada hari 12 Okt tidak diakumulasi
+    assert d["presence_points"] == 5 and d["absence_points"] == 0
+
+
+def test_discipline_light_lateness_still_accumulates():
+    """Hari tanpa poin langsung tetap mengakumulasi: 3 hari telat 15-59 menit = 1 poin; menit < 15 per 60 menit = 1 poin."""
+    mid = [_hari(f"2026-10-{d:02d}", minutes_late=20) for d in (1, 2, 3)]
+    small = [_hari(f"2026-10-{d:02d}", minutes_late=10) for d in range(5, 11)]
+    assert calc_discipline(mid)["total_points"] == 1
+    assert calc_discipline(small)["total_points"] == 1
