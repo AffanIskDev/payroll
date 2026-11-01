@@ -111,6 +111,48 @@ function Pph21BasisPanel({ value, choices, onChange }) {
   );
 }
 
+// Dasar BPJS Kesehatan (permintaan user 1 Nov 2026): satu setelan global (backend engine.bpjs_kes_basis). Porsi perusahaan 4% masuk
+// bruto pajak; porsi karyawan 1% dipotong dari gaji. Dasarnya sama untuk keduanya.
+const BPJS_KES_BASIS = {
+  flat_umk: {
+    title: "Flat nilai UMK", tag: "bawaan",
+    formula: "Dasar = UMK (config UMK_BEKASI_REGENCY) untuk semua karyawan",
+    note: "Semua karyawan memakai nilai UMK, berapa pun gaji pokoknya. Porsi perusahaan 4%, porsi karyawan 1%.",
+  },
+  formula: {
+    title: "Rumus gaji pokok",
+    formula: "Dasar = yang terbesar antara gaji pokok dan UMK, maksimal plafon BPJS Kesehatan",
+    note: "Gaji pokok di atas UMK memakai gaji pokoknya sampai plafon (BPJS_KES_MAX_WAGE); di bawah UMK memakai UMK.",
+  },
+};
+
+function BpjsKesBasisPanel({ value, choices, onChange }) {
+  return (
+    <Panel title="Dasar BPJS Kesehatan" className="mb-6">
+      <div className="px-5 py-4" data-testid="bpjs-kes-basis-panel">
+        <p className="text-xs text-slate-500 mb-3">Dasar upah untuk iuran BPJS Kesehatan (4% perusahaan, 1% karyawan). Porsi perusahaan ikut masuk bruto PPh 21.</p>
+        <div role="radiogroup" aria-label="Dasar BPJS Kesehatan" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {choices.filter((k) => BPJS_KES_BASIS[k]).map((k) => {
+            const o = BPJS_KES_BASIS[k];
+            const on = value === k;
+            return (
+              <label key={k} data-testid={`bpjs-kes-basis-${k}`} className={`flex gap-3 rounded-md border px-4 py-3 cursor-pointer transition-colors ${on ? "border-brand-700 ring-2 ring-brand-700/20 bg-brand-50/40" : "border-slate-200 hover:border-brand-400"}`}>
+                <input type="radio" name="BPJS_KES_BASIS" value={k} checked={on} onChange={() => onChange(k)} className="mt-1 h-4 w-4 accent-brand-700 shrink-0" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 min-h-[24px] text-sm font-semibold text-slate-900">{o.title}{o.tag && <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{o.tag}</span>}</span>
+                  <span className="block num text-xs text-slate-700 mt-1">{o.formula}</span>
+                  <span className="block text-xs text-slate-500 mt-1">{o.note}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">Berlaku untuk slip yang dihitung sesudah disimpan: klik <b>Fetch Data Terbaru</b> di halaman periode untuk periode yang masih draft. Slip yang sudah di-approve tidak berubah. Pastikan nilai <b>UMK_BEKASI_REGENCY</b> di bawah sudah benar.</p>
+      </div>
+    </Panel>
+  );
+}
+
 export default function Configs() {
   const [list, setList] = useState([]);
   const [vals, setVals] = useState({});
@@ -120,6 +162,7 @@ export default function Configs() {
   });
   useEffect(() => { load(); }, []);
   const basis = list.find((c) => c.config_key === "PPH21_BASIS" && c.choices?.length); // none until the backend has seeded it
+  const kes = list.find((c) => c.config_key === "BPJS_KES_BASIS" && c.choices?.length);
 
   const save = async () => {
     try {
@@ -136,10 +179,11 @@ export default function Configs() {
         <Btn data-testid="save-config-button" onClick={save}><Save className="h-4 w-4" /> Simpan</Btn>
       </PageTitle>
       <SignerPanel />
+      {kes && <BpjsKesBasisPanel value={vals.BPJS_KES_BASIS} choices={kes.choices} onChange={(v) => setVals({ ...vals, BPJS_KES_BASIS: v })} />}
       {basis && <Pph21BasisPanel value={vals.PPH21_BASIS} choices={basis.choices} onChange={(v) => setVals({ ...vals, PPH21_BASIS: v })} />}
       <Panel>
         <div className="divide-y divide-slate-100">
-          {list.filter((c) => c.config_key !== "PPH21_BASIS").map((c) => (
+          {list.filter((c) => c.config_key !== "PPH21_BASIS" && c.config_key !== "BPJS_KES_BASIS").map((c) => (
             <div key={c.config_key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-6 px-5 py-4">
               <div className="min-w-0">
                 <div className="num text-sm font-semibold">{c.config_key}</div>

@@ -187,6 +187,13 @@ def wage_multiplier(status: str, month: int) -> float:
     return 1.0
 
 
+def bpjs_kes_basis(cfg: dict) -> str:
+    """Config BPJS_KES_BASIS: "flat_umk" = BPJS Kesehatan SEMUA karyawan memakai nilai UMK (config UMK_BEKASI_REGENCY), tanpa
+    melihat gaji pokok; anything else (missing, blank, a typo) keeps "formula", the rule RUSA used before the setting existed:
+    the larger of gaji pokok and UMK, capped at BPJS_KES_MAX_WAGE."""
+    return "flat_umk" if str((cfg or {}).get("BPJS_KES_BASIS") or "").strip().lower() == "flat_umk" else "formula"
+
+
 def calc_bpjs(emp: dict, cfg: dict) -> dict:
     basic = float(emp.get("basic_salary") or 0)
     umk = float(cfg.get("UMK_BEKASI_REGENCY", 0))
@@ -199,7 +206,8 @@ def calc_bpjs(emp: dict, cfg: dict) -> dict:
     joined = {"kes": programs.get("kes", emp.get("has_bpjs_kes", True)),
               **{p: programs.get(p, emp.get("has_bpjs_tk", True)) for p in BPJS_TK_PROGRAMS}}
     if joined["kes"]:
-        r["kes_base"] = round(min(max(basic, umk), kes_cap))
+        # user 1 Nov 2026: pilihan di Konfigurasi, flat UMK untuk semua karyawan atau rumus max(gaji pokok, UMK) dgn plafon
+        r["kes_base"] = round(umk) if bpjs_kes_basis(cfg) == "flat_umk" else round(min(max(basic, umk), kes_cap))
         r["kes_company"] = round(r["kes_base"] * 0.04)
         r["kes_employee"] = round(r["kes_base"] * 0.01)
     if joined["jkk"]:
