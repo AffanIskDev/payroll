@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from core import db, now_iso, get_configs, actor
-from engine import compute_payslip
+from engine import compute_payslip, bpjs_tk_basis
 import verify
 from labels import position_allowance_label
 from pdf_service import save_encrypted
@@ -108,6 +108,8 @@ async def period_components(period: dict, emp_id: str) -> dict:
 
 async def build_slip(period: dict, emp: dict, adj: dict, cfg: Optional[dict] = None) -> dict:
     cfg = cfg or await get_configs()
+    if bpjs_tk_basis(cfg) == "import":  # data given BPJS TK per person (collection bpjs_tk_given); none = formula
+        emp = {**emp, "bpjs_tk_given": await db.bpjs_tk_given.find_one({"employee_id": emp["id"]}, {"_id": 0})}
     logs = await period_logs(emp["id"], period)
     comp = await period_components(period, emp["id"])
     # Transport Homecare, Bonus, THR, Potongan Tidak Mencapai Target and Cicilan / Pinjaman come from ROSY only,
