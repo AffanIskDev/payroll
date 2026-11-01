@@ -369,12 +369,42 @@ def test_transport_homecare_is_taxable_income():
     assert slip["transport_homecare"] == 1250000
     assert slip["gross_earnings"] - base["gross_earnings"] == 1250000
     assert slip["taxable_gross"] - base["taxable_gross"] == 1250000
-    assert slip["take_home_pay"] - base["take_home_pay"] == 1250000 - (slip["pph21_amount"] - base["pph21_amount"])
+    # Book Fee Homecare (user 1 Nov 2026): transport sudah dibayar di muka, jadi THP hanya turun oleh tambahan PPh 21-nya
+    assert slip["take_home_pay"] - base["take_home_pay"] == -(slip["pph21_amount"] - base["pph21_amount"])
+
+
+def test_book_fee_homecare_cancels_the_transport_out_of_the_take_home_pay():
+    base = compute_payslip(EMP, [], CFG, {})
+    slip = compute_payslip(EMP, [], CFG, {"transport_homecare": 1250000})
+    assert base["book_fee_homecare"] == 0
+    assert slip["book_fee_homecare"] == 1250000
+    # transport tetap pendapatan & dasar pajak, potongannya masuk Total Potongan
+    assert slip["gross_earnings"] - base["gross_earnings"] == 1250000
+    assert slip["taxable_gross"] - base["taxable_gross"] == 1250000
+    assert slip["total_deductions"] - base["total_deductions"] == 1250000 + (slip["pph21_amount"] - base["pph21_amount"])
+    assert slip["take_home_pay"] == slip["gross_earnings"] - slip["total_deductions"]
+
+
+def test_book_fee_homecare_shows_on_the_pdf_deductions_and_totals_still_add_up():
+    from pdf_service import payslip_lines
+    slip = compute_payslip(EMP, [], CFG, {"transport_homecare": 800000})
+    earn, ded = payslip_lines(slip)
+    assert ("Book Fee Homecare", 800000) in [(r[0], r[1]) for r in ded]
+    assert ("Transport Homecare", 800000) in [(r[0], r[1]) for r in earn]
+    total_earn, total_ded = earn[-1][1], ded[-1][1]
+    assert total_earn - total_ded == slip["take_home_pay"]
+
+
+def test_no_transport_means_no_book_fee_row_on_the_pdf():
+    from pdf_service import payslip_lines
+    _, ded = payslip_lines(compute_payslip(EMP, [], CFG, {}))
+    assert "Book Fee Homecare" not in [r[0] for r in ded]
 
 
 def test_unpaid_leave_gets_no_transport():
     slip = compute_payslip({**EMP, "payroll_status": "unpaid_leave"}, [], CFG, {"transport_homecare": 500000})
     assert slip["transport_homecare"] == 0
+    assert slip["book_fee_homecare"] == 0
 
 
 def test_unpaid_leave_earns_no_attendance_allowance_instead_of_cutting_it_to_zero():
