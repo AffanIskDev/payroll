@@ -237,7 +237,7 @@ def payslip_lines(slip: dict) -> tuple:
     ded = _shown([("Potongan Presensi", presensi, False, _presence_detail(slip)),
                   ("Potongan Absensi", absensi, False, _absence_detail(slip)),
                   ("Potongan Tidak Mencapai Target", slip.get("target_deduction", 0), False),
-                  ("Book Fee Homecare", slip.get("book_fee_homecare", 0), False),
+                  ("Book Fee Homecare", slip.get("book_fee_homecare", 0), False, "Dibayar di muka"),
                   ("Iuran BPJS Kesehatan (5%)", slip["iuran_bpjs_kes_total"], False),
                   (f"Iuran BPJS Ketenagakerjaan{tk_rate_label(slip)}", slip["iuran_bpjs_tk_total"], False),
                   ((("PPh 21 Masa Terakhir (Pasal 17)"

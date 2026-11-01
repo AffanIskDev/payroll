@@ -390,6 +390,7 @@ def test_book_fee_homecare_shows_on_the_pdf_deductions_and_totals_still_add_up()
     slip = compute_payslip(EMP, [], CFG, {"transport_homecare": 800000})
     earn, ded = payslip_lines(slip)
     assert ("Book Fee Homecare", 800000) in [(r[0], r[1]) for r in ded]
+    assert ("Book Fee Homecare", 800000, "Dibayar di muka") in ded
     assert ("Transport Homecare", 800000) in [(r[0], r[1]) for r in earn]
     total_earn, total_ded = earn[-1][1], ded[-1][1]
     assert total_earn - total_ded == slip["take_home_pay"]
