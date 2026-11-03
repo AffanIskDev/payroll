@@ -54,11 +54,11 @@ export default function Login() {
           <form onSubmit={submit} className="w-full max-w-sm space-y-5 fade-up" data-testid="login-form">
             <div className="space-y-1.5">
               <h2 className="text-3xl font-extrabold text-slate-900">Masuk ke RUSA</h2>
-              <p className="text-base text-slate-600">Gunakan akun ROSY Anda. Khusus Manager HRD dan Supervisor HRD.</p>
+              <p className="text-base text-slate-600">Masuk dengan akun RUSA Anda. Akses diatur oleh Manager HRD perusahaan Anda.</p>
             </div>
             <div className="space-y-2">
-              <label htmlFor="login-username" className="block text-sm font-bold text-slate-900">Username ROSY</label>
-              <input id="login-username" data-testid="login-username-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" autoFocus className={field} placeholder="username ROSY" />
+              <label htmlFor="login-username" className="block text-sm font-bold text-slate-900">Username</label>
+              <input id="login-username" data-testid="login-username-input" value={username} onChange={(e) => setUsername(e.target.value)} required autoComplete="username" autoFocus className={field} placeholder="username" />
             </div>
             <div className="space-y-2">
               <label htmlFor="login-password" className="block text-sm font-bold text-slate-900">Kata sandi</label>
@@ -75,7 +75,7 @@ export default function Login() {
             <button data-testid="login-submit-button" disabled={busy} className="w-full h-12 bg-brand-700 hover:bg-brand-800 text-white text-base font-bold rounded-xl transition-colors disabled:opacity-60">
               {busy ? "Memproses..." : "Masuk"}
             </button>
-            <div className="flex items-start gap-2 text-sm text-slate-600"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-brand-600" /> Kata sandi diperiksa langsung ke ROSY dan tidak disimpan di RUSA. Setelah 5 kali gagal, akun dikunci 15 menit.</div>
+            <div className="flex items-start gap-2 text-sm text-slate-600"><ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-brand-600" /> Gunakan kata sandi RUSA Anda, atau kata sandi ROSY bila akun Anda diatur memakai ROSY. Setelah 5 kali gagal, akun dikunci 15 menit.</div>
           </form>
         </div>
         <div className="text-center text-xs text-slate-500 pt-6">© 2026 PT Rumah Perawatan Indonesia · RUSA</div>

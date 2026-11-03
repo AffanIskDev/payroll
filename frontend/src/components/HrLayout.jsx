@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, BarChart3, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, BarChart3, UserCog, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth, isManager, ROLE_LABELS } from "@/context/AuthContext";
 
 // [path, label, icon, end, khusus Manager HRD]
@@ -11,6 +11,7 @@ const NAV = [
   ["/hr-manager/attendance", "Presensi", CalendarClock],
   ["/hr-manager/recap", "Rekap", BarChart3],
   ["/hr-manager/tax", "Pajak", Calculator, false, true],
+  ["/hr-manager/users", "Pengguna", UserCog, false, true],
   ["/hr-manager/config", "Konfigurasi", Settings2, false, true],
 ];
 

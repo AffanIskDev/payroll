@@ -10,7 +10,9 @@ export function AuthProvider({ children }) {
     api.get("/auth/me").then((r) => setUser(r.data)).catch(() => setUser(false));
   }, []);
 
-  // username & password ROSY, diverifikasi HAM; peran mengikuti jabatan di ROSY
+  // akun RUSA sendiri (3 Nov 2026): peran & akses dari daftar pengguna RUSA; kata sandi RUSA atau ROSY menurut penggunanya
+  const refresh = () => api.get("/auth/me").then((r) => setUser(r.data)).catch(() => setUser(false));
+
   const login = async (username, password) => {
     const { data } = await api.post("/auth/login", { username, password });
     localStorage.setItem("payroll_token", data.token);
@@ -24,7 +26,7 @@ export function AuthProvider({ children }) {
     setUser(false);
   };
 
-  return <AuthCtx.Provider value={{ user, login, logout }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, login, logout, refresh }}>{children}</AuthCtx.Provider>;
 }
 
 export const useAuth = () => useContext(AuthCtx);

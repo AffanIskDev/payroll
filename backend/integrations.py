@@ -99,9 +99,12 @@ async def _get(path: str, params: dict) -> dict:
     return body
 
 
-async def verify_rosy_login(username: str, password: str, client_ip: str = "") -> dict:
+async def verify_rosy_login(username: str, password: str, client_ip: str = "", credentials_only: bool = False) -> dict:
     """Checks a ROSY username/password through HAM (verify-only: HAM writes nothing and issues no ROSY token,
-    so the user's ROSY session is untouched). Returns the account facts incl. jabatan; raises HTTPException."""
+    so the user's ROSY session is untouched). Returns the account facts incl. jabatan; raises HTTPException.
+    credentials_only (3 Nov 2026, akses RUSA sendiri): hanya memastikan username & kata sandi ROSY benar — HAM tak memeriksa
+    karyawan/perusahaan/jabatan; siapa boleh memakai RUSA diputuskan daftar pengguna RUSA. HAM lama mengabaikan parameternya
+    dan tetap memeriksa karyawan perusahaan (403 bukan_karyawan_aktif)."""
     if mode("ROSY") != "live":
         raise HTTPException(503, "Login ROSY belum tersedia: HAM_API_URL belum diatur")
     url = os.environ["HAM_API_URL"].rstrip("/") + FEED + "/auth/login"
@@ -109,7 +112,8 @@ async def verify_rosy_login(username: str, password: str, client_ip: str = "") -
                "X-Rasa-Client-Ip": client_ip}
     try:
         async with httpx.AsyncClient(timeout=20) as c:
-            r = await c.post(url, headers=headers, params={"payroll_company_id": company_id()},
+            r = await c.post(url, headers=headers,
+                             params={"payroll_company_id": company_id(), **({"verifikasi": "kredensial"} if credentials_only else {})},
                              json={"username": username, "password": password})
         body = r.json()
     except (httpx.HTTPError, ValueError):
@@ -120,6 +124,9 @@ async def verify_rosy_login(username: str, password: str, client_ip: str = "") -
         return body.get("data") or {}
     if r.status_code == 401 and code == "kredensial_salah":
         raise HTTPException(401, "Username atau password ROSY salah")
+    if credentials_only and r.status_code == 403 and code == "bukan_karyawan_aktif":
+        # HAM belum mendukung verifikasi kredensial saja: kata sandi benar, tapi bukan karyawan perusahaan ini
+        raise HTTPException(503, "ROSY belum mendukung login lintas perusahaan. Hubungi IT atau pakai kata sandi RUSA")
     if r.status_code in (403, 429) and code:
         raise HTTPException(r.status_code, body.get("message") or "Login ditolak ROSY")
     # 401 without a code = HAM refused RUSA's integration key: a configuration fault, not the user's

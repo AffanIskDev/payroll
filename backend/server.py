@@ -14,7 +14,7 @@ from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 from core import db, client, now_iso, create_access_token, get_current_user  # noqa: E402
 from seed import seed  # noqa: E402
-from access import role_for  # noqa: E402
+import accounts  # noqa: E402
 import integrations  # noqa: E402
 import routes_hr  # noqa: E402
 import routes_tax  # noqa: E402
@@ -36,7 +36,7 @@ class LoginIn(BaseModel):
 
 @auth.post("/login")
 async def login(body: LoginIn, request: Request, response: Response):
-    """ROSY username + password, checked by HAM; access follows the ROSY position (access.role_for)."""
+    """Akun RUSA sendiri (accounts.py): peran & akses dari daftar pengguna RUSA; kata sandi menurut sumbernya (RUSA / ROSY)."""
     username = body.username.strip()
     if not username or not body.password:
         raise HTTPException(400, "Username dan password wajib diisi")
@@ -47,34 +47,21 @@ async def login(body: LoginIn, request: Request, response: Response):
     if attempt and attempt.get("count", 0) >= 5 and attempt.get("locked_until", "") > now.isoformat():
         raise HTTPException(429, "Terlalu banyak percobaan login. Coba lagi dalam 15 menit")
     try:
-        acc = await integrations.verify_rosy_login(username, body.password, ip)
+        user = await accounts.authenticate(username, body.password, ip)
     except HTTPException as e:
         if e.status_code == 401:
             await db.login_attempts.update_one({"identifier": key}, {
                 "$inc": {"count": 1}, "$set": {"locked_until": (now + timedelta(minutes=15)).isoformat()}}, upsert=True)
         raise
     await db.login_attempts.delete_one({"identifier": key})
-    akun_uji = acc.get("akun_uji") is True   # HAM PAYROLL_AUTH_AKUN_UJI (user 16 Oct 2026): IT's test account
-    role = role_for(acc.get("jabatan"), akun_uji)
-    fields = {"username": acc.get("username") or username, "name": acc.get("nama") or username, "role": role,
-              "rosy_employee_id": acc.get("employee_id"), "jabatan": acc.get("jabatan") or [],
-              "akun_uji": akun_uji, "last_login_at": now_iso()}
-    # Upsert even without access: a known user whose position no longer qualifies loses the role at once,
-    # which also invalidates the tokens they still hold (get_current_user re-reads the role every request)
-    await db.users.update_one({"rosy_user_id": acc["user_id"]}, {
-        "$set": fields, "$setOnInsert": {"id": str(uuid.uuid4()), "rosy_user_id": acc["user_id"],
-                                         "created_at": now_iso()}}, upsert=True)
-    if not role:
-        raise HTTPException(403, "Akun ROSY Anda tidak memiliki akses ke RUSA. RUSA khusus Manager HRD "
-                                 "dan Supervisor HRD (sesuai jabatan di ROSY)")
-    user = await db.users.find_one({"rosy_user_id": acc["user_id"]}, {"_id": 0})
+    await db.users.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_iso()}})
     return _issue(user, response)
 
 
 def _issue(user: dict, response: Response) -> dict:
     token = create_access_token(user["id"], user["role"])
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none", max_age=43200, path="/")
-    return {"token": token, "user": {k: user.get(k) for k in ("id", "username", "name", "role", "akun_uji")}}
+    return {"token": token, "user": {k: user.get(k) for k in ("id", "username", "name", "role", "akun_uji", "must_change_password")}}
 
 
 @auth.post("/logout")
@@ -94,6 +81,8 @@ async def health():
 
 
 app.include_router(auth)
+app.include_router(accounts.auth_router)  # ganti kata sandi (akun RUSA)
+app.include_router(accounts.router)  # daftar pengguna RUSA (Manager)
 app.include_router(routes_hr.router)
 app.include_router(routes_tax.router)
 app.include_router(employees_rusa.router)  # karyawan & gaji yang diinput di RUSA — 3 Nov 2026

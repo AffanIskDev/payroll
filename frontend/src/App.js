@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth, isHr, isManager } from "@/context/AuthContext";
 import Login from "@/pages/Login";
+import ChangePassword from "@/pages/ChangePassword";
+import UsersView from "@/pages/hr/UsersView";
 import Verify from "@/pages/Verify";
 import HrLayout from "@/components/HrLayout";
 import Dashboard from "@/pages/hr/Dashboard";
@@ -18,12 +20,14 @@ function Guard({ children }) {
   const { user, logout } = useAuth();
   if (user === null) return <div className="p-10 text-sm text-slate-500" data-testid="auth-loading">Memuat...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  // jabatan di ROSY tidak lagi memenuhi syarat: sesi lama berhenti di sini
+  // kata sandi sementara dari Manager: wajib diganti dulu
+  if (user.must_change_password) return <ChangePassword />;
+  // akses dicabut / peran dihapus di daftar pengguna RUSA: sesi lama berhenti di sini
   if (!isHr(user)) return (
     <div className="min-h-screen grid place-items-center p-6 text-center" data-testid="no-access">
       <div className="space-y-3">
-        <div className="text-lg font-semibold">Akun ROSY Anda tidak memiliki akses ke RUSA</div>
-        <div className="text-sm text-slate-500">RUSA khusus Manager HRD dan Supervisor HRD sesuai jabatan di ROSY.</div>
+        <div className="text-lg font-semibold">Akun Anda tidak memiliki akses ke RUSA</div>
+        <div className="text-sm text-slate-500">Hubungi Manager HRD untuk meminta akses.</div>
         <button onClick={logout} className="text-sm font-semibold text-brand-700 underline">Keluar</button>
       </div>
     </div>
@@ -57,6 +61,7 @@ export default function App() {
             <Route path="payroll" element={<Periods />} />
             <Route path="payroll/:pid" element={<PeriodDetail />} />
             <Route path="payroll/:pid/employee/:eid" element={<Workbench />} />
+            <Route path="users" element={<ManagerOnly><UsersView /></ManagerOnly>} />
             <Route path="employees" element={<Employees />} />
             <Route path="employees/import" element={<ManagerOnly><ImportEmployees /></ManagerOnly>} />
             <Route path="attendance" element={<Attendance />} />

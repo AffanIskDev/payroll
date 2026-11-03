@@ -2,6 +2,7 @@ import logging
 
 from pymongo.errors import OperationFailure
 
+import accounts
 from core import db, DEFAULT_CONFIGS
 from integrations import LEAVE_MAP
 from periods import BULAN, payroll_month, period_name_for
@@ -20,13 +21,8 @@ async def migrate_employee_indexes():
 
 
 async def migrate_users():
-    """Accounts are ROSY accounts (9 Oct 2026): local email/password users and the employee portal are gone."""
-    if "email_1" in await db.users.index_information():
-        await db.users.drop_index("email_1")
-    await db.users.delete_many({"rosy_user_id": {"$exists": False}})
-    await db.users.create_index("id", unique=True)
-    await db.users.create_index("rosy_user_id", unique=True, name="rosy_user_id_unique",
-                                partialFilterExpression={"rosy_user_id": {"$type": "string"}})
+    """Akun & hak akses RUSA sendiri (3 Nov 2026) — lihat accounts.py."""
+    await accounts.migrate_users()
 
 
 async def migrate_periods():
