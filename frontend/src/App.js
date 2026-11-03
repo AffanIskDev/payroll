@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthProvider, useAuth, isHr, isManager } from "@/context/AuthContext";
+import { AuthProvider, useAuth, isHr, isManager, isMasterAdmin } from "@/context/AuthContext";
 import Login from "@/pages/Login";
 import ChangePassword from "@/pages/ChangePassword";
 import UsersView from "@/pages/hr/UsersView";
@@ -23,7 +23,7 @@ function Guard({ children }) {
   // kata sandi sementara dari Manager: wajib diganti dulu
   if (user.must_change_password) return <ChangePassword />;
   // akses dicabut / peran dihapus di daftar pengguna RUSA: sesi lama berhenti di sini
-  if (!isHr(user)) return (
+  if (!isHr(user) && !isMasterAdmin(user)) return (
     <div className="min-h-screen grid place-items-center p-6 text-center" data-testid="no-access">
       <div className="space-y-3">
         <div className="text-lg font-semibold">Akun Anda tidak memiliki akses ke RUSA</div>
@@ -39,6 +39,12 @@ function Guard({ children }) {
 function ManagerOnly({ children }) {
   const { user } = useAuth();
   return isManager(user) ? children : <Navigate to="/hr-manager" replace />;
+}
+
+// Menu Pengguna: khusus Master Admin
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  return isMasterAdmin(user) ? children : <Navigate to="/hr-manager" replace />;
 }
 
 function Home() {
@@ -61,7 +67,7 @@ export default function App() {
             <Route path="payroll" element={<Periods />} />
             <Route path="payroll/:pid" element={<PeriodDetail />} />
             <Route path="payroll/:pid/employee/:eid" element={<Workbench />} />
-            <Route path="users" element={<ManagerOnly><UsersView /></ManagerOnly>} />
+            <Route path="users" element={<AdminOnly><UsersView /></AdminOnly>} />
             <Route path="employees" element={<Employees />} />
             <Route path="employees/import" element={<ManagerOnly><ImportEmployees /></ManagerOnly>} />
             <Route path="attendance" element={<Attendance />} />

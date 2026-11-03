@@ -49,7 +49,7 @@ export default function UsersView() {
 
   return (
     <div>
-      <PageTitle title="Pengguna RUSA" subtitle={`Siapa yang boleh memakai RUSA ${data.company ? `(${data.company})` : ""} dan sebagai apa — diatur di sini, terpisah dari ROSY`}>
+      <PageTitle title="Pengguna RUSA" subtitle={`Siapa yang boleh memakai RUSA ${data.company ? `(${data.company})` : ""} dan sebagai apa — diatur oleh Master Admin, terpisah dari ROSY`}>
         <Btn onClick={open} data-testid="user-add-button"><Plus className="h-4 w-4" /> Tambah Pengguna</Btn>
       </PageTitle>
       <Panel>
@@ -90,7 +90,7 @@ export default function UsersView() {
       <Dialog open={!!form} onOpenChange={(o) => !busy && !o && setForm(null)}>
         <DialogContent data-testid="user-form-dialog">
           <DialogHeader><DialogTitle>Tambah Pengguna</DialogTitle>
-            <DialogDescription>Orang yang ditunjuk mengurus payroll perusahaan ini. Peran Manager bisa menyetujui & mengunci gaji; Supervisor menyiapkan dan mengajukan.</DialogDescription></DialogHeader>
+            <DialogDescription>Orang yang ditunjuk memakai RUSA perusahaan ini. Manager menyetujui & mengunci gaji; Supervisor menyiapkan dan mengajukan; Master Admin hanya mengatur pengguna (tanpa akses data gaji).</DialogDescription></DialogHeader>
           <div className="grid gap-3">
             <label className="text-sm"><span className="mb-1 block text-xs font-semibold text-slate-600">Username *</span><input className={INPUT} value={form?.username || ""} onChange={set("username")} data-testid="user-form-username" autoComplete="off" /></label>
             <label className="text-sm"><span className="mb-1 block text-xs font-semibold text-slate-600">Nama *</span><input className={INPUT} value={form?.name || ""} onChange={set("name")} data-testid="user-form-name" /></label>

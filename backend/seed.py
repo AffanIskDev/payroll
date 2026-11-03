@@ -23,6 +23,7 @@ async def migrate_employee_indexes():
 async def migrate_users():
     """Akun & hak akses RUSA sendiri (3 Nov 2026) — lihat accounts.py."""
     await accounts.migrate_users()
+    await accounts.ensure_master_admin()
 
 
 async def migrate_periods():

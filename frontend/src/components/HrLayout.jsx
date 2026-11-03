@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Building2, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, BarChart3, UserCog, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { useAuth, isManager, ROLE_LABELS } from "@/context/AuthContext";
+import { useAuth, isManager, isMasterAdmin, ROLE_LABELS } from "@/context/AuthContext";
 
-// [path, label, icon, end, khusus Manager HRD]
+// [path, label, icon, end, khusus Manager HRD, khusus Master Admin] — Master Admin hanya melihat menu khusus Master Admin
 const NAV = [
   ["/hr-manager", "Dashboard", LayoutDashboard, true],
   ["/hr-manager/payroll", "Payroll", Wallet],
@@ -11,7 +11,7 @@ const NAV = [
   ["/hr-manager/attendance", "Presensi", CalendarClock],
   ["/hr-manager/recap", "Rekap", BarChart3],
   ["/hr-manager/tax", "Pajak", Calculator, false, true],
-  ["/hr-manager/users", "Pengguna", UserCog, false, true],
+  ["/hr-manager/users", "Pengguna", UserCog, false, false, true],
   ["/hr-manager/config", "Konfigurasi", Settings2, false, true],
 ];
 
@@ -24,12 +24,16 @@ const readCiut = () => {
 
 export default function HrLayout() {
   const { user, logout } = useAuth();
-  const nav = NAV.filter(([, , , , managerOnly]) => !managerOnly || isManager(user));
+  const admin = isMasterAdmin(user);
+  const nav = NAV.filter(([, , , , managerOnly, adminOnly]) => (admin ? !!adminOnly : !adminOnly && (!managerOnly || isManager(user))));
+  const { pathname } = useLocation();
   const [ciut, setCiut] = useState(readCiut);
   const toggle = () => setCiut((c) => {
     try { localStorage.setItem(CIUT_KEY, c ? "0" : "1"); } catch { /* tanpa penyimpanan: tetap jalan */ }
     return !c;
   });
+  // Master Admin tak punya akses data gaji: semua halaman selain Pengguna dialihkan
+  if (admin && pathname !== "/hr-manager/users") return <Navigate to="/hr-manager/users" replace />;
   return (
     <div className="min-h-screen bg-background lg:flex" style={{ "--sidebar-w": ciut ? "4.5rem" : "13rem" }}>
       {/* Menu di samping kiri (14 Okt 2026). Satu elemen yang sama berubah bentuk menurut lebar layar, jadi data-testid tidak ganda:
