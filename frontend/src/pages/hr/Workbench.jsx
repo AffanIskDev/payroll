@@ -217,7 +217,7 @@ export default function Workbench() {
             <Row label={jabatan} hint={maternityOnly ? `Cuti melahirkan sepanjang periode — hanya Gaji Pokok yang dibayarkan${waived ? `; Potongan Tidak Mencapai Target ${rp(waived)} dari ROSY tidak dikenakan` : ""}` : [prBasic && calc.position_allowance_contract > 0 && `${prBasic} × ${rp(calc.position_allowance_contract)}`, fromBonus && "Income Unit Minimal 20 jt", waived > 0 && `Tidak ada Bonus Threshold: Potongan Tidak Mencapai Target ${rp(waived)} dari ROSY tidak dikenakan`].filter(Boolean).join(" · ") || null} value={rp(calc.position_allowance)} testId="earn-position" />
             <Row label={split ? "Tunjangan Kehadiran" : "Tunjangan Kehadiran (bersih)"} hint={maternityOnly ? "Cuti melahirkan sepanjang periode — hak ini tidak diberikan (Rp 0)" : prAtt && `${prAtt} × ${rp(calc.attendance_allowance_contract)}`} value={rp(split ? calc.attendance_allowance_base : calc.attendance_allowance)} testId="earn-attendance" />
             {(emp.overtime_access || calc.overtime_hours > 0 || calc.overtime_pay > 0) && <Row label={`Lembur (${jamMenit(calc.overtime_hours)} dari RUMATKU)`} hint={`${rp(emp.overtime_hourly_rate)}/jam`} value={rp(calc.overtime_pay)} testId="earn-overtime" />}
-            <Row label="Transport Homecare" hint="Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)" value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
+            <Row label="Transport Homecare" hint={calc.book_fee_homecare > 0 ? "Dari ROSY (Tambahan Bulanan: Transport Rumat Kita) — dibayar di muka; tetap dihitung pajak, tidak masuk Total Diterima" : "Dari ROSY (Tambahan Bulanan: Transport Rumat Kita)"} value={rp(calc.transport_homecare || 0)} testId="earn-transport" />
             {(KPI_VISIBLE || Number(adj.kpi_incentive) !== 0) && <Edit label="Insentif KPI" value={adj.kpi_incentive} onChange={set("kpi_incentive")} disabled={locked} testId="input-kpi-incentive" />}
             <Row label="Bonus" hint="Dari ROSY (Tambahan Bulanan: Bonus)" value={rp(calc.additional_bonus || 0)} testId="earn-bonus" />
             {calc.thr > 0 && <Row label="THR" hint="Dari ROSY (Tambahan Bulanan: THR)" value={rp(calc.thr)} testId="earn-thr" />}
@@ -233,7 +233,6 @@ export default function Workbench() {
               {split && (!(maternityOnly || unpaidLeave) || presensi > 0) && <Row label="Potongan Presensi" hint={maternityOnly ? "Cuti melahirkan sepanjang periode — Tunjangan Kehadiran tidak dibayarkan" : `${calc.late_penalty_points} poin presensi × 1/${wd} Tunjangan Kehadiran`} value={rp(presensi)} tone={presensi > 0 ? "text-rose-600" : ""} testId="ded-presensi" />}
               <Row label="Potongan Absensi" hint={`${calc.absence_points ?? calc.absent_days ?? 0} hari alfa/izin${absensiHint ? ` — ${absensiHint}` : ""}`} value={rp(absensi)} tone={absensi > 0 ? "text-rose-600" : ""} testId="ded-absensi" />
               {calc.target_deduction > 0 && <Row label="Potongan Tidak Mencapai Target" hint={fromBonus ? `Sisa yang melebihi ${jabatan} — dari ROSY (Tambahan Bulanan)` : "Dari ROSY (Tambahan Bulanan: Potongan Tidak Mencapai Target)"} value={rp(calc.target_deduction)} tone="text-rose-600" testId="ded-target" />}
-              {calc.book_fee_homecare > 0 && <Row label="Book Fee Homecare" hint="Dibayar di muka — Transport Rumat Kita tetap dihitung pajak, tidak masuk THP" value={rp(calc.book_fee_homecare)} testId="ded-book-fee" />}
               <Row label="Iuran BPJS Kesehatan (5%)" hint={`Perusahaan ${rp(bp.kes_company)} + Karyawan ${rp(bp.kes_employee)}`} value={rp(calc.iuran_bpjs_kes_total)} testId="ded-bpjs-kes" />
               <Row label={`Iuran BPJS Ketenagakerjaan${tkPct}`} hint={`JKK+JKM ${rp(bp.jkk + bp.jkm)} · JHT ${rp(bp.jht_company + bp.jht_employee)} · JP ${rp(bp.jp_company + bp.jp_employee)}`} value={rp(calc.iuran_bpjs_tk_total)} testId="ded-bpjs-tk" />
               {calc.tax_reconciliation ? (
@@ -299,7 +298,7 @@ export default function Workbench() {
       <div className="fixed bottom-0 inset-x-0 lg:left-[var(--sidebar-w)] z-50 bg-white/95 backdrop-blur-md border-t-2 border-emerald-500 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center gap-3">
           <div className="flex-1 min-w-0">
-            <div className="text-xs uppercase tracking-wider text-slate-500">Total Diterima · Pendapatan {rp(totalPendapatan)} − Potongan {rp(totalPotongan)}</div>
+            <div className="text-xs uppercase tracking-wider text-slate-500">Total Diterima · Pendapatan {rp(totalPendapatan)} − Potongan {rp(totalPotongan)}{calc.book_fee_homecare > 0 && ` − Transport dibayar di muka ${rp(calc.book_fee_homecare)}`}</div>
             <div className="num text-2xl font-black text-emerald-600" data-testid="sticky-thp">{rp(calc.take_home_pay)}</div>
             <div className="text-xs italic text-slate-500 truncate" data-testid="sticky-terbilang">{calc.terbilang}</div>
           </div>

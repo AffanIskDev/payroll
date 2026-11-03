@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, Landmark, Send, XCircle, AlertTriangle, History, RotateCw, Smartphone } from "lucide-react";
+import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, Landmark, FileSpreadsheet, Send, XCircle, AlertTriangle, History, RotateCw, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp, formatDate, formatDateRange, jamMenit, unfinishedSyncDay } from "@/lib/format";
@@ -142,6 +142,14 @@ function PeriodDetail({ pid }) {
       setRejectOpen(false);
       setReason("");
     }
+  };
+
+  // Export Data Payroll (Excel, 3 Nov 2026): semua slip periode (draft ikut), tanpa rekening/NPWP/alamat
+  const exportData = async () => {
+    try {
+      const h = await saveFile("post", `/hr/periods/${pid}/export-data`, "Data-Payroll-RUSA.xlsx");
+      toast.success(`Excel Data Payroll diunduh: ${h["x-exported-count"]} karyawan`);
+    } catch (e) { toast.error(await blobErrMsg(e)); }
   };
 
   const exportBsi = async () => {
@@ -303,14 +311,18 @@ function PeriodDetail({ pid }) {
           {isManager && (
             // modal={false}: dialog Batch Payment dibuka dari menu ini; menu modal Radix bisa meninggalkan body tak bisa diklik
             <DropdownMenu modal={false}>
-              <DropdownMenuTrigger data-testid="export-bsi-menu" disabled={!payslips.length} className="w-full sm:w-auto justify-center whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-400"><Landmark className="h-4 w-4" /> Export Transfer BSI <ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
+              <DropdownMenuTrigger data-testid="export-bsi-menu" disabled={!payslips.length} className="w-full sm:w-auto justify-center whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-400"><Landmark className="h-4 w-4" /> Export <ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuItem data-testid="export-data-button" onSelect={exportData} className="flex-col items-start gap-0.5 cursor-pointer">
+                  <span className="font-semibold flex items-center gap-1.5"><FileSpreadsheet className="h-4 w-4" /> Excel — Data Payroll</span>
+                  <span className="text-xs text-slate-500">Rincian per karyawan sampai Take Home Pay; slip draft ikut</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem data-testid="export-batch-bsi-button" onSelect={() => setBatchOpen(true)} className="flex-col items-start gap-0.5 cursor-pointer">
                   <span className="font-semibold">TXT — Batch Payment BSI</span>
                   <span className="text-xs text-slate-500">Format unggah BSI, sama dengan ROSY; slip draft ikut diekspor</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="export-bsi-button" disabled={!approvedCount} onSelect={exportBsi} className="flex-col items-start gap-0.5 cursor-pointer">
-                  <span className="font-semibold">CSV</span>
+                  <span className="font-semibold">CSV — Transfer BSI</span>
                   <span className="text-xs text-slate-500">{approvedCount ? "Hanya slip yang sudah di-approve" : "Hanya slip yang sudah di-approve — belum ada"}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>

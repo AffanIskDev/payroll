@@ -333,8 +333,10 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     # target cut and likewise not lowering the PPh 21 base; unpaid leave has no pay to take it from, as ROSY skips them
     installment = 0 if unpaid else round(float(adj.get("loan_installment") or 0))
     transport = 0 if unpaid else round(float(adj.get("transport_homecare") or 0))
-    # Book Fee Homecare (user 1 Nov 2026): Transport Rumat Kita sudah dibayar di muka ke perawat, jadi ia tetap pendapatan
-    # (masuk bruto & dasar PPh 21) tetapi dipotong sebesar yang sama, sehingga THP = yang benar-benar ditransfer akhir bulan
+    # Transport dibayar di muka (user 1 Nov 2026, diubah 3 Nov): Transport Rumat Kita sudah diterima perawat, jadi ia tetap
+    # pendapatan (masuk bruto & dasar PPh 21, tampil di Pendapatan dengan keterangan) tetapi TIDAK ditampilkan sebagai
+    # potongan: hanya THP yang mengecualikannya, sehingga THP = yang benar-benar ditransfer akhir bulan.
+    # Nama field `book_fee_homecare` dipertahankan (= nominal yang dikecualikan dari THP)
     book_fee = transport
     overtime_pay = round(hours * float(emp.get("overtime_hourly_rate") or 0))
 
@@ -411,8 +413,8 @@ def compute_payslip(emp: dict, logs: list, cfg: dict, adj: dict, dec_ctx: dict =
     # sudah dihitung di atas) dan tidak mengubah gross_earnings. Kurang bayar tetap potongan PPh 21. `pph21_amount`
     # tetap bertanda (negatif = lebih bayar): itulah PPh yang disetor neto bulan itu, dipakai 1721-A1 & rekap.
     refund = max(-pph21, 0) if recon else 0
-    total_ded = iuran_kes + iuran_tk + max(pph21, 0) + kasbon + target + installment + book_fee
-    thp = gross + refund - total_ded
+    total_ded = iuran_kes + iuran_tk + max(pph21, 0) + kasbon + target + installment
+    thp = gross + refund - total_ded - book_fee
 
     return {
         "payroll_status": status, "wage_multiplier": mult, "maternity_basic_only": maternity_only,

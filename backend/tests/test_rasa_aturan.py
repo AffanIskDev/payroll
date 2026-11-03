@@ -369,36 +369,36 @@ def test_transport_homecare_is_taxable_income():
     assert slip["transport_homecare"] == 1250000
     assert slip["gross_earnings"] - base["gross_earnings"] == 1250000
     assert slip["taxable_gross"] - base["taxable_gross"] == 1250000
-    # Book Fee Homecare (user 1 Nov 2026): transport sudah dibayar di muka, jadi THP hanya turun oleh tambahan PPh 21-nya
+    # Transport dibayar di muka (user 1 Nov 2026): tak ikut THP, jadi THP hanya turun oleh tambahan PPh 21-nya
     assert slip["take_home_pay"] - base["take_home_pay"] == -(slip["pph21_amount"] - base["pph21_amount"])
 
 
-def test_book_fee_homecare_cancels_the_transport_out_of_the_take_home_pay():
+def test_transport_paid_in_advance_is_excluded_from_take_home_pay_only():
     base = compute_payslip(EMP, [], CFG, {})
     slip = compute_payslip(EMP, [], CFG, {"transport_homecare": 1250000})
     assert base["book_fee_homecare"] == 0
-    assert slip["book_fee_homecare"] == 1250000
-    # transport tetap pendapatan & dasar pajak, potongannya masuk Total Potongan
+    assert slip["book_fee_homecare"] == 1250000  # = nominal transport yang dikecualikan dari THP
+    # transport tetap pendapatan & dasar pajak; BUKAN potongan (Total Potongan hanya naik oleh tambahan PPh 21)
     assert slip["gross_earnings"] - base["gross_earnings"] == 1250000
     assert slip["taxable_gross"] - base["taxable_gross"] == 1250000
-    assert slip["total_deductions"] - base["total_deductions"] == 1250000 + (slip["pph21_amount"] - base["pph21_amount"])
-    assert slip["take_home_pay"] == slip["gross_earnings"] - slip["total_deductions"]
+    assert slip["total_deductions"] - base["total_deductions"] == slip["pph21_amount"] - base["pph21_amount"]
+    assert slip["take_home_pay"] == slip["gross_earnings"] - slip["total_deductions"] - 1250000
 
 
-def test_book_fee_homecare_shows_on_the_pdf_deductions_and_totals_still_add_up():
+def test_transport_paid_in_advance_is_a_note_under_pendapatan_not_a_potongan_row():
     from pdf_service import payslip_lines
     slip = compute_payslip(EMP, [], CFG, {"transport_homecare": 800000})
     earn, ded = payslip_lines(slip)
-    assert ("Book Fee Homecare", 800000) in [(r[0], r[1]) for r in ded]
-    assert ("Book Fee Homecare", 800000, "Dibayar di muka") in ded
-    assert ("Transport Homecare", 800000) in [(r[0], r[1]) for r in earn]
+    assert ("Transport Homecare", 800000, "Dibayar di muka") in earn
+    assert "Book Fee Homecare" not in [r[0] for r in ded]
     total_earn, total_ded = earn[-1][1], ded[-1][1]
-    assert total_earn - total_ded == slip["take_home_pay"]
+    assert total_earn - total_ded - 800000 == slip["take_home_pay"]
 
 
-def test_no_transport_means_no_book_fee_row_on_the_pdf():
+def test_no_transport_means_no_advance_note_on_the_pdf():
     from pdf_service import payslip_lines
-    _, ded = payslip_lines(compute_payslip(EMP, [], CFG, {}))
+    earn, ded = payslip_lines(compute_payslip(EMP, [], CFG, {}))
+    assert "Transport Homecare" not in [r[0] for r in earn]
     assert "Book Fee Homecare" not in [r[0] for r in ded]
 
 
@@ -748,7 +748,7 @@ def test_all_cuts_sit_under_potongan_and_totals_still_add_up():
     assert not any(k.startswith("Potongan") for k, _, _ in earn)
     assert sum(v for _, v, _ in earn[:-1]) == earn[-1][1]       # TOTAL PENDAPATAN = its rows
     assert sum(v for _, v, _ in ded[:-1]) == ded[-1][1]         # TOTAL POTONGAN = its rows
-    assert earn[-1][1] - ded[-1][1] == s["take_home_pay"]       # = TOTAL DITERIMA
+    assert earn[-1][1] - ded[-1][1] - s.get("book_fee_homecare", 0) == s["take_home_pay"]  # = TOTAL DITERIMA (transport di muka dikecualikan)
 
 
 def _hari(tgl, **kw):
