@@ -1,6 +1,8 @@
 """Membuat Manager HRD PERTAMA (atau menambah pengguna dari server) tanpa lewat layar — sekali jalan di server RUSA.
 
-  cd /var/www/rusa/backend && sudo -u rusa .venv/bin/python create_admin.py <username> "<Nama Lengkap>" [--rosy] [--role supervisor]
+  cd /var/www/rusa/backend && sudo -u rusa .venv/bin/python create_admin.py <username> "<Nama Lengkap>" [--rosy] [--role master_admin|manager_hrd|supervisor]
+
+Bawaan --role = master_admin: yang pertama dibuat harus Master Admin, karena hanya dia yang bisa menunjuk Manager & Supervisor lewat menu Pengguna.
 
 Tanpa --rosy: kata sandi diminta di terminal (tak tampil, tak masuk riwayat); karena pembuatnya sendiri yang memilihnya,
 tidak dipaksa ganti di login pertama.
@@ -24,7 +26,7 @@ async def main() -> int:
     ap.add_argument("username")
     ap.add_argument("name")
     ap.add_argument("--rosy", action="store_true", help="kata sandi memakai ROSY (bukan kata sandi RUSA)")
-    ap.add_argument("--role", default="manager_hrd", choices=accounts.ROLES)
+    ap.add_argument("--role", default="master_admin", choices=accounts.ROLES)
     a = ap.parse_args()
     password = None
     if not a.rosy:

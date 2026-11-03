@@ -17,10 +17,10 @@ from typing import Optional
 import bcrypt
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from core import HR_ROLES, actor, current_company, db, get_current_user, now_iso, require_manager
+from core import HR_ROLES, MASTER_ADMIN, actor, current_company, db, get_current_user, now_iso, require_master_admin
 import integrations
 
-ROLES = ("manager_hrd", "supervisor")
+ROLES = (MASTER_ADMIN, "manager_hrd", "supervisor")
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,40}$")
 MIN_PASSWORD = 10
 _ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -71,7 +71,7 @@ async def create_user(username: str, name: str, role: str, auth_mode: str, by: s
     if not name:
         raise HTTPException(422, "Nama wajib diisi")
     if role not in ROLES:
-        raise HTTPException(422, "Peran harus Manager HRD atau Supervisor HRD")
+        raise HTTPException(422, "Peran harus Master Admin, Manager HRD, atau Supervisor HRD")
     if auth_mode not in ("local", "rosy"):
         raise HTTPException(422, "Sumber kata sandi harus RUSA atau ROSY")
     if auth_mode == "rosy" and not rosy_available():
@@ -102,7 +102,7 @@ async def authenticate(username: str, password: str, ip: str) -> dict:
     Gagal = 401 dengan pesan SAMA untuk username tak dikenal / nonaktif / sandi salah; 403 bila sandi benar tapi
     pengguna tak punya akses ke perusahaan ini."""
     u = await db.users.find_one({"username_lower": username.strip().lower()}, {"_id": 0})
-    usable = bool(u and u.get("is_active") and u.get("role") in HR_ROLES)
+    usable = bool(u and u.get("is_active") and u.get("role") in ROLES)
     if usable and u.get("auth_mode") == "rosy":
         try:
             acc = await integrations.verify_rosy_login(username, password, ip, credentials_only=True)
@@ -140,13 +140,34 @@ async def migrate_users():
                                 partialFilterExpression={"username_lower": {"$type": "string"}})
 
 
+async def ensure_master_admin():
+    """RUSA_MASTER_ADMIN=<username> (3 Nov 2026): pastikan akun itu ada sebagai Master Admin. Tanpa kata sandi di sini — dibuat
+    bersumber ROSY (kata sandi ROSY-nya; perlu HAM) bila perusahaan terhubung ke ROSY. Perusahaan tanpa ROSY memakai
+    `create_admin.py` (kata sandi diminta di terminal). Idempotent; tak mengubah pengguna yang sudah ada selain
+    mengaktifkan & menjadikannya Master Admin."""
+    name = (os.environ.get("RUSA_MASTER_ADMIN") or "").strip()
+    if not name:
+        return
+    u = await db.users.find_one({"username_lower": name.lower()}, {"_id": 0})
+    if u:
+        if u.get("role") != MASTER_ADMIN or u.get("is_active") is False:
+            await db.users.update_one({"id": u["id"]}, {"$set": {"role": MASTER_ADMIN, "is_active": True, "updated_at": now_iso(),
+                                                                "updated_by": "bootstrap"}})
+        return
+    if not rosy_available():
+        import logging
+        logging.getLogger(__name__).warning("RUSA_MASTER_ADMIN=%s belum dibuat: perusahaan ini tanpa ROSY — pakai create_admin.py", name)
+        return
+    await create_user(name, name, MASTER_ADMIN, "rosy", "bootstrap")
+
+
 # ------------------------------------------------------------------ endpoint
-router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_manager)])
+router = APIRouter(prefix="/api/hr", dependencies=[Depends(require_master_admin)])
 auth_router = APIRouter(prefix="/api/auth")
 
 
-async def _managers_left(excluding_id: str) -> int:
-    return await db.users.count_documents({"id": {"$ne": excluding_id}, "role": "manager_hrd", "is_active": True,
+async def _admins_left(excluding_id: str) -> int:
+    return await db.users.count_documents({"id": {"$ne": excluding_id}, "role": MASTER_ADMIN, "is_active": True,
                                            "companies": current_company()})
 
 
@@ -162,7 +183,7 @@ async def list_users():
 
 
 @router.post("/users")
-async def add_user(body: dict = Body(...), me: dict = Depends(require_manager)):
+async def add_user(body: dict = Body(...), me: dict = Depends(require_master_admin)):
     u, temp = await create_user(body.get("username"), body.get("name"), body.get("role"), body.get("auth_mode") or "local",
                                 actor(me), body.get("password") or None)
     await _log(actor(me), "tambah", u, {"role": u["role"], "auth_mode": u["auth_mode"]})
@@ -170,7 +191,7 @@ async def add_user(body: dict = Body(...), me: dict = Depends(require_manager)):
 
 
 @router.put("/users/{uid}")
-async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require_manager)):
+async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require_master_admin)):
     u = await db.users.find_one({"id": uid, "companies": current_company()}, {"_id": 0})
     if not u:
         raise HTTPException(404, "Pengguna tidak ditemukan")
@@ -181,7 +202,7 @@ async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require
         upd["name"] = str(body["name"]).strip()
     if "role" in body:
         if body["role"] not in ROLES:
-            raise HTTPException(422, "Peran harus Manager HRD atau Supervisor HRD")
+            raise HTTPException(422, "Peran harus Master Admin, Manager HRD, atau Supervisor HRD")
         upd["role"] = body["role"]
     if "is_active" in body:
         upd["is_active"] = bool(body["is_active"])
@@ -197,10 +218,10 @@ async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require
         else:
             upd["password_hash"] = None
             upd["must_change_password"] = False
-    # jangan sampai tak ada Manager aktif, dan jangan mengunci diri sendiri
-    losing_manager = (upd.get("role", u["role"]) != "manager_hrd") or (upd.get("is_active", u.get("is_active")) is False)
-    if u["role"] == "manager_hrd" and u.get("is_active") and losing_manager and await _managers_left(uid) == 0:
-        raise HTTPException(409, "Harus ada minimal satu Manager HRD aktif")
+    # jangan sampai tak ada Master Admin aktif, dan jangan mengunci diri sendiri
+    losing_admin = (upd.get("role", u["role"]) != MASTER_ADMIN) or (upd.get("is_active", u.get("is_active")) is False)
+    if u["role"] == MASTER_ADMIN and u.get("is_active") and losing_admin and await _admins_left(uid) == 0:
+        raise HTTPException(409, "Harus ada minimal satu Master Admin aktif")
     if uid == me["id"] and (upd.get("is_active") is False or ("role" in upd and upd["role"] != u["role"])):
         raise HTTPException(409, "Anda tidak bisa menonaktifkan atau mengubah peran akun Anda sendiri")
     if not upd:
@@ -212,7 +233,7 @@ async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require
 
 
 @router.post("/users/{uid}/reset-password")
-async def reset_password(uid: str, me: dict = Depends(require_manager)):
+async def reset_password(uid: str, me: dict = Depends(require_master_admin)):
     u = await db.users.find_one({"id": uid, "companies": current_company()}, {"_id": 0})
     if not u:
         raise HTTPException(404, "Pengguna tidak ditemukan")

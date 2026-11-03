@@ -70,3 +70,18 @@ def test_a_temporary_password_blocks_every_hr_route_until_changed():
     with pytest.raises(HTTPException):
         asyncio.run(core.require_manager({"role": "manager_hrd", "must_change_password": True}))
     assert asyncio.run(core.require_hr({"role": "supervisor"}))["role"] == "supervisor"
+
+
+def test_master_admin_is_not_a_payroll_role_and_only_it_passes_the_admin_gate():
+    assert core.MASTER_ADMIN == "master_admin" and core.MASTER_ADMIN not in core.HR_ROLES   # tanpa akses data gaji
+    assert core.MASTER_ADMIN in ac.ROLES
+    assert asyncio.run(core.require_master_admin({"role": "master_admin"}))["role"] == "master_admin"
+    for role in ("manager_hrd", "supervisor", None):
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(core.require_master_admin({"role": role}))
+        assert e.value.status_code == 403
+    with pytest.raises(HTTPException) as e:                       # Master Admin ditolak di semua rute gaji
+        asyncio.run(core.require_hr({"role": "master_admin"}))
+    assert e.value.status_code == 403
+    with pytest.raises(HTTPException):
+        asyncio.run(core.require_manager({"role": "master_admin"}))

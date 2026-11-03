@@ -30,6 +30,8 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthCtx);
-export const ROLE_LABELS = { manager_hrd: "Manager HRD", supervisor: "Supervisor HRD" };
+export const ROLE_LABELS = { master_admin: "Master Admin", manager_hrd: "Manager HRD", supervisor: "Supervisor HRD" };
 export const isHr = (u) => !!u && ["manager_hrd", "supervisor"].includes(u.role);
 export const isManager = (u) => !!u && u.role === "manager_hrd";
+// Master Admin (3 Nov 2026): hanya mengatur pengguna & akses RUSA, tanpa akses data gaji
+export const isMasterAdmin = (u) => !!u && u.role === "master_admin";

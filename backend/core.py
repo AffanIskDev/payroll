@@ -10,6 +10,9 @@ db = client[os.environ["DB_NAME"]]
 
 JWT_ALGORITHM = "HS256"
 HR_ROLES = ("manager_hrd", "supervisor")
+# Master Admin (3 Nov 2026): HANYA mengatur pengguna & akses RUSA (accounts.py), tanpa akses data gaji — pemisahan tugas:
+# yang menunjuk siapa boleh memakai RUSA bukan orang yang menyetujui gaji
+MASTER_ADMIN = "master_admin"
 
 
 def current_company() -> str:
@@ -62,6 +65,13 @@ async def require_hr(user: dict = Depends(get_current_user)) -> dict:
     _password_gate(user)
     if user.get("role") not in HR_ROLES:
         raise HTTPException(403, "Akses khusus Manager HRD / Supervisor HRD")
+    return user
+
+
+async def require_master_admin(user: dict = Depends(get_current_user)) -> dict:
+    _password_gate(user)
+    if user.get("role") != MASTER_ADMIN:
+        raise HTTPException(403, "Hanya Master Admin yang dapat mengatur pengguna RUSA")
     return user
 
 

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Building2, ChevronDown, LayoutDashboard, Wallet, Users, CalendarClock, Settings2, LogOut, Calculator, BarChart3, UserCog, PanelLeftClose, PanelLeftOpen, Gift, Award } from "lucide-react";
-import { useAuth, isManager, ROLE_LABELS } from "@/context/AuthContext";
+import { useAuth, isManager, isMasterAdmin, ROLE_LABELS } from "@/context/AuthContext";
 
-// [path, label, icon, end, khusus Manager HRD]; { group, icon, items } = menu bersubmenu (Payroll: Gaji, THR, Bonus Tahunan —
+// [path, label, icon, end, khusus Manager HRD, khusus Master Admin] — Master Admin hanya melihat menu khusus Master Admin;
+// { group, icon, items } = menu bersubmenu (Payroll: Gaji, THR, Bonus Tahunan —
 // user 30 Okt 2026). Di bar ikon (HP/tablet) dan sidebar yang diciutkan judul grupnya hilang dan submenu tampil sebagai ikon biasa
 const NAV = [
   ["/hr-manager", "Dashboard", LayoutDashboard, true],
@@ -16,7 +17,7 @@ const NAV = [
   ["/hr-manager/attendance", "Presensi", CalendarClock],
   ["/hr-manager/recap", "Rekap", BarChart3],
   ["/hr-manager/tax", "Pajak", Calculator, false, true],
-  ["/hr-manager/users", "Pengguna", UserCog, false, true],
+  ["/hr-manager/users", "Pengguna", UserCog, false, false, true],
   ["/hr-manager/config", "Konfigurasi", Settings2, false, true],
 ];
 
@@ -29,7 +30,8 @@ const readCiut = () => {
 
 export default function HrLayout() {
   const { user, logout } = useAuth();
-  const nav = NAV.filter((item) => item.group || !item[4] || isManager(user));
+  const admin = isMasterAdmin(user);
+  const nav = NAV.filter((item) => (item.group ? !admin : admin ? !!item[5] : !item[5] && (!item[4] || isManager(user))));
   const { pathname } = useLocation();
   // /payroll/:pid (periode gaji) berada di bawah /payroll, tapi /payroll/thr dan /payroll/bonus-tahunan menu sendiri
   const gajiActive = (to) => to === "/hr-manager/payroll" ? /^\/hr-manager\/payroll(\/|$)/.test(pathname) && !/^\/hr-manager\/payroll\/(thr|bonus-tahunan)(\/|$)/.test(pathname) : null;
@@ -52,6 +54,8 @@ export default function HrLayout() {
     try { localStorage.setItem(CIUT_KEY, c ? "0" : "1"); } catch { /* tanpa penyimpanan: tetap jalan */ }
     return !c;
   });
+  // Master Admin tak punya akses data gaji: semua halaman selain Pengguna dialihkan
+  if (admin && pathname !== "/hr-manager/users") return <Navigate to="/hr-manager/users" replace />;
   return (
     <div className="min-h-screen bg-background lg:flex" style={{ "--sidebar-w": ciut ? "4.5rem" : "13rem" }}>
       {/* Menu di samping kiri (14 Okt 2026). Satu elemen yang sama berubah bentuk menurut lebar layar, jadi data-testid tidak ganda:
