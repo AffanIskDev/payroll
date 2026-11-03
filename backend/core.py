@@ -12,6 +12,11 @@ JWT_ALGORITHM = "HS256"
 HR_ROLES = ("manager_hrd", "supervisor")
 
 
+def current_company() -> str:
+    """Perusahaan instance RUSA ini (satu instance = satu perusahaan)."""
+    return os.environ.get("PAYROLL_COMPANY_ID", "CP-001")
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -40,16 +45,28 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(401, "User not found")
+    # akses diatur di daftar pengguna RUSA (accounts.py): dinonaktifkan / dicabut / dipindah perusahaan = berlaku seketika
+    if user.get("is_active") is False or current_company() not in (user.get("companies") or [current_company()]):
+        raise HTTPException(401, "Akses Anda ke RUSA sudah dinonaktifkan")
+    return user
+
+
+def _password_gate(user: dict) -> dict:
+    # kata sandi sementara dari Manager: tak bisa memakai fitur apa pun sebelum diganti (hanya /auth/me & /auth/change-password)
+    if user.get("must_change_password"):
+        raise HTTPException(403, "Ganti kata sandi sementara Anda dulu")
     return user
 
 
 async def require_hr(user: dict = Depends(get_current_user)) -> dict:
+    _password_gate(user)
     if user.get("role") not in HR_ROLES:
         raise HTTPException(403, "Akses khusus Manager HRD / Supervisor HRD")
     return user
 
 
 async def require_manager(user: dict = Depends(get_current_user)) -> dict:
+    _password_gate(user)
     if user.get("role") != "manager_hrd":
         raise HTTPException(403, "Hanya Manager HRD yang dapat melakukan aksi ini")
     return user
