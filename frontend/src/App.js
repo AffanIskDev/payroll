@@ -9,6 +9,7 @@ import Periods from "@/pages/hr/Periods";
 import PeriodDetail from "@/pages/hr/PeriodDetail";
 import Workbench from "@/pages/hr/Workbench";
 import Employees from "@/pages/hr/EmployeesView";
+import ImportEmployees from "@/pages/hr/ImportEmployees";
 import Attendance from "@/pages/hr/AttendanceView";
 import Configs from "@/pages/hr/Configs";
 import { TaxPage, RecapPage } from "@/pages/hr/MergedPages";
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="payroll/:pid" element={<PeriodDetail />} />
             <Route path="payroll/:pid/employee/:eid" element={<Workbench />} />
             <Route path="employees" element={<Employees />} />
+            <Route path="employees/import" element={<ManagerOnly><ImportEmployees /></ManagerOnly>} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="config" element={<ManagerOnly><Configs /></ManagerOnly>} />
             <Route path="tax" element={<ManagerOnly><TaxPage /></ManagerOnly>} />

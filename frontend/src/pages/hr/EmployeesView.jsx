@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, XCircle } from "lucide-react";
+import { Search, XCircle, Plus, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { rp, PAYROLL_STATUS_LABELS, DATA_ISSUE_LABELS, periodNameFor, formatDateTime, timeAgo } from "@/lib/format";
-import { PageTitle, Panel, Chip, FilterTab } from "@/components/common";
+import { PageTitle, Panel, Chip, FilterTab, Btn } from "@/components/common";
+import { useAuth, isManager } from "@/context/AuthContext";
+import EmployeeTabs from "@/components/EmployeeTabs";
+import EmployeeFormDialog from "@/components/EmployeeFormDialog";
 
 // kolom "Sinkron" per baris dibuang (user 12 Okt 2026): semua baris tersinkron bersamaan, waktunya cukup di judul.
 // 15 Okt 2026 tampilan diselaraskan dengan halaman periode (rupiah rata kanan, angka 0 pudar, status payroll bertitik warna,
 // program BPJS jadi label; warna mengikuti desain RUMAT), lalu kolomnya dirapikan atas permintaan user: "kolom karyawan ada nama, nik, jenis kelamin,
 // setelah itu kolom dept, setelah itu status ptkp baru gaji dst" — NIK & L/P masuk kolom Karyawan (email tetap di bawahnya)
-const COLS = ["Karyawan", "Dept", "Status PTKP", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rate Lembur/Jam", "BPJS", "Rekening"];
+const COLS = ["Karyawan", "Sumber", "Dept", "Status PTKP", "Status Payroll", "Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rate Lembur/Jam", "BPJS", "Rekening"];
 const RIGHT = new Set(["Gaji Pokok", "Tunj. Jabatan", "Tunj. Hadir", "Rate Lembur/Jam"]);
 const GENDER = { L: "Laki-laki", P: "Perempuan" };
 // kolom Karyawan menempel di kiri saat tabel digeser; garis tipis memisahkannya dari kolom lain
@@ -38,6 +41,8 @@ const RpCell = ({ v, tone, testId }) => (
 // hasil periksa ROSY, sama dengan "Perlu Ditinjau" di Dashboard). Tabel hanya memuat karyawan yang masih ada di ROSY.
 const inRosy = (e) => e.in_rosy !== false;
 const incomplete = (e) => e.data_issues?.length > 0;
+// sumber data (3 Nov 2026): "rosy" = dari HAM, hanya-baca; "rusa" = diinput/diimpor di RUSA, tidak ditimpa Fetch
+const isRusa = (e) => e.source === "rusa";
 const STALE_MS = 7 * 86400000;
 
 export default function EmployeesView() {
@@ -45,14 +50,21 @@ export default function EmployeesView() {
   const [status, setStatus] = useState({});
   const [q, setQ] = useState("");
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+  const [source, setSource] = useState("all");
+  const [form, setForm] = useState({ open: false, employee: null });
+  const { user } = useAuth();
+  const manager = isManager(user);
+  const load = () => api.get("/hr/employees").then((r) => setList(r.data));
   useEffect(() => {
-    api.get("/hr/employees").then((r) => setList(r.data));
+    load();
     api.get("/hr/employees/sync-status").then((r) => setStatus(r.data || {}));
   }, []);
 
   const current = list.filter(inRosy);
+  const nRusa = current.filter(isRusa).length;
   const lacking = current.filter(incomplete);
-  const rows = (onlyIncomplete ? lacking : current).filter((e) => `${e.nik} ${e.name} ${e.department}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const bySource = current.filter((e) => source === "all" || (source === "rusa" ? isRusa(e) : !isRusa(e)));
+  const rows = (onlyIncomplete ? bySource.filter(incomplete) : bySource).filter((e) => `${e.nik} ${e.name} ${e.department}`.toLowerCase().includes(q.trim().toLowerCase()));
   // jumlah per jenis masalah; seorang karyawan bisa punya lebih dari satu, jadi totalnya bisa melebihi jumlah karyawan
   const issueTypes = Object.entries(status.data_issues || {}).sort((a, b) => b[1] - a[1]);
   const issueText = issueTypes.map(([k, n]) => `${DATA_ISSUE_LABELS[k] || k} ${n}`).join(" · ");
@@ -62,7 +74,8 @@ export default function EmployeesView() {
 
   return (
     <div>
-      <PageTitle title="Data Karyawan & Gaji" titleExtra={<Chip tone="slate" title="Diubah di ROSY HRD, bukan di RUSA">Hanya-lihat · dari ROSY</Chip>}
+      <EmployeeTabs />
+      <PageTitle title="Data Karyawan & Gaji" titleExtra={nRusa ? <Chip tone="slate" title="Karyawan dari ROSY diubah di ROSY; karyawan RUSA diubah di sini (Ubah) atau lewat Import">Dari ROSY · hanya-lihat &nbsp;|&nbsp; RUSA · bisa diubah</Chip> : <Chip tone="slate" title="Diubah di ROSY HRD, bukan di RUSA">Hanya-lihat · dari ROSY</Chip>}
         subtitle={status.synced_at ? (
           <span data-testid="employee-sync-status">
             {month && <><span className="block sm:inline whitespace-nowrap">Gaji: <span className="text-slate-700">{month}</span></span>{sep}</>}
@@ -78,14 +91,21 @@ export default function EmployeesView() {
               <h2 className="text-base font-bold text-slate-900">Daftar Karyawan & Komponen Gaji</h2>
               <p className="mt-0.5 text-xs text-slate-500">Karyawan yang masih ada di ROSY · gaji pokok, tunjangan, tarif lembur, program BPJS, dan rekening dari sinkron terakhir</p>
             </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            {manager && <Btn onClick={() => setForm({ open: true, employee: null })} data-testid="employee-add-button"><Plus className="h-4 w-4" /> Tambah Karyawan</Btn>}
             <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-2 bg-white w-full sm:w-64 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-700/10">
               <Search className="h-4 w-4 text-slate-400" />
               <input data-testid="employee-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / NIK / dept" className="outline-none text-sm w-full bg-transparent" />
             </label>
+            </div>
           </div>
           {/* lencana "N karyawan data belum lengkap" (13 Okt 2026) kini tab penyaring seperti di halaman periode */}
           <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="employee-tabs">
-            <FilterTab label="Semua" count={current.length} on={!onlyIncomplete} onClick={() => setOnlyIncomplete(false)} testId="employee-tab-all" />
+            <FilterTab label="Semua" count={current.length} on={!onlyIncomplete && source === "all"} onClick={() => { setOnlyIncomplete(false); setSource("all"); }} testId="employee-tab-all" />
+            {nRusa > 0 && <>
+              <FilterTab label="Dari ROSY" count={current.length - nRusa} on={source === "rosy"} onClick={() => setSource(source === "rosy" ? "all" : "rosy")} testId="employee-tab-rosy" />
+              <FilterTab label="Diinput di RUSA" count={nRusa} on={source === "rusa"} onClick={() => setSource(source === "rusa" ? "all" : "rusa")} testId="employee-tab-rusa" />
+            </>}
             <FilterTab label="Data Belum Lengkap" count={lacking.length} on={onlyIncomplete} alarm="amber" disabled={!lacking.length} onClick={() => setOnlyIncomplete(!onlyIncomplete)} testId="employee-issues-badge"
               title={`${issueText ? `${issueText} — ` : ""}klik untuk ${onlyIncomplete ? "menampilkan semua karyawan" : "menampilkan hanya yang datanya belum lengkap"}`} />
           </div>
@@ -120,6 +140,13 @@ export default function EmployeesView() {
                       <div className="text-xs text-slate-500"><span className="num">{e.nik}</span>{e.gender && <> · {GENDER[e.gender] || e.gender}</>}</div>
                       {e.email && <div className="text-xs text-slate-400 break-all">{e.email}</div>}
                     </td>
+                    <td className="px-2.5 py-2.5 text-xs whitespace-nowrap">
+                      {isRusa(e) ? (
+                        manager ? (
+                          <button type="button" onClick={() => setForm({ open: true, employee: e })} className="tap inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 font-semibold text-brand-700 hover:bg-brand-100" title="Diinput di RUSA — klik untuk mengubah" data-testid={`employee-edit-${e.nik}`}>RUSA <Pencil className="h-3 w-3" /></button>
+                        ) : <span className="rounded bg-brand-50 px-1.5 py-0.5 font-semibold text-brand-700">RUSA</span>
+                      ) : <span className="rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600" title="Diubah di ROSY">ROSY</span>}
+                    </td>
                     <td className="px-2.5 py-2.5 text-slate-700">{e.department}{e.position && <div className="text-xs text-slate-500">{e.position}</div>}</td>
                     <td className="px-2.5 py-2.5 num text-slate-700 whitespace-nowrap">{e.ptkp_status || `${e.marital_status}/${e.dependents_count}`}{e.has_husband_certificate ? " ✓SK" : ""}</td>
                     <td className="px-2.5 py-2.5 text-xs">
@@ -148,6 +175,7 @@ export default function EmployeesView() {
           </table>
         </div>
       </Panel>
+      <EmployeeFormDialog open={form.open} employee={form.employee} onClose={() => setForm({ open: false, employee: null })} onSaved={load} />
     </div>
   );
 }

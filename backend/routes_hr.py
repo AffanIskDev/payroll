@@ -18,6 +18,7 @@ from labels import position_allowance_label
 from periods import BULAN, payroll_month, period_name_for, validate_dates, overlaps
 from bank_batch import approval_blockers
 import integrations
+import employees_rusa
 import signer as signer_mod
 import verify
 
@@ -291,7 +292,8 @@ async def sync_employees(periode: str) -> tuple:
     ids = []
     for r in rows:
         existing = await db.employees.find_one({"rosy_employee_id": r["rosy_employee_id"]}, {"_id": 0, "id": 1}) or \
-            await db.employees.find_one({"rosy_employee_id": {"$exists": False}, "nik": r["nik"]}, {"_id": 0, "id": 1})
+            await db.employees.find_one({"rosy_employee_id": {"$exists": False}, "source": {"$ne": "rusa"}, "nik": r["nik"]},
+                                        {"_id": 0, "id": 1})
         eid = existing["id"] if existing else str(uuid.uuid4())
         await db.employees.update_one({"id": eid}, {"$set": {**r, "source": "rosy", "in_rosy": True,
                                                             "synced_at": now_iso()},
@@ -322,6 +324,8 @@ async def sync_employees_now(periode: Optional[str] = None):
     periode = periode or datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m")
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", periode):
         raise HTTPException(400, "Format periode harus YYYY-MM")
+    if not integrations.rosy_enabled():
+        raise HTTPException(400, "Tarikan dari ROSY dimatikan untuk perusahaan ini; karyawan diinput di RUSA")
     await sync_employees(periode)
     return await employees_sync_status()
 
@@ -403,20 +407,27 @@ async def _sync(pid: str) -> dict:
     period = await get_period(pid)
     # One button pulls everything fresh from ROSY: salary, overtime rate and population can change in HAM
     # after the period was created (e.g. HRD fills in an overtime rate), and the slips must follow
-    ids, emp_meta = await sync_employees(payroll_month(period["start_date"]))
+    if integrations.rosy_enabled():
+        ids, emp_meta = await sync_employees(payroll_month(period["start_date"]))
+    else:
+        ids, emp_meta = [], {}
+    # Karyawan yang diinput di RUSA (employees_rusa) ikut periode ini; Fetch tak menyentuh datanya
+    ids = ids + [i for i in await employees_rusa.rusa_employee_ids(period["start_date"], period["end_date"]) if i not in set(ids)]
     q = {"id": {"$in": ids}}
     emps = await db.employees.find(q, {"_id": 0}).to_list(5000)
     by_rosy = {e["rosy_employee_id"]: e["id"] for e in emps if e.get("rosy_employee_id")}
     by_nik = {e["nik"]: e["id"] for e in emps}
     # every HAM read happens before anything of this period is deleted
-    try:
-        rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
-    try:
-        overtime = await integrations.fetch_overtime(payroll_month(period["start_date"]))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"Gagal mengambil data lembur dari ROSY: {e}")
+    rows, meta, overtime = [], {"unlinked": []}, None
+    if integrations.rosy_enabled():
+        try:
+            rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
+        try:
+            overtime = await integrations.fetch_overtime(payroll_month(period["start_date"]))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"Gagal mengambil data lembur dari ROSY: {e}")
     # slip signer = ROSY's payroll Document Signer for this company (same as ROSY's own slips): name & position, printed
     # under the slip's QR code; its signature image is no longer used (user 14 Oct 2026)
     signer = emp_meta.get("penandatangan")

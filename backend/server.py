@@ -19,6 +19,7 @@ import integrations  # noqa: E402
 import routes_hr  # noqa: E402
 import routes_tax  # noqa: E402
 import export_data  # noqa: E402
+import employees_rusa  # noqa: E402
 import routes_bpjs_tk  # noqa: E402
 import routes_recap  # noqa: E402
 import routes_verify  # noqa: E402
@@ -95,6 +96,7 @@ async def health():
 app.include_router(auth)
 app.include_router(routes_hr.router)
 app.include_router(routes_tax.router)
+app.include_router(employees_rusa.router)  # karyawan & gaji yang diinput di RUSA — 3 Nov 2026
 app.include_router(export_data.router)  # Export Data Payroll (Excel), Manager HRD — 3 Nov 2026
 app.include_router(routes_bpjs_tk.router)
 app.include_router(routes_recap.router)
