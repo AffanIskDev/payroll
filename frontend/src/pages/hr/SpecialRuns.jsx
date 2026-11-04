@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { rp, formatDate, localIso } from "@/lib/format";
@@ -22,6 +22,7 @@ export default function SpecialRuns({ runType }) {
   const [f, setF] = useState({ title: "", pay_date: "" });
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState(null);
+  const [deleting, setDeleting] = useState(false);   // hapus run membutuhkan beberapa detik (slip Pasal 17 ikut dihitung ulang)
   const load = () => api.get("/hr/special-runs", { params: { run_type: runType } }).then((r) => setList(r.data));
   useEffect(() => { setList(null); load(); }, [runType]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -37,12 +38,14 @@ export default function SpecialRuns({ runType }) {
       nav(runPath(runType, data.id));
     } catch (err) { toast.error(errMsg(err)); } finally { setBusy(false); }
   };
-  const remove = async () => {
+  const remove = async (e) => {
+    e.preventDefault();   // dialog tetap terbuka sampai selesai supaya tombol "Menghapus..." terlihat
+    setDeleting(true);
     try {
       await api.delete(`/hr/periods/${del.id}`);
       toast.success(`Run ${del.period_name} dihapus`);
       load();
-    } catch (err) { toast.error(errMsg(err)); } finally { setDel(null); }
+    } catch (err) { toast.error(errMsg(err)); } finally { setDeleting(false); setDel(null); }
   };
 
   return (
@@ -109,15 +112,17 @@ export default function SpecialRuns({ runType }) {
           </form>
         </DialogContent>
       </Dialog>
-      <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>
+      <AlertDialog open={!!del} onOpenChange={(o) => !o && !deleting && setDel(null)}>
         <AlertDialogContent data-testid="delete-run-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus run {del?.period_name}?</AlertDialogTitle>
             <AlertDialogDescription>Run beserta slip draft dan nominal yang diisi di RUSA akan dihapus permanen.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction data-testid="delete-run-confirm" onClick={remove} className="bg-rose-600 hover:bg-rose-700">Hapus</AlertDialogAction>
+            <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction data-testid="delete-run-confirm" disabled={deleting} onClick={remove} className="bg-rose-600 hover:bg-rose-700 disabled:opacity-70">
+              {deleting ? <><Loader2 className="h-4 w-4 animate-spin" /> Menghapus...</> : "Hapus"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

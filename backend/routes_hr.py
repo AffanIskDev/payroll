@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
 from core import db, now_iso, require_hr, require_manager, actor, get_configs, DEFAULT_CONFIGS, CONFIG_CHOICES
-from pipeline import (get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
+from pipeline import (recompute_final_tax_periods, get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
 from labels import position_allowance_label
@@ -505,7 +505,10 @@ async def period_detail(pid: str):
         .sort("employee.nik", 1).to_list(2000)
     present = await _present_days(period, [s["employee_id"] for s in slips])
     dates = {e["id"]: e async for e in db.employees.find({"id": {"$in": [s["employee_id"] for s in slips]}},
-                                                         {"_id": 0, "id": 1, "join_date": 1, "exit_date": 1})}
+                                                         {"_id": 0, "id": 1, "join_date": 1, "exit_date": 1,
+                                                          "bank_account_name": 1})}
+    for s in slips:   # tabel memakai nama rekening (tanpa gelar, user 31 Okt 2026); kosong = nama karyawan
+        s["display_name"] = (dates.get(s["employee_id"], {}).get("bank_account_name") or "").strip() or (s.get("employee") or {}).get("name")
     # summary cards on top of the period, which also filter the table (user requests 10 Oct 2026): employee ids per card
     groups = {k: [] for k in ("overtime", "homecare", "unpaid", "maternity", "partial")}
     hours = overtime_pay = homecare = 0
@@ -553,7 +556,9 @@ async def delete_period(pid: str, user: dict = Depends(require_hr)):
     await db.period_components.delete_many({"payroll_period_id": pid})
     await db.special_inputs.delete_many({"payroll_period_id": pid})
     await db.payroll_periods.delete_one({"id": pid})
-    return {"ok": True, "deleted_payslips": res.deleted_count}
+    # run THR / Bonus Tahunan dihapus: pajaknya tidak boleh tertinggal di slip Pasal 17 (Desember / karyawan keluar)
+    recomputed = await recompute_final_tax_periods(period["bulan"]) if run_type_of(period) in RUN_SPECIAL else []
+    return {"ok": True, "deleted_payslips": res.deleted_count, "recomputed": recomputed}
 
 
 EDITABLE_STATUSES = ("draft", "revision")

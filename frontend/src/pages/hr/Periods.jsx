@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "@/lib/api";
 import { PERIOD_STATUS, periodNameFor, unfinishedSyncDay, formatDate, formatDateRange, localIso, monthRange, firstDayAfter } from "@/lib/format";
@@ -41,6 +41,7 @@ export default function Periods() {
   const range = f.month ? monthRange(f.month) : null;
   const monthName = range ? periodNameFor(range.start, range.end) : "";
   const [del, setDel] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const nav = useNavigate();
   const load = () => api.get("/hr/periods").then((r) => setList(r.data));
   useEffect(() => { load(); }, []);
@@ -73,12 +74,14 @@ export default function Periods() {
     } catch (err) { toast.error(errMsg(err)); } finally { setSyncing(false); }
   };
 
-  const remove = async () => {
+  const remove = async (e) => {
+    e.preventDefault();   // dialog tetap terbuka sampai selesai supaya tombol "Menghapus..." terlihat
+    setDeleting(true);
     try {
       await api.delete(`/hr/periods/${del.id}`);
       toast.success(`Periode ${del.period_name} dihapus`);
       load();
-    } catch (err) { toast.error(errMsg(err)); } finally { setDel(null); }
+    } catch (err) { toast.error(errMsg(err)); } finally { setDeleting(false); setDel(null); }
   };
 
   return (
@@ -133,15 +136,17 @@ export default function Periods() {
           </form>
         </DialogContent>
       </Dialog>
-      <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>
+      <AlertDialog open={!!del} onOpenChange={(o) => !o && !deleting && setDel(null)}>
         <AlertDialogContent data-testid="delete-period-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus periode {del?.period_name}?</AlertDialogTitle>
             <AlertDialogDescription>Periode beserta seluruh slip draft-nya akan dihapus permanen. Log absensi tidak terhapus.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="delete-period-cancel">Batal</AlertDialogCancel>
-            <AlertDialogAction data-testid="delete-period-confirm" onClick={remove} className="bg-rose-600 hover:bg-rose-700">Hapus</AlertDialogAction>
+            <AlertDialogCancel data-testid="delete-period-cancel" disabled={deleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction data-testid="delete-period-confirm" disabled={deleting} onClick={remove} className="bg-rose-600 hover:bg-rose-700 disabled:opacity-70">
+              {deleting ? <><Loader2 className="h-4 w-4 animate-spin" /> Menghapus...</> : "Hapus"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -235,7 +235,8 @@ async def queue_delivery(pid: str, query: Optional[dict] = None, attempts: int =
 
 async def special_amounts(period: dict) -> dict:
     """Nominal run ini per karyawan: {employee_id: (nominal, sumber)}. Input di RUSA (special_inputs) menang atas nominal
-    ROSY (period_components, kode THR / BONUS_TAHUNAN); nominal 0 berarti tidak dapat slip."""
+    ROSY (period_components, kode THR / BONUS_TAHUNAN); nominal 0 berarti tidak dapat slip. Karyawan yang dikecualikan
+    (`excluded_ids` di periode) tidak ikut sama sekali, apa pun nominal yang tersimpan."""
     kode = "THR" if run_type_of(period) == "thr" else "BONUS_TAHUNAN"
     out = {}
     async for d in db.period_components.find({"payroll_period_id": period["id"], "kode": kode},
@@ -243,6 +244,8 @@ async def special_amounts(period: dict) -> dict:
         out[d["employee_id"]] = (out.get(d["employee_id"], (0, "rosy"))[0] + float(d["nominal"]), "rosy")
     async for d in db.special_inputs.find({"payroll_period_id": period["id"]}, {"_id": 0, "employee_id": 1, "nominal": 1}):
         out[d["employee_id"]] = (float(d["nominal"]), "rusa")
+    for eid in period.get("excluded_ids") or []:
+        out.pop(eid, None)
     return out
 
 
@@ -279,6 +282,21 @@ async def build_special_slip(period: dict, emp: dict, nominal: float) -> dict:
     calc = compute_special_slip(emp, run_type_of(period), nominal, base, source)
     calc["employee"] = {k: emp.get(k) for k in EMP_SNAPSHOT}
     return calc
+
+
+async def recompute_final_tax_periods(run_bulan: str) -> list:
+    """Run THR / Bonus Tahunan berubah (dibuat, nominal diisi / diimpor, dihapus; user 30 Okt 2026): slip gaji yang memakai
+    rekonsiliasi Pasal 17 (Desember, atau bulan keluar karyawan) di tahun dan bulan yang sama atau sesudahnya dihitung ulang
+    supaya pajak THR / Bonus ikut. Hanya periode draft / revisi yang sudah punya slip Pasal 17; slip approved tidak tersentuh
+    (process_period melewatinya). Mengembalikan daftar bulan yang dihitung ulang."""
+    done = []
+    async for p in db.payroll_periods.find(
+            {"run_type": {"$in": [RUN_GAJI, None]}, "status": {"$in": ["draft", "revision"]},
+             "bulan": {"$gte": run_bulan, "$lte": f"{run_bulan[:4]}-12"}}, {"_id": 0}).sort("bulan", 1):
+        if await db.payslips.count_documents({"payroll_period_id": p["id"], "pph21_method": "pasal17"}):
+            await process_period(p)
+            done.append(p["bulan"])
+    return done
 
 
 async def process_special(period: dict) -> int:

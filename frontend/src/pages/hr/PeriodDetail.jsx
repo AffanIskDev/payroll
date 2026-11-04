@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, Landmark, Send, XCircle, AlertTriangle, History, RotateCw, Smartphone } from "lucide-react";
+import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, Landmark, FileSpreadsheet, Send, XCircle, AlertTriangle, History, RotateCw, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp, formatDate, formatDateRange, jamMenit, unfinishedSyncDay } from "@/lib/format";
@@ -144,6 +144,14 @@ function PeriodDetail({ pid }) {
     }
   };
 
+  // Export Data Payroll (Excel, 3 Nov 2026): semua slip periode (draft ikut), tanpa rekening/NPWP/alamat
+  const exportData = async () => {
+    try {
+      const h = await saveFile("post", `/hr/periods/${pid}/export-data`, "Data-Payroll-RUSA.xlsx");
+      toast.success(`Excel Data Payroll diunduh: ${h["x-exported-count"]} karyawan`);
+    } catch (e) { toast.error(await blobErrMsg(e)); }
+  };
+
   const exportBsi = async () => {
     try {
       const h = await saveFile("post", `/hr/periods/${pid}/export-bsi`, "BSI_Payroll.csv");
@@ -237,7 +245,7 @@ function PeriodDetail({ pid }) {
   const only = activeFilter ? new Set(summary[activeFilter]) : null;
   const term = q.trim().toLowerCase();
   const rows = payslips.filter((s) => (!only || only.has(s.employee_id)) && (!dept || s.employee.department === dept)
-    && (!term || (s.employee.name || "").toLowerCase().includes(term) || (s.employee.nik || "").toLowerCase().includes(term)
+    && (!term || (s.display_name || "").toLowerCase().includes(term) || (s.employee.name || "").toLowerCase().includes(term) || (s.employee.nik || "").toLowerCase().includes(term)
       || (s.doc_number || "").toLowerCase().includes(term)));  // nomor dokumen slip approved (15 Okt 2026): telusur dari slip/QR
   const pageCount = perPage ? Math.max(1, Math.ceil(rows.length / perPage)) : 1;
   const cur = Math.min(page, pageCount);
@@ -303,14 +311,18 @@ function PeriodDetail({ pid }) {
           {isManager && (
             // modal={false}: dialog Batch Payment dibuka dari menu ini; menu modal Radix bisa meninggalkan body tak bisa diklik
             <DropdownMenu modal={false}>
-              <DropdownMenuTrigger data-testid="export-bsi-menu" disabled={!payslips.length} className="w-full sm:w-auto justify-center whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-400"><Landmark className="h-4 w-4" /> Export Transfer BSI <ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
+              <DropdownMenuTrigger data-testid="export-bsi-menu" disabled={!payslips.length} className="w-full sm:w-auto justify-center whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-400"><Landmark className="h-4 w-4" /> Export <ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuItem data-testid="export-data-button" onSelect={exportData} className="flex-col items-start gap-0.5 cursor-pointer">
+                  <span className="font-semibold flex items-center gap-1.5"><FileSpreadsheet className="h-4 w-4" /> Excel — Data Payroll</span>
+                  <span className="text-xs text-slate-500">Rincian per karyawan sampai Take Home Pay; slip draft ikut</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem data-testid="export-batch-bsi-button" onSelect={() => setBatchOpen(true)} className="flex-col items-start gap-0.5 cursor-pointer">
                   <span className="font-semibold">TXT — Batch Payment BSI</span>
                   <span className="text-xs text-slate-500">Format unggah BSI, sama dengan ROSY; slip draft ikut diekspor</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem data-testid="export-bsi-button" disabled={!approvedCount} onSelect={exportBsi} className="flex-col items-start gap-0.5 cursor-pointer">
-                  <span className="font-semibold">CSV</span>
+                  <span className="font-semibold">CSV — Transfer BSI</span>
                   <span className="text-xs text-slate-500">{approvedCount ? "Hanya slip yang sudah di-approve" : "Hanya slip yang sudah di-approve — belum ada"}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -479,7 +491,7 @@ function PeriodDetail({ pid }) {
                     <tr key={s.id} className="group hover:bg-slate-50" data-testid={`payslip-row-${nik}`}>
                       <td className={`px-3 py-2.5 min-w-[11rem] bg-white group-hover:bg-slate-50 ${STICKY}`}>
                         <div className="font-semibold leading-snug">
-                          <Link to={link} className="tap text-slate-900 hover:text-brand-700 hover:underline">{s.employee.name}</Link>
+                          <Link to={link} className="tap text-slate-900 hover:text-brand-700 hover:underline">{s.display_name || s.employee.name}</Link>
                           {s.employment?.status === "keluar" && <span title={`Karyawan keluar ${formatDate(s.employment.exit_date)}${s.employment.final_tax ? " — PPh 21 dihitung masa pajak terakhir (Pasal 17), bukan TER bulanan" : ""}`} className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-xs font-semibold text-slate-700" data-testid={`keluar-badge-${nik}`}>KELUAR {formatDate(s.employment.exit_date)}</span>}
                           {s.is_manually_adjusted && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700">EDIT</span>}
                           {blocker && <span title={blocker.problems.map((p) => `${p.kind}: ${p.note}`).join("\n")} className="ml-2 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-700" data-testid={`bank-badge-${nik}`}>REKENING</span>}

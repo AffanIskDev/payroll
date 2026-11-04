@@ -196,18 +196,12 @@ def _tanggal_pendek(iso: str) -> str:
 
 
 def special_lines(slip: dict) -> tuple:
-    """Slip run THR / Bonus Tahunan (user 30 Okt 2026): satu baris pendapatan, satu baris PPh 21. Keterangan pajaknya menyebut
-    bahwa TER dihitung atas gaji bulan dibayar + nominal ini, dan dari mana perkiraan gaji itu diambil bila slip gajinya
-    belum ada."""
-    tax = slip.get("special_tax") or {}
+    """Slip run THR / Bonus Tahunan (user 30 Okt 2026): satu baris pendapatan, satu baris PPh 21 yang Rp 0 dengan keterangan
+    bahwa pajaknya ditunda ke rekonsiliasi Pasal 17 (keputusan atasan)."""
     label = slip.get("special_label") or "THR"
-    src = tax.get("baseline_source") or ""
-    base_note = {"slip_bulan_ini": "gaji bulan ini", "tidak_ada": "tanpa dasar gaji"}.get(
-        src, "perkiraan dari " + src.split(":", 1)[-1] if src.startswith("slip_terakhir") else "gaji bulan ini")
     amount = slip[SPECIAL_FIELD.get(slip["run_type"], "thr")]
     earn = _shown([(label, amount, True), ("TOTAL PENDAPATAN", slip["gross_earnings"], True)])
-    ded = _shown([(f"PPh 21 TER {slip['ter_category']} ({tax.get('total_rate', slip['ter_rate'])}%)", slip["pph21_amount"],
-                   True, f"atas {base_note} + {label}"),
+    ded = _shown([("PPh 21", 0, True, "ditunda: dihitung di rekonsiliasi Pasal 17 (Desember / bulan keluar)"),
                   ("TOTAL POTONGAN", slip["total_deductions"], True)])
     return earn, ded
 
@@ -249,7 +243,7 @@ def payslip_lines(slip: dict) -> tuple:
                    (jabatan, slip["position_allowance"], bool(from_bonus) or unpaid, jabatan_detail),
                    (*kehadiran, unpaid, att_pr),
                    (f"Lembur ({_jam_menit(slip['overtime_hours'])})", slip["overtime_pay"], False),
-                   ("Transport Homecare", slip.get("transport_homecare", 0), False),
+                   ("Transport Homecare", slip.get("transport_homecare", 0), False, "Dibayar di muka"),
                    ("Insentif KPI", slip["kpi_incentive"], False), ("Bonus", slip["additional_bonus"], False),
                    ("THR", slip.get("thr", 0), False),
                    ("Tunj. BPJS Kesehatan", slip["tunjangan_bpjs_kes"], False),
@@ -315,15 +309,22 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     words = ParagraphStyle("tb", parent=ss["Normal"], fontName="Helvetica-Oblique", fontSize=8, leading=10,
                            textColor=green, alignment=TA_RIGHT)
     # terbilang tepat DI BAWAH nominal, rata kanan dengan angkanya
-    total = Table([["TOTAL DITERIMA", rp(slip["take_home_pay"])], ["", Paragraph(slip["terbilang"], words)]],
+    # Transport Homecare yang sudah dibayar di muka: bukan potongan, hanya dikecualikan dari Total Diterima
+    advance = round(slip.get("book_fee_homecare", 0) or 0)
+    advance_row = [[f"Tidak termasuk Transport Homecare dibayar di muka {rp(advance)}", ""]] if advance else []
+    total = Table([["TOTAL DITERIMA", rp(slip["take_home_pay"])], *advance_row, ["", Paragraph(slip["terbilang"], words)]],
                   colWidths=[70 * mm, 96 * mm])  # = tepi kanan tabel POTONGAN (90 + 76 mm)
     total.hAlign = "LEFT"
     total.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ECFDF5")),
                                ("TEXTCOLOR", (0, 0), (-1, -1), green), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                               ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 13 * 0.8),
+                               ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (0, 0), 11), ("FONTSIZE", (1, 0), (1, 0), 17), ("LEADING", (0, 0), (-1, 0), 21),
                                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                                ("TOPPADDING", (0, 0), (-1, 0), 7), ("BOTTOMPADDING", (0, 0), (-1, 0), 1),
-                               ("TOPPADDING", (0, 1), (-1, 1), 0), ("BOTTOMPADDING", (0, 1), (-1, 1), 7)]))
+                               ("TOPPADDING", (0, -1), (-1, -1), 0), ("BOTTOMPADDING", (0, -1), (-1, -1), 7)]))
+    if advance:  # baris keterangan di antara nominal dan terbilang: kecil, rata kanan seperti terbilang
+        total.setStyle(TableStyle([("SPAN", (0, 1), (1, 1)), ("ALIGN", (0, 1), (1, 1), "RIGHT"),
+                                   ("FONTNAME", (0, 1), (1, 1), "Helvetica"), ("FONTSIZE", (0, 1), (1, 1), 7),
+                                   ("TOPPADDING", (0, 1), (1, 1), 0), ("BOTTOMPADDING", (0, 1), (1, 1), 2)]))
     note = ParagraphStyle("n", parent=small, textColor=colors.black)
     # teks disclaimer dari user 9 Okt 2026
     disclaimer = Table([[Paragraph("<b>Catatan:</b> Slip gaji ini dibuat berdasarkan data yang tersedia pada saat proses "

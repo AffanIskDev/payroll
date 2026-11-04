@@ -42,9 +42,16 @@ def test_special_slip_shape():
     s = compute_special_slip(EMP, "bonus_tahunan", 9_000_000, 7_000_000, "slip_bulan_ini")
     assert s["bonus_tahunan"] == 9_000_000 and s["thr"] == 0 and s["run_type"] == "bonus_tahunan"
     assert s["gross_earnings"] == s["taxable_gross"] == 9_000_000
-    assert s["take_home_pay"] == 9_000_000 - s["pph21_amount"] == 9_000_000 - s["total_deductions"]
+    assert s["take_home_pay"] == 9_000_000 and s["pph21_amount"] == s["total_deductions"] == 0
     assert s["bpjs"]["jht_employee"] == 0 and s["iuran_bpjs_tk_total"] == 0   # THR / bonus tidak kena BPJS
     assert s["special_tax"]["baseline_source"] == "slip_bulan_ini"
+
+
+def test_special_slip_pays_in_full_and_defers_tax_to_pasal17():
+    s = compute_special_slip(EMP, "thr", 9_000_000, 7_000_000, "slip_bulan_ini")
+    assert s["pph21_method"] == "ditunda" and s["pph21_withheld"] == 0
+    assert s["taxable_gross"] == 9_000_000                    # tetap penghasilan kena pajak untuk rekonsiliasi
+    assert s["special_tax"]["pph21"] > 0                      # perkiraan TER selisih hanya informasi
 
 
 def test_zero_nominal_means_no_tax():
@@ -179,3 +186,121 @@ def test_batch_bsi_label_per_run():
     assert "THR MARET 2027" in res["text"]
     assert bank_batch.file_name({"nama": "RUMAT"}, "2027-03", "Bonus Tahunan") == "BatchPayment-RUMAT-Bonus-Tahunan-Maret-2027.txt"
     assert bank_batch.file_name({"nama": "RUMAT"}, "2027-03") == "BatchPayment-RUMAT-Maret-2027.txt"   # gaji: tak berubah
+
+
+def test_special_run_change_recomputes_only_editable_final_tax_periods(monkeypatch):
+    """Run THR / Bonus berubah (user 30 Okt 2026): periode gaji draft yang punya slip Pasal 17 (Desember / karyawan keluar) di
+    bulan dibayar atau sesudahnya dihitung ulang; yang TER saja, sudah approved, atau sebelum bulan dibayar dilewati."""
+    import pipeline
+    client, tdb, name = _db(monkeypatch, pipeline)
+    called = []
+
+    async def fake_process(period):
+        called.append(period["bulan"])
+        return 1
+    monkeypatch.setattr(pipeline, "process_period", fake_process)
+
+    async def periode(bulan, status, method, pid=None):
+        pid = pid or f"p{bulan}"
+        await tdb.payroll_periods.insert_one({"id": pid, "run_type": "gaji", "bulan": bulan, "status": status})
+        await tdb.payslips.insert_one({"payroll_period_id": pid, "employee_id": "e1", "pph21_method": method})
+
+    async def run():
+        try:
+            await client.admin.command("ping")
+            await periode("2026-10", "draft", "pasal17")     # karyawan keluar Oktober: ikut
+            await periode("2026-11", "draft", "ter")         # TER saja: tidak perlu
+            await periode("2026-12", "draft", "pasal17")     # Desember: ikut
+            await periode("2026-09", "draft", "pasal17")     # sebelum bulan dibayar: tidak
+            await periode("2026-11", "approved", "pasal17", "pa")  # sudah approved: tidak
+            assert await pipeline.recompute_final_tax_periods("2026-10") == ["2026-10", "2026-12"]
+            assert called == ["2026-10", "2026-12"]
+        finally:
+            await client.drop_database(name)
+            client.close()
+
+    asyncio.run(run())
+
+
+def test_amounts_from_gapok_fill_multiplier_times_basic_salary(monkeypatch):
+    """Pilihan "Ambil dari Gaji Pokok" (user 31 Okt 2026): nominal = gaji pokok kontrak x pengali, jadi input RUSA; karyawan
+    tanpa gaji pokok dilewati; pengali di luar batas ditolak."""
+    import pipeline
+    import special_runs
+    from fastapi import HTTPException
+    client, tdb, name = _db(monkeypatch, special_runs, pipeline)
+
+    async def fake_process(period):
+        return 2
+    async def fake_recompute(bulan):
+        return []
+    monkeypatch.setattr(special_runs, "process_special", fake_process)
+    monkeypatch.setattr(special_runs, "recompute_final_tax_periods", fake_recompute)
+
+    async def run():
+        try:
+            await client.admin.command("ping")
+            await tdb.employees.insert_many([
+                {"id": "a", "name": "A", "basic_salary": 4_000_000}, {"id": "b", "name": "B", "basic_salary": 0},
+                {"id": "c", "name": "C", "basic_salary": 3_450_000.0}])
+            await tdb.payroll_periods.insert_one({"id": "p1", "run_type": "thr", "bulan": "2026-12", "status": "draft",
+                                                  "employee_ids": ["a", "b", "c"]})
+            await tdb.special_inputs.insert_one({"id": "old", "payroll_period_id": "p1", "employee_id": "a", "nominal": 1})
+            res = await special_runs.amounts_from_gapok("p1", special_runs.FromGapokIn(multiplier=1.5))
+            assert res["filled"] == 2 and res["no_gapok"] == ["B"]
+            got = {d["employee_id"]: d["nominal"] async for d in tdb.special_inputs.find({"payroll_period_id": "p1"})}
+            assert got == {"a": 6_000_000, "c": 5_175_000}     # input lama "a" ditimpa; "b" tak dibuat
+            with pytest.raises(HTTPException):
+                await special_runs.amounts_from_gapok("p1", special_runs.FromGapokIn(multiplier=0))
+            await tdb.payroll_periods.update_one({"id": "p1"}, {"$set": {"status": "approved"}})
+            with pytest.raises(HTTPException):
+                await special_runs.amounts_from_gapok("p1", special_runs.FromGapokIn(multiplier=1))
+        finally:
+            await client.drop_database(name)
+            client.close()
+
+    asyncio.run(run())
+
+
+def test_excluded_employees_get_no_slip_and_keep_their_nominal(monkeypatch):
+    """Kecualikan karyawan dari run (user 31 Okt 2026): tidak dapat slip walau nominalnya ada, nominal tidak hilang sehingga
+    menyertakan kembali memulihkannya, "Ambil dari Gaji Pokok" melewati mereka, dan karyawan di luar populasi ditolak."""
+    import pipeline
+    import special_runs
+    from fastapi import HTTPException
+    client, tdb, name = _db(monkeypatch, special_runs, pipeline)
+
+    async def fake_process(period):
+        return 0
+    async def fake_recompute(bulan):
+        return []
+    monkeypatch.setattr(special_runs, "process_special", fake_process)
+    monkeypatch.setattr(special_runs, "recompute_final_tax_periods", fake_recompute)
+
+    async def run():
+        try:
+            await client.admin.command("ping")
+            await tdb.employees.insert_many([{"id": "a", "name": "A", "basic_salary": 4_000_000},
+                                             {"id": "b", "name": "B", "basic_salary": 5_000_000}])
+            await tdb.payroll_periods.insert_one({"id": "p1", "run_type": "thr", "bulan": "2026-12", "status": "draft",
+                                                  "employee_ids": ["a", "b"]})
+            await tdb.special_inputs.insert_one({"id": "i", "payroll_period_id": "p1", "employee_id": "a", "nominal": 700})
+            await special_runs.set_excluded("p1", special_runs.ExcludeIn(employee_ids=["a"]))
+            await special_runs.set_excluded("p1", special_runs.ExcludeIn(employee_ids=["a"]))   # dua kali: tidak ganda
+            assert (await tdb.payroll_periods.find_one({"id": "p1"}))["excluded_ids"] == ["a"]
+            assert "a" not in await pipeline.special_amounts(await pipeline.get_period("p1"))
+            res = await special_runs.amounts_from_gapok("p1", special_runs.FromGapokIn(multiplier=1))
+            assert res["filled"] == 1
+            assert (await tdb.special_inputs.find_one({"employee_id": "a"}))["nominal"] == 700   # tidak ditimpa
+            await special_runs.set_excluded("p1", special_runs.ExcludeIn(employee_ids=["a"], excluded=False))
+            assert (await pipeline.special_amounts(await pipeline.get_period("p1")))["a"] == (700.0, "rusa")
+            with pytest.raises(HTTPException):
+                await special_runs.set_excluded("p1", special_runs.ExcludeIn(employee_ids=["x"]))
+            await tdb.payroll_periods.update_one({"id": "p1"}, {"$set": {"status": "approved"}})
+            with pytest.raises(HTTPException):
+                await special_runs.set_excluded("p1", special_runs.ExcludeIn(employee_ids=["a"]))
+        finally:
+            await client.drop_database(name)
+            client.close()
+
+    asyncio.run(run())

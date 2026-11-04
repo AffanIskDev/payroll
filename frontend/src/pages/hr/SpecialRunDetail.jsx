@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronLeft, DownloadCloud, FileUp, Landmark, LockKeyhole, Save, Send, XCircle, AlertTriangle, FileText, Undo2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, DownloadCloud, FileUp, Wallet, Landmark, LockKeyhole, Save, Send, XCircle, AlertTriangle, FileText, Undo2, UserX, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg, downloadBlob } from "@/lib/api";
 import { rp, formatDate, BULAN_NAMA } from "@/lib/format";
 import { RUNS } from "@/lib/runs";
 import { PageTitle, Panel, PeriodStatusChip, Btn, KpiCard, NameFilter, matchName } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 // Detail run THR / Bonus Tahunan (user 30 Okt 2026): satu baris per karyawan dengan nominalnya. Nominal dari ROSY, atau diisi
-// di RUSA (menimpa ROSY). PPh 21 = selisih TER atas gaji bulan dibayar (engine.special_tax); slip, ajukan, approve, dan
+// di RUSA (menimpa ROSY). PPh 21 TIDAK dipotong di run ini (keputusan atasan 30 Okt: ditunda ke rekonsiliasi Pasal 17); slip, ajukan, approve, dan
 // Batch BSI memakai jalur periode yang sama dengan gaji.
 const SOURCE = { rosy: "ROSY", rusa: "RUSA" };
-const BASE_NOTE = { slip_bulan_ini: "gaji bulan ini", tidak_ada: "tanpa dasar gaji" };
-const baseNote = (src) => BASE_NOTE[src] || (src?.startsWith("slip_terakhir") ? `perkiraan: ${src.split(":")[1]}` : "-");
 
 export default function SpecialRunDetail({ runType }) {
   const { pid } = useParams();
@@ -33,6 +32,9 @@ function Detail({ pid, runType }) {
   const [approveOpen, setApproveOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchProblems, setBatchProblems] = useState(null);
+  const [gapokOpen, setGapokOpen] = useState(false);
+  const [sel, setSel] = useState(() => new Set());   // employee_id yang dicentang untuk dikecualikan / disertakan
+  const [multiplier, setMultiplier] = useState("1");
   const [reason, setReason] = useState("");
   const file = useRef(null);
   const load = useCallback(() => api.get(`/hr/special-runs/${pid}`).then((r) => setD(r.data)), [pid]);
@@ -51,13 +53,20 @@ function Detail({ pid, runType }) {
   const taxMonth = `${BULAN_NAMA[Number(period.bulan.slice(5, 7)) - 1]} ${period.bulan.slice(0, 4)}`;
   const dirty = Object.keys(edits).length;
   const shown = rows.filter((r) => matchName(`${r.name} ${r.nik}`, q));
+  const picked = rows.filter((r) => sel.has(r.employee_id));
+  const pickedActive = picked.filter((r) => !r.excluded).map((r) => r.employee_id);
+  const pickedExcluded = picked.filter((r) => r.excluded).map((r) => r.employee_id);
+  const allShownPicked = shown.length > 0 && shown.every((r) => sel.has(r.employee_id));
 
+  // slip gaji Pasal 17 (Desember / karyawan keluar) ikut dihitung ulang oleh backend setiap nominal berubah
+  const recomputedNote = (d) => { if (d?.recomputed?.length) toast.info(`Slip gaji ${d.recomputed.map((b) => BULAN_NAMA[Number(b.slice(5, 7)) - 1]).join(", ")} dihitung ulang (pajak ${run.label} ikut)`); };
   const parse = (t) => (String(t).trim() === "" ? null : Number(String(t).replace(/\./g, "").replace(",", ".")));
   const save = () => act(async () => {
     const items = Object.entries(edits).map(([employee_id, t]) => ({ employee_id, nominal: parse(t) }));
     if (items.some((i) => i.nominal !== null && (Number.isNaN(i.nominal) || i.nominal < 0))) throw new Error("Ada nominal yang tidak valid");
-    await api.put(`/hr/special-runs/${pid}/amounts`, { items });
+    const { data } = await api.put(`/hr/special-runs/${pid}/amounts`, { items });
     setEdits({});
+    recomputedNote(data);
   }, "Nominal disimpan & slip dihitung ulang");
   const revert = (eid) => act(() => api.put(`/hr/special-runs/${pid}/amounts`, { items: [{ employee_id: eid, nominal: null }] }), "Kembali ke nominal ROSY");
   const sync = () => act(() => api.post(`/hr/special-runs/${pid}/sync`), `Karyawan & nominal ${run.label} ditarik ulang dari ROSY`);
@@ -67,7 +76,25 @@ function Detail({ pid, runType }) {
     if (!f) return;
     const body = new FormData();
     body.append("file", f);
-    act(async () => { const { data } = await api.post(`/hr/special-runs/${pid}/import`, body); toast.info(`${data.imported} baris diimpor`); }, null);
+    act(async () => { const { data } = await api.post(`/hr/special-runs/${pid}/import`, body); toast.info(`${data.imported} baris diimpor`); recomputedNote(data); }, null);
+  };
+  const setExcluded = (ids, excluded) => act(async () => {
+    const { data } = await api.put(`/hr/special-runs/${pid}/excluded`, { employee_ids: ids, excluded });
+    setSel(new Set());
+    recomputedNote(data);
+  }, excluded ? `${ids.length} karyawan dikecualikan dari ${run.label}` : `${ids.length} karyawan disertakan kembali`);
+  const toggleSel = (eid) => setSel((cur) => { const n = new Set(cur); if (n.has(eid)) n.delete(eid); else n.add(eid); return n; });
+  const mult = Number(String(multiplier).replace(",", "."));
+  const fromGapok = async () => {
+    let result = null;
+    const ok = await act(async () => {
+      const { data } = await api.post(`/hr/special-runs/${pid}/from-gapok`, { multiplier: mult });
+      result = data;
+      toast.info(`${data.filled} karyawan diisi dari gaji pokok${data.no_gapok.length ? `; ${data.no_gapok.length} tanpa gaji pokok dilewati` : ""}`);
+      recomputedNote(data);
+    }, null);
+    if (ok) setGapokOpen(false);
+    return result;
   };
   const post = (path, msg, body) => act(() => api.post(`/hr/periods/${pid}/${path}`, body), msg);
   const exportBatch = async () => {
@@ -92,8 +119,25 @@ function Detail({ pid, runType }) {
           <span className="block">Sinkron ROSY terakhir: <span className="text-slate-700">{period.last_sync_at ? new Date(period.last_sync_at).toLocaleString("id-ID") : "belum pernah"}</span></span>
         </>}>
         <div className="flex w-full sm:w-auto flex-col sm:flex-row sm:flex-wrap gap-2" data-testid="run-actions">
-          {editable && <Btn variant="outline" disabled={busy} onClick={sync} data-testid="run-sync-button" className="justify-center whitespace-nowrap" title="Menarik ulang karyawan dan nominal dari ROSY. Nominal yang diisi di RUSA tetap."><DownloadCloud className="h-4 w-4" /> Tarik dari ROSY</Btn>}
-          {editable && <Btn variant="outline" disabled={busy} onClick={() => file.current?.click()} data-testid="run-import-button" className="justify-center whitespace-nowrap" title="Berkas .xlsx / .csv berkolom nik dan nominal"><FileUp className="h-4 w-4" /> Impor Nominal</Btn>}
+          {editable && (
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger data-testid="run-fill-menu" disabled={busy} className="w-full sm:w-auto justify-center whitespace-nowrap inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-400"><Wallet className="h-4 w-4" /> Isi Nominal <ChevronDown className="h-4 w-4" /></DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuItem data-testid="run-sync-button" onSelect={sync} className="flex-col items-start gap-0.5 cursor-pointer">
+                  <span className="flex items-center gap-2 font-semibold"><DownloadCloud className="h-4 w-4" /> Tarik dari ROSY</span>
+                  <span className="text-xs text-slate-500 pl-6">Karyawan dan nominal dari ROSY. Nominal yang diisi di RUSA tetap.</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="run-import-button" onSelect={() => file.current?.click()} className="flex-col items-start gap-0.5 cursor-pointer">
+                  <span className="flex items-center gap-2 font-semibold"><FileUp className="h-4 w-4" /> Impor Nominal</span>
+                  <span className="text-xs text-slate-500 pl-6">Berkas .xlsx / .csv berkolom nik dan nominal.</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem data-testid="run-gapok-button" onSelect={() => setGapokOpen(true)} className="flex-col items-start gap-0.5 cursor-pointer">
+                  <span className="flex items-center gap-2 font-semibold"><Wallet className="h-4 w-4" /> Ambil dari Gaji Pokok</span>
+                  <span className="text-xs text-slate-500 pl-6">Semua karyawan = gaji pokok × pengali.</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <input ref={file} type="file" accept=".xlsx,.csv" className="hidden" onChange={upload} data-testid="run-import-input" />
           <Btn variant="outline" disabled={busy || !summary.slips} onClick={() => setBatchOpen(true)} data-testid="run-batch-button" className="justify-center whitespace-nowrap"><Landmark className="h-4 w-4" /> Batch Payment BSI</Btn>
           {!isManager && editable && <Btn disabled={busy || !summary.slips || blocked || dirty > 0} onClick={() => post("submit", "Diajukan ke Manager HRD")} data-testid="run-submit-button" className="justify-center whitespace-nowrap" title={dirty ? "Simpan nominal dulu" : blocked ? `Rekening ${blockers.length} karyawan belum siap` : ""}><Send className="h-4 w-4" /> Ajukan ke Manager</Btn>}
@@ -103,26 +147,30 @@ function Detail({ pid, runType }) {
       </PageTitle>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" data-testid="run-kpis">
-        <KpiCard label="Penerima" value={`${summary.slips} dari ${summary.employees}`} sub={`ROSY ${summary.from_rosy} · RUSA ${summary.from_rusa}`} accent="brand" />
+        <KpiCard label="Penerima" value={`${summary.slips} dari ${summary.employees}`} sub={`ROSY ${summary.from_rosy} · RUSA ${summary.from_rusa}${summary.excluded ? ` · Dikecualikan ${summary.excluded}` : ""}`} accent="brand" />
         <KpiCard label={`Total ${run.label}`} value={rp(summary.nominal)} accent="brand" />
-        <KpiCard label="PPh 21" value={rp(summary.pph21)} sub={`TER atas gaji ${taxMonth} + ${run.label}`} accent="amber" />
+        <KpiCard label="PPh 21" value={rp(summary.pph21)} sub="ditunda ke rekonsiliasi Pasal 17" accent="amber" />
         <KpiCard label="Total Diterima" value={rp(summary.thp)} accent="emerald" testId="run-kpi-thp" />
       </div>
 
-      {(summary.baseline_estimated > 0 || summary.baseline_none > 0) && (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-4 py-3 flex gap-3" data-testid="run-baseline-note">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          <div>
-            PPh 21 dihitung dari selisih TER atas <b>gaji {taxMonth}</b> + {run.label}. Slip gaji {taxMonth} {summary.baseline_exact ? `baru ada untuk ${summary.baseline_exact} karyawan; ` : "belum ada; "}
-            {summary.baseline_estimated > 0 && <><b>{summary.baseline_estimated}</b> karyawan memakai slip gaji terakhir sebagai perkiraan. </>}
-            {summary.baseline_none > 0 && <><b>{summary.baseline_none}</b> karyawan belum punya slip gaji sama sekali (dipajaki atas {run.label} saja). </>}
-            Selisihnya dibereskan di PPh 21 Desember (Pasal 17).
-          </div>
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-4 py-3 flex gap-3" data-testid="run-tax-deferred-note">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <div>
+          {run.label} dibayar <b>utuh tanpa potongan PPh 21</b>. Pajaknya dihitung di rekonsiliasi Pasal 17 pada slip gaji Desember, atau slip terakhir karyawan yang keluar sebelum Desember.
         </div>
-      )}
+      </div>
       {summary.final_tax_month && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-4 py-3" data-testid="run-december-note">
           Dibayar di <b>Desember</b>: penghasilan ini ikut rekonsiliasi PPh 21 Desember (Pasal 17). Slip gaji Desember baru bisa di-approve setelah run ini di-approve.
+        </div>
+      )}
+      {editable && !summary.slips && rows.length > 0 && (
+        <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 text-slate-800 text-sm px-4 py-4" data-testid="run-source-choice">
+          <div className="font-semibold mb-1">Nominal {run.label} belum terisi. Pilih sumbernya:</div>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <Btn variant="outline" disabled={busy} onClick={() => file.current?.click()} data-testid="run-choice-import"><FileUp className="h-4 w-4" /> Impor Nominal (.xlsx / .csv)</Btn>
+            <Btn disabled={busy} onClick={() => setGapokOpen(true)} data-testid="run-choice-gapok"><Wallet className="h-4 w-4" /> Ambil dari Gaji Pokok</Btn>
+          </div>
         </div>
       )}
       {blocked && (
@@ -138,20 +186,29 @@ function Detail({ pid, runType }) {
             <div className="flex items-center gap-2">
               {dirty > 0 && <span className="text-sm text-amber-700" data-testid="run-dirty-note">{dirty} baris belum disimpan</span>}
               <Btn variant="outline" disabled={!dirty || busy} onClick={() => setEdits({})} data-testid="run-discard-button">Batalkan</Btn>
-              <Btn disabled={!dirty || busy} onClick={save} data-testid="run-save-button"><Save className="h-4 w-4" /> Simpan Nominal</Btn>
+              <Btn disabled={!dirty || busy} onClick={save} data-testid="run-save-button" title={dirty ? "" : "Aktif setelah ada nominal yang diubah"}><Save className="h-4 w-4" /> {busy && dirty ? "Menyimpan..." : "Simpan Nominal"}</Btn>
             </div>
           )}
         </div>
+        {editable && picked.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-2.5 border-b border-slate-200 bg-slate-50 text-sm" data-testid="run-selection-bar">
+            <span className="text-slate-700"><b className="num">{picked.length}</b> karyawan dipilih</span>
+            {pickedActive.length > 0 && <Btn variant="outline" disabled={busy || dirty > 0} onClick={() => setExcluded(pickedActive, true)} data-testid="run-exclude-button" title={dirty ? "Simpan nominal dulu" : ""}><UserX className="h-4 w-4" /> Kecualikan ({pickedActive.length})</Btn>}
+            {pickedExcluded.length > 0 && <Btn variant="outline" disabled={busy || dirty > 0} onClick={() => setExcluded(pickedExcluded, false)} data-testid="run-include-button" title={dirty ? "Simpan nominal dulu" : ""}><UserCheck className="h-4 w-4" /> Sertakan kembali ({pickedExcluded.length})</Btn>}
+            <button onClick={() => setSel(new Set())} className="tap text-slate-500 hover:text-slate-900 underline">Batal pilih</button>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="run-table">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
+                {editable && <th className="w-10 pl-4 sm:pl-5 py-3"><input type="checkbox" aria-label="Pilih semua yang tampil" data-testid="run-select-all" checked={allShownPicked} onChange={() => setSel(allShownPicked ? new Set() : new Set(shown.map((r) => r.employee_id)))} /></th>}
                 <th className="text-left px-4 sm:px-5 py-3">Karyawan</th>
                 <th className="text-left px-3 py-3">Sumber</th>
                 <th className="text-right px-3 py-3">Nominal {run.label}</th>
                 <th className="text-right px-3 py-3">PPh 21</th>
                 <th className="text-right px-3 py-3">Total Diterima</th>
-                <th className="text-left px-3 py-3">Dasar Pajak</th>
+                <th className="text-left px-3 py-3">Pajak</th>
                 <th />
               </tr>
             </thead>
@@ -160,22 +217,23 @@ function Detail({ pid, runType }) {
                 const typed = edits[r.employee_id];
                 const value = typed !== undefined ? typed : r.nominal ? String(Math.round(r.nominal)) : "";
                 return (
-                  <tr key={r.employee_id} className={r.slip ? "hover:bg-slate-50" : "text-slate-400"} data-testid={`run-row-${r.nik}`}>
+                  <tr key={r.employee_id} className={r.excluded ? "bg-slate-50 text-slate-400" : r.slip ? "hover:bg-slate-50" : "text-slate-400"} data-testid={`run-row-${r.nik}`}>
+                    {editable && <td className="w-10 pl-4 sm:pl-5 py-2.5"><input type="checkbox" aria-label={`Pilih ${r.name}`} data-testid={`run-select-${r.nik}`} checked={sel.has(r.employee_id)} onChange={() => toggleSel(r.employee_id)} /></td>}
                     <td className="px-4 sm:px-5 py-2.5"><div className="font-semibold text-slate-900">{r.name}</div><div className="text-xs text-slate-500 num">{r.nik}{r.department ? ` · ${r.department}` : ""}</div></td>
                     <td className="px-3 py-2.5 text-xs">
-                      {r.source ? <span className={`rounded-full px-2 py-0.5 font-semibold ${r.source === "rusa" ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-600"}`}>{SOURCE[r.source]}</span> : <span className="text-slate-400">—</span>}
+                      {r.excluded ? <span className="rounded-full px-2 py-0.5 font-semibold bg-amber-50 text-amber-800" data-testid={`run-excluded-${r.nik}`}>Dikecualikan</span> : r.source ? <span className={`rounded-full px-2 py-0.5 font-semibold ${r.source === "rusa" ? "bg-brand-50 text-brand-700" : "bg-slate-100 text-slate-600"}`}>{SOURCE[r.source]}</span> : <span className="text-slate-400">—</span>}
                       {r.source === "rusa" && r.rosy_nominal ? <div className="text-slate-500 mt-0.5">ROSY {rp(r.rosy_nominal)}</div> : null}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       {editable
-                        ? <input inputMode="numeric" aria-label={`Nominal ${run.label} ${r.name}`} data-testid={`run-input-${r.nik}`} value={value} placeholder="0"
+                        ? <input inputMode="numeric" disabled={r.excluded} aria-label={`Nominal ${run.label} ${r.name}`} data-testid={`run-input-${r.nik}`} value={value} placeholder="0"
                             onChange={(e) => setEdits({ ...edits, [r.employee_id]: e.target.value })}
-                            className={`w-36 border rounded-md px-2 py-1.5 text-right num text-sm ${typed !== undefined ? "border-amber-400 bg-amber-50" : "border-slate-300"}`} />
+                            className={`w-36 border rounded-md px-2 py-1.5 text-right num text-sm disabled:bg-slate-100 disabled:text-slate-400 ${typed !== undefined ? "border-amber-400 bg-amber-50" : "border-slate-300"}`} />
                         : <span className="num">{rp(r.nominal)}</span>}
                     </td>
                     <td className="px-3 py-2.5 text-right num text-slate-700">{r.slip ? rp(r.slip.pph21_withheld) : "-"}</td>
                     <td className="px-3 py-2.5 text-right num font-semibold">{r.slip ? rp(r.slip.take_home_pay) : "-"}</td>
-                    <td className="px-3 py-2.5 text-xs text-slate-500">{r.slip ? <>{baseNote(r.slip.special_tax?.baseline_source)}<div className="num">TER {r.slip.ter_category} {r.slip.special_tax?.total_rate}%</div></> : ""}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-500">{r.slip ? "Ditunda ke Pasal 17" : r.excluded ? "Tidak dapat " + run.label : ""}</td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
                       {editable && r.source === "rusa" && r.rosy_nominal ? <button onClick={() => revert(r.employee_id)} title="Kembali ke nominal ROSY" className="tap p-1 rounded text-slate-500 hover:bg-slate-100 align-middle" data-testid={`run-revert-${r.nik}`}><Undo2 className="h-4 w-4" /></button> : null}
                       {r.slip && <button onClick={() => downloadBlob(`/hr/periods/${pid}/employees/${r.employee_id}/pdf`, `${run.label}-${r.nik}.pdf`, true).catch((e) => toast.error(errMsg(e)))} title="Pratinjau slip PDF" className="tap p-1 rounded text-brand-700 hover:bg-brand-50 align-middle" data-testid={`run-pdf-${r.nik}`}><FileText className="h-4 w-4" /></button>}
@@ -183,12 +241,25 @@ function Detail({ pid, runType }) {
                   </tr>
                 );
               })}
-              {!shown.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-slate-500">{rows.length ? "Tidak ada yang cocok dengan filter." : "Belum ada karyawan. Klik “Tarik dari ROSY”."}</td></tr>}
+              {!shown.length && <tr><td colSpan={editable ? 8 : 7} className="px-5 py-10 text-center text-slate-500">{rows.length ? "Tidak ada yang cocok dengan filter." : "Belum ada karyawan. Klik “Tarik dari ROSY”."}</td></tr>}
             </tbody>
           </table>
         </div>
       </Panel>
 
+      <Dialog open={gapokOpen} onOpenChange={(o) => !busy && setGapokOpen(o)}>
+        <DialogContent data-testid="run-gapok-dialog">
+          <DialogHeader><DialogTitle>Ambil {run.label} dari gaji pokok</DialogTitle><DialogDescription>Nominal tiap karyawan = gaji pokok kontrak × pengali. Tanpa prorata masa kerja; hasilnya masih bisa diubah per baris.</DialogDescription></DialogHeader>
+          <label className="text-sm text-slate-700 flex items-center gap-2">Pengali
+            <input inputMode="decimal" value={multiplier} onChange={(e) => setMultiplier(e.target.value)} data-testid="run-gapok-multiplier" className="w-24 border border-slate-300 rounded-md px-2 py-1.5 text-right num" /> × gaji pokok
+          </label>
+          {summary.from_rusa > 0 && <p className="text-sm text-amber-800">Nominal yang sudah diisi / diimpor di RUSA ({summary.from_rusa} karyawan) akan <b>ditimpa</b>.</p>}
+          <div className="flex justify-end gap-2">
+            <Btn variant="outline" disabled={busy} onClick={() => setGapokOpen(false)}>Batal</Btn>
+            <Btn disabled={busy || !(mult > 0 && mult <= 24)} onClick={fromGapok} data-testid="run-gapok-confirm"><Wallet className="h-4 w-4" /> {busy ? "Mengisi..." : "Isi Nominal"}</Btn>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent data-testid="run-reject-dialog">
           <DialogHeader><DialogTitle>Tolak {period.period_name}</DialogTitle><DialogDescription>Run dikembalikan ke Supervisor HRD untuk dikoreksi. Tuliskan alasannya.</DialogDescription></DialogHeader>

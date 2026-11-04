@@ -1,10 +1,11 @@
 """Payroll THR dan Bonus Tahunan (user 30 Okt 2026): run sendiri di luar gaji bulanan.
 
 Satu run = satu pembayaran (tanggal bayar sendiri), tersimpan sebagai periode dengan `run_type` "thr" / "bonus_tahunan".
-Nominal per karyawan dari ROSY (komponen Tambahan Bulanan bulan dibayar) dan/atau diinput di RUSA; input RUSA menang.
+Nominal per karyawan dari ROSY (komponen Tambahan Bulanan bulan dibayar) dan/atau diinput di RUSA (impor berkas, atau diisi
+dari gaji pokok x pengali); input RUSA menang.
 Slip, ajukan/approve, batch BSI, dan PDF memakai jalur periode yang sudah ada (`/api/hr/periods/{pid}/...`); router ini hanya
 memegang yang khas run khusus: membuat, menarik karyawan + nominal ROSY, mengisi nominal, dan rincian per karyawan.
-Pajaknya: lihat engine.special_tax — selisih TER atas gaji bulan dibayar, dan Pasal 17 Desember menjumlahkan semuanya."""
+Pajaknya TIDAK dipotong di run ini (keputusan atasan 30 Okt 2026): Pasal 17 Desember / bulan keluar menjumlahkan semuanya."""
 import uuid
 from datetime import date
 from typing import Optional
@@ -17,7 +18,7 @@ import signer as signer_mod
 from core import db, now_iso, require_hr
 from engine import SPECIAL_RUNS
 from periods import BULAN, RUN_SPECIAL, run_type_of
-from pipeline import get_period, process_special, special_amounts
+from pipeline import get_period, process_special, recompute_final_tax_periods, special_amounts
 from pymongo.errors import DuplicateKeyError
 from routes_hr import EDITABLE_STATUSES, sync_employees, _account_blockers
 from routes_tax import _rows_from_upload, _num
@@ -40,6 +41,15 @@ class AmountItem(BaseModel):
 
 class AmountsIn(BaseModel):
     items: list[AmountItem]
+
+
+class ExcludeIn(BaseModel):
+    employee_ids: list[str]
+    excluded: bool = True   # True = dikecualikan (tidak dapat slip); False = disertakan kembali
+
+
+class FromGapokIn(BaseModel):
+    multiplier: float = 1.0   # nominal = gaji pokok kontrak x pengali (THR umumnya 1x; bonus tahunan sesuai kebijakan)
 
 
 async def _special(pid: str) -> dict:
@@ -91,6 +101,7 @@ async def create_run(body: SpecialIn):
         raise HTTPException(409, f"Run {label} untuk {BULAN[paid.month - 1]} {paid.year} sudah ada")
     try:
         await _sync(data["id"])
+        await recompute_final_tax_periods(data["bulan"])
     except HTTPException as e:
         return {**await get_period(data["id"]), "sync_error": e.detail}
     return await get_period(data["id"])
@@ -123,7 +134,8 @@ async def _sync(pid: str) -> int:
 
 @router.post("/{pid}/sync")
 async def sync_run(pid: str):
-    return {"processed": await _sync(pid)}
+    processed = await _sync(pid)
+    return {"processed": processed, "recomputed": await recompute_final_tax_periods((await _special(pid))["bulan"])}
 
 
 @router.put("/{pid}/amounts")
@@ -144,7 +156,22 @@ async def save_amounts(pid: str, body: AmountsIn):
                 {"payroll_period_id": pid, "employee_id": it.employee_id},
                 {"$set": {"nominal": round(it.nominal), "updated_at": now_iso()},
                  "$setOnInsert": {"id": str(uuid.uuid4())}}, upsert=True)
-    return {"processed": await process_special(period)}
+    return {"processed": await process_special(period), "recomputed": await recompute_final_tax_periods(period["bulan"])}
+
+
+@router.put("/{pid}/excluded")
+async def set_excluded(pid: str, body: ExcludeIn):
+    """Mengecualikan / menyertakan kembali karyawan di run ini (mis. tidak berhak THR / bonus). Nominal yang sudah diisi tidak
+    dihapus, jadi menyertakan kembali memulihkannya. Slip draft yang dikecualikan dihapus; slip Pasal 17 ikut dihitung ulang."""
+    period = await _special(pid)
+    _editable(period)
+    population = set(period.get("employee_ids") or [])
+    if not body.employee_ids or any(i not in population for i in body.employee_ids):
+        raise HTTPException(400, "Karyawan tidak ada di populasi run ini")
+    await db.payroll_periods.update_one({"id": pid}, {"$addToSet": {"excluded_ids": {"$each": body.employee_ids}}} if body.excluded
+                                        else {"$pull": {"excluded_ids": {"$in": body.employee_ids}}})
+    period = await get_period(pid)
+    return {"processed": await process_special(period), "recomputed": await recompute_final_tax_periods(period["bulan"])}
 
 
 @router.post("/{pid}/import")
@@ -182,7 +209,36 @@ async def import_amounts(pid: str, file: UploadFile = File(...)):
             {"payroll_period_id": pid, "employee_id": eid},
             {"$set": {"nominal": round(nominal), "updated_at": now_iso()}, "$setOnInsert": {"id": str(uuid.uuid4())}},
             upsert=True)
-    return {"imported": len(ok), "processed": await process_special(period)}
+    return {"imported": len(ok), "processed": await process_special(period),
+            "recomputed": await recompute_final_tax_periods(period["bulan"])}
+
+
+@router.post("/{pid}/from-gapok")
+async def amounts_from_gapok(pid: str, body: FromGapokIn):
+    """Mengisi nominal semua karyawan di populasi run = gaji pokok kontrak x pengali (user 31 Okt 2026: pilihan selain impor).
+    Tersimpan sebagai input RUSA, jadi menimpa nominal ROSY dan masih bisa diubah per baris. Tanpa prorata masa kerja."""
+    period = await _special(pid)
+    _editable(period)
+    if not 0 < body.multiplier <= 24:
+        raise HTTPException(400, "Pengali harus lebih dari 0 dan paling besar 24")
+    emps = await db.employees.find({"id": {"$in": period.get("employee_ids") or []}},
+                                   {"_id": 0, "id": 1, "name": 1, "basic_salary": 1}).to_list(5000)
+    filled, no_gapok = 0, []
+    excluded = set(period.get("excluded_ids") or [])
+    for e in emps:
+        if e["id"] in excluded:
+            continue
+        gapok = float(e.get("basic_salary") or 0)
+        if gapok <= 0:
+            no_gapok.append(e["name"])
+            continue
+        await db.special_inputs.update_one(
+            {"payroll_period_id": pid, "employee_id": e["id"]},
+            {"$set": {"nominal": round(gapok * body.multiplier), "updated_at": now_iso()},
+             "$setOnInsert": {"id": str(uuid.uuid4())}}, upsert=True)
+        filled += 1
+    return {"filled": filled, "no_gapok": no_gapok, "processed": await process_special(period),
+            "recomputed": await recompute_final_tax_periods(period["bulan"])}
 
 
 @router.get("/{pid}")
@@ -195,13 +251,14 @@ async def run_detail(pid: str):
     manual = {d["employee_id"]: d["nominal"] async for d in db.special_inputs.find(
         {"payroll_period_id": pid}, {"_id": 0, "employee_id": 1, "nominal": 1})}
     slips = {s["employee_id"]: s async for s in db.payslips.find({"payroll_period_id": pid}, {"_id": 0, "bpjs": 0})}
+    excluded = set(period.get("excluded_ids") or [])
     rows = []
     for e in emps:
         nominal, source = amounts.get(e["id"], (0, None))
         s = slips.get(e["id"])
         rows.append({"employee_id": e["id"], "nik": e["nik"], "name": e["name"], "department": e.get("department"),
                      "rosy_nominal": rosy.get(e["id"]), "manual_nominal": manual.get(e["id"]), "nominal": nominal,
-                     "source": source, "slip": s})
+                     "source": source, "excluded": e["id"] in excluded, "slip": s})
     got = [r["slip"] for r in rows if r["slip"]]
     blockers = await _account_blockers(got)
     sources = [(r["slip"] or {}).get("special_tax", {}).get("baseline_source", "") for r in rows if r["slip"]]
@@ -212,6 +269,7 @@ async def run_detail(pid: str):
         "baseline_exact": sum(1 for x in sources if x == "slip_bulan_ini"),
         "baseline_estimated": sum(1 for x in sources if x.startswith("slip_terakhir")),
         "baseline_none": sum(1 for x in sources if x == "tidak_ada"),
+        "excluded": sum(1 for r in rows if r["excluded"]),
         "from_rosy": sum(1 for r in rows if r["source"] == "rosy"), "from_rusa": sum(1 for r in rows if r["source"] == "rusa"),
         "final_tax_month": period["bulan"][5:7] == "12"}
     return {"period": period, "rows": rows, "summary": summary, "bank_blockers": blockers,
