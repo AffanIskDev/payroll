@@ -41,6 +41,7 @@ COLUMNS = [
     ("ptkp_status", "PTKP", True, "TK/0"),
     ("npwp", "NPWP", False, ""),
     ("ktp", "No. KTP", False, ""),
+    ("user_id_rumatku", "User ID RUMATKU", False, "USR-00123"),
     ("basic_salary", "Gaji Pokok", True, 3000000),
     ("position_allowance", "Tunj. Jabatan", False, 500000),
     ("monthly_attendance_allowance", "Tunj. Kehadiran", False, 1000000),
@@ -54,6 +55,7 @@ COLUMNS = [
     ("is_paid", "Status Gaji (Paid/Unpaid)", False, "Paid"),
     ("is_active", "Status (Aktif/Nonaktif)", False, "Aktif"),
 ]
+USER_ID_RE = re.compile(r"^USR-\d{3,}$")
 LABEL = {k: t for k, t, _, _ in COLUMNS}
 NUMERIC = ("basic_salary", "position_allowance", "monthly_attendance_allowance", "overtime_hourly_rate")
 DATES = ("birth_date", "join_date", "exit_date")
@@ -143,6 +145,10 @@ def validate_row(raw: dict) -> tuple:
     g = _text(d["gender"]).upper()[:1]
     if g not in ("L", "P"):
         e.append("Jenis Kelamin harus L atau P")
+    uid = _text(d["user_id_rumatku"]).upper()
+    if uid and not USER_ID_RE.match(uid):
+        e.append("User ID RUMATKU harus berbentuk USR-00123")
+    out["user_id_rumatku"] = uid
     out["gender"] = g or "L"
     ptkp = _text(d["ptkp_status"]).upper().replace(" ", "")
     if not PTKP_RE.match(ptkp):
@@ -175,7 +181,9 @@ def to_employee_doc(row: dict) -> dict:
         "gender": row["gender"], "birth_date": row["birth_date"], "ptkp_status": row["ptkp_status"], "npwp": row["npwp"],
         "department": row["department"], "position": row["position"], "level": "",
         "employment_type": row["employment_type"], "is_active": row["is_active"], "join_date": row["join_date"],
-        "exit_date": row["exit_date"], "is_paid": row["is_paid"], "attendance_exempt": True,
+        "exit_date": row["exit_date"], "is_paid": row["is_paid"], "user_id_rumatku": row["user_id_rumatku"] or None,
+        # bertaut ke akun RUMATKU = presensinya ikut dihitung; belum bertaut = hadir penuh (seperti tahap 1)
+        "attendance_exempt": not row["user_id_rumatku"],
         "payroll_company_id": integrations.company_id(),
         "salary": {k: row[k] for k in NUMERIC},
         "bpjs": {"kes": row["bpjs_kes"], "jkk": row["bpjs_tk"], "jkm": row["bpjs_tk"], "jht": row["bpjs_tk"],
@@ -190,7 +198,7 @@ def to_employee_doc(row: dict) -> dict:
 
 
 # Kunci yang TIDAK ditimpa saat mengubah karyawan RUSA: diatur di tempat lain / pilihan manual yang harus bertahan
-KEEP_ON_UPDATE = ("prolonged_illness_month_count", "has_husband_certificate", "user_id_rumatku", "attendance_exempt",
+KEEP_ON_UPDATE = ("prolonged_illness_month_count", "has_husband_certificate",
                   "overtime_access", "data_issues", "payroll_company_id", "marital_status", "dependents_count")
 
 
@@ -199,6 +207,7 @@ def _view(emp: dict) -> dict:
     p = emp.get("bpjs_programs") or {}
     return {
         "nik": emp.get("nik") or "", "name": emp.get("name") or "", "gender": emp.get("gender") or "",
+        "user_id_rumatku": (emp.get("user_id_rumatku") or "").upper(),
         "birth_date": emp.get("birth_date") or "", "email": emp.get("email") or "", "department": emp.get("department") or "",
         "position": emp.get("position") or "", "employment_type": emp.get("employment_type") or "",
         "join_date": emp.get("join_date") or "", "exit_date": emp.get("exit_date") or "",
@@ -241,7 +250,7 @@ async def save_row(row: dict, existing: Optional[dict], by: str) -> dict:
         await db.employees.update_one({"id": existing["id"]}, {"$set": {**doc, "updated_at": now_iso(), "updated_by": by}})
         return {**existing, **doc}
     new = {**doc, "id": str(uuid.uuid4()), "source": "rusa", "payroll_company_id": integrations.company_id(),
-           "attendance_exempt": True, "created_at": now_iso(), "created_by": by}
+           "created_at": now_iso(), "created_by": by}
     await db.employees.insert_one({**new})
     return new
 
@@ -251,6 +260,19 @@ async def _nik_owner(nik: str, skip_id: Optional[str] = None) -> Optional[dict]:
     if skip_id:
         q["id"] = {"$ne": skip_id}
     return await db.employees.find_one(q, {"_id": 0, "id": 1, "source": 1, "name": 1})
+
+
+async def _uid_owner(uid: str, skip_id: Optional[str] = None) -> Optional[dict]:
+    if not uid:
+        return None
+    q = {"user_id_rumatku": uid}
+    if skip_id:
+        q["id"] = {"$ne": skip_id}
+    return await db.employees.find_one(q, {"_id": 0, "id": 1, "name": 1})
+
+
+def _uid_msg(owner: dict) -> str:
+    return f"User ID RUMATKU sudah ditautkan ke karyawan lain ({owner.get('name')})"
 
 
 def _conflict_msg(owner: dict) -> str:
@@ -265,6 +287,8 @@ async def create_employee(body: dict = Body(...), user: dict = Depends(require_m
     row, errs = validate_row(body)
     if not errs and (owner := await _nik_owner(row["nik"])):
         errs.append(_conflict_msg(owner))
+    if not errs and (owner := await _uid_owner(row["user_id_rumatku"])):
+        errs.append(_uid_msg(owner))
     if errs:
         raise HTTPException(422, "; ".join(errs))
     return await save_row(row, None, actor(user))
@@ -280,6 +304,8 @@ async def update_employee(eid: str, body: dict = Body(...), user: dict = Depends
     row, errs = validate_row(body)
     if not errs and (owner := await _nik_owner(row["nik"], eid)):
         errs.append(_conflict_msg(owner))
+    if not errs and (owner := await _uid_owner(row["user_id_rumatku"], eid)):
+        errs.append(_uid_msg(owner))
     if errs:
         raise HTTPException(422, "; ".join(errs))
     return await save_row(row, emp, actor(user))
@@ -397,6 +423,8 @@ async def _plan(raw: bytes) -> list:
     """Pratinjau: tiap baris -> {row, nik, name, action: baru|ubah|sama|error, errors, changes, data}."""
     parsed = _parse_workbook(raw)
     existing = {e["nik"]: e async for e in db.employees.find({}, {"_id": 0})}
+    uid_owner = {(e.get("user_id_rumatku") or "").upper(): e for e in existing.values() if e.get("user_id_rumatku")}
+    seen_uid: dict = {}
     seen: dict = {}
     plan = []
     for n, d in parsed:
@@ -408,6 +436,14 @@ async def _plan(raw: bytes) -> list:
             seen[row["nik"]] = n
         if owner and (owner.get("source") or "rosy") != "rusa" and not errs:
             errs.append(_conflict_msg(owner))
+        if row.get("user_id_rumatku"):
+            u = row["user_id_rumatku"]
+            if u in seen_uid and seen_uid[u] != n:
+                errs.append(f"User ID RUMATKU ganda di berkas (baris {seen_uid[u]})")
+            seen_uid.setdefault(u, n)
+            other = uid_owner.get(u)
+            if other and other.get("nik") != row["nik"] and not errs:
+                errs.append(_uid_msg(other))
         if errs:
             action, ch = "error", []
         elif owner:

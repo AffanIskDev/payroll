@@ -417,13 +417,18 @@ async def _sync(pid: str) -> dict:
     emps = await db.employees.find(q, {"_id": 0}).to_list(5000)
     by_rosy = {e["rosy_employee_id"]: e["id"] for e in emps if e.get("rosy_employee_id")}
     by_nik = {e["nik"]: e["id"] for e in emps}
+    by_uid = {e["user_id_rumatku"]: e["id"] for e in emps if e.get("user_id_rumatku")}
+    emp_by_id = {e["id"]: e for e in emps}
     # every HAM read happens before anything of this period is deleted
     rows, meta, overtime = [], {"unlinked": []}, None
-    if integrations.rosy_enabled():
+    # presensi: dari HAM (ROSY aktif) atau LANGSUNG dari RUMATKU (ATTENDANCE_SOURCE=rumatku) — yang kedua berlaku juga untuk PT
+    # tanpa ROSY; lembur tetap ikut ROSY
+    if integrations.rosy_enabled() or integrations.attendance_from_rumatku():
         try:
             rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
+    if integrations.rosy_enabled():
         try:
             overtime = await integrations.fetch_overtime(payroll_month(period["start_date"]))
         except Exception as e:  # noqa: BLE001
@@ -468,10 +473,13 @@ async def _sync(pid: str) -> dict:
     for r in rows:
         key = r.pop("rosy_employee_id", None)
         nik = r.pop("nik", None)
-        eid = by_rosy.get(key) if key else by_nik.get(nik)
+        uid = r.pop("user_id_rumatku", None)
+        eid = by_rosy.get(key) if key else (by_uid.get(uid) if uid else by_nik.get(nik))
         if not eid or not (period["start_date"] <= r["work_date"] <= period["end_date"]):
-            unknown.add(key or nik)
+            unknown.add(key or uid or nik)
             continue
+        if uid and not integrations.in_work_window(emp_by_id[eid], r["work_date"]):
+            continue   # RUMATKU memberi kalender penuh: sebelum masuk / sesudah keluar bukan alfa
         if (eid, r["work_date"]) in claim_minutes:
             r["overtime_hours"] = claim_minutes[(eid, r["work_date"])] / 60
         docs.append({**r, "id": str(uuid.uuid4()), "employee_id": eid, "source": "rumatku",
@@ -486,11 +494,13 @@ async def _sync(pid: str) -> dict:
             "without_rate": ot_meta.get("tanpa_tarif") or []}}})
     # Without attendance rows an employee keeps the full attendance allowance — report them, never drop silently
     unlinked = meta.get("unlinked") or []
-    unlinked_ids = {u.get("employee_id") for u in unlinked}
+    unlinked_ids = {u["employee_id"] for u in unlinked if u.get("employee_id")}
+    unlinked_rusa = {u["rusa_id"] for u in unlinked if u.get("rusa_id")}
     logged = {d["employee_id"] for d in docs}
     missing = [{"employee_id": e["id"], "nik": e["nik"], "name": e["name"]} for e in emps
                if e["id"] not in logged and not e.get("attendance_exempt")
-               and e.get("rosy_employee_id") not in unlinked_ids]
+               and e["id"] not in unlinked_rusa
+               and not (e.get("rosy_employee_id") and e["rosy_employee_id"] in unlinked_ids)]
     await db.payroll_periods.update_one({"id": pid}, {"$set": {
         "attendance_synced_at": now_iso(), "attendance_count": len(docs),
         "attendance_source": integrations.mode("RUMATKU"), "attendance_unlinked": unlinked,

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 // Tambah / ubah karyawan yang dikelola di RUSA (user 3 Nov 2026). Aturan isinya sama dengan import Excel (backend
 // employees_rusa.validate_row): galat dari server ditampilkan apa adanya.
 const EMPTY = {
-  nik: "", name: "", gender: "", birth_date: "", email: "", ktp: "", npwp: "",
+  nik: "", name: "", gender: "", birth_date: "", email: "", ktp: "", npwp: "", user_id_rumatku: "",
   department: "", position: "", employment_type: "Tetap", join_date: "", exit_date: "", ptkp_status: "TK/0", is_paid: "Paid", is_active: "Aktif",
   basic_salary: "", position_allowance: "", monthly_attendance_allowance: "", overtime_hourly_rate: "", bpjs_kes: "Ya", bpjs_tk: "Ya",
   bank_name: "", bank_code: "", bank_account_number: "", bank_account_name: "",
@@ -18,7 +18,7 @@ const PTKP = ["TK/0", "TK/1", "TK/2", "TK/3", "K/0", "K/1", "K/2", "K/3"];
 // dokumen karyawan -> isian formulir
 const fromEmployee = (e) => ({
   ...EMPTY,
-  nik: e.nik || "", name: e.name || "", gender: e.gender || "", birth_date: e.birth_date || "", email: e.email || "", ktp: e.ktp || "", npwp: e.npwp || "",
+  nik: e.nik || "", name: e.name || "", gender: e.gender || "", birth_date: e.birth_date || "", email: e.email || "", ktp: e.ktp || "", npwp: e.npwp || "", user_id_rumatku: e.user_id_rumatku || "",
   department: e.department || "", position: e.position || "", employment_type: e.employment_type || "", join_date: e.join_date || "", exit_date: e.exit_date || "",
   ptkp_status: e.ptkp_status || "TK/0", is_paid: e.payroll_status === "unpaid_leave" ? "Unpaid" : "Paid", is_active: e.is_active === false ? "Nonaktif" : "Aktif",
   basic_salary: e.basic_salary ?? "", position_allowance: e.position_allowance ?? "", monthly_attendance_allowance: e.monthly_attendance_allowance ?? "",
@@ -84,6 +84,7 @@ export default function EmployeeFormDialog({ open, employee, onClose, onSaved })
           <Field label="Email">{text("email", { type: "email" })}</Field>
           <Field label="No. KTP">{text("ktp", { inputMode: "numeric" })}</Field>
           <Field label="NPWP" wide>{text("npwp")}</Field>
+          <Field label="User ID RUMATKU" wide>{text("user_id_rumatku", { placeholder: "USR-00123 — akun absensi RUMATKU; kosong = hadir penuh" })}</Field>
         </Section>
         <Section title="Kepegawaian">
           <Field label="Departemen">{text("department")}</Field>
