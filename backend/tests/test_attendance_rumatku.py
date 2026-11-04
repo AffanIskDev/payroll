@@ -113,3 +113,15 @@ def test_perubahan_tautan_terlihat_di_pratinjau():
     lama = er.to_employee_doc(er.validate_row(BARIS)[0])
     baru = er.validate_row({**BARIS, "user_id_rumatku": "USR-00123"})[0]
     assert "User ID RUMATKU" in er.changes(baru, lama)
+
+
+def test_akun_milik_pt_lain_ditandai_bukan_dihitung(monkeypatch):
+    async def palsu(params):
+        return {"data": [_fakta("USR-00001", "2026-09-01")], "meta": {"user_ids_tidak_ditemukan": ["USR-00002"]}}
+
+    monkeypatch.setattr(integrations, "_get_rumatku", palsu)
+    emps = [_emp(1, "USR-00001"), _emp(2, "USR-00002")]
+    rows, meta = asyncio.run(integrations.fetch_attendance_rumatku("2026-09-01", "2026-09-30", emps))
+    assert [r["user_id_rumatku"] for r in rows] == ["USR-00001"]
+    assert [(u["rusa_id"], u["alasan"]) for u in meta["unlinked"]] == [("e2", "Akun RUMATKU bukan milik perusahaan ini")]
+    assert meta["employees"] == 1

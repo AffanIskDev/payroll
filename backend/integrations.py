@@ -147,14 +147,23 @@ async def fetch_attendance_rumatku(start: str, end: str, employees: list) -> tup
                              "name": e.get("name")})
             continue
         linked[uid] = e
-    rows, effective_end = [], None
+    rows, effective_end, salah_pt = [], None, []
     ids = sorted(linked)
     for i in range(0, len(ids), FEED_BATCH):
         body = await _get_rumatku({"company_id": company_id(), "start": start, "end": end,
                                    "user_ids": ",".join(ids[i:i + FEED_BATCH])})
-        effective_end = (body.get("meta") or {}).get("effective_end") or effective_end
+        meta = body.get("meta") or {}
+        effective_end = meta.get("effective_end") or effective_end
+        salah_pt += meta.get("user_ids_tidak_ditemukan") or []
         rows += [{"user_id_rumatku": str(r["user_id_rumatku"]), **normalize_attendance(r)} for r in body.get("data") or []]
-    return rows, {"unlinked": unlinked, "source": "rumatku", "effective_end": effective_end, "employees": len(linked)}
+    # tautan ke akun yang BUKAN milik PT ini (salah PT / akun sudah tidak ada): dipisahkan dari PT lain, tak dihitung diam-diam
+    for uid in salah_pt:
+        e = linked.get(uid)
+        if e:
+            unlinked.append({"employee_id": e.get("rosy_employee_id"), "rusa_id": e.get("id"), "nik": e.get("nik"),
+                             "name": e.get("name"), "user_id_rumatku": uid, "alasan": "Akun RUMATKU bukan milik perusahaan ini"})
+    return rows, {"unlinked": unlinked, "source": "rumatku", "effective_end": effective_end,
+                  "employees": len(linked) - len(salah_pt)}
 
 
 async def verify_rosy_login(username: str, password: str, client_ip: str = "", credentials_only: bool = False) -> dict:
