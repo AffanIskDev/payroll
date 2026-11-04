@@ -20,6 +20,7 @@ import routes_hr  # noqa: E402
 import special_runs  # noqa: E402
 import routes_tax  # noqa: E402
 import export_data  # noqa: E402
+import routes_bpjs_tk  # noqa: E402
 import routes_recap  # noqa: E402
 import routes_verify  # noqa: E402
 
@@ -97,6 +98,7 @@ app.include_router(routes_hr.router)
 app.include_router(special_runs.router)  # THR & Bonus Tahunan (30 Okt 2026)
 app.include_router(routes_tax.router)
 app.include_router(export_data.router)  # Export Data Payroll (Excel), Manager HRD — 3 Nov 2026
+app.include_router(routes_bpjs_tk.router)
 app.include_router(routes_recap.router)
 app.include_router(routes_verify.router)  # tanpa login: dibuka dari QR di slip (user 14 Okt 2026)
 

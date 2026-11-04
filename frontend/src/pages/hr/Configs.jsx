@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { Save, RefreshCw, AlertTriangle, QrCode } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Save, RefreshCw, AlertTriangle, QrCode, Upload, FileDown } from "lucide-react";
 import { toast } from "sonner";
-import { api, errMsg } from "@/lib/api";
+import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { PageTitle, Panel, Btn } from "@/components/common";
 
 // Why the slip would print without a signer's name (signer.status in the backend)
@@ -111,6 +111,154 @@ function Pph21BasisPanel({ value, choices, onChange }) {
   );
 }
 
+// Dasar BPJS Kesehatan (permintaan user 1 Nov 2026): satu setelan global (backend engine.bpjs_kes_basis). Porsi perusahaan 4% masuk
+// bruto pajak; porsi karyawan 1% dipotong dari gaji. Dasarnya sama untuk keduanya.
+const BPJS_KES_BASIS = {
+  flat_umk: {
+    title: "Flat nilai UMK", tag: "bawaan",
+    formula: "Dasar = UMK (config UMK_BEKASI_REGENCY) untuk semua karyawan",
+    note: "Semua karyawan memakai nilai UMK, berapa pun gaji pokoknya. Porsi perusahaan 4%, porsi karyawan 1%.",
+  },
+  formula: {
+    title: "Rumus gaji pokok",
+    formula: "Dasar = yang terbesar antara gaji pokok dan UMK, maksimal plafon BPJS Kesehatan",
+    note: "Gaji pokok di atas UMK memakai gaji pokoknya sampai plafon (BPJS_KES_MAX_WAGE); di bawah UMK memakai UMK.",
+  },
+};
+
+function BpjsKesBasisPanel({ value, choices, onChange }) {
+  return (
+    <Panel title="Dasar BPJS Kesehatan" className="mb-6">
+      <div className="px-5 py-4" data-testid="bpjs-kes-basis-panel">
+        <p className="text-xs text-slate-500 mb-3">Dasar upah untuk iuran BPJS Kesehatan (4% perusahaan, 1% karyawan). Porsi perusahaan ikut masuk bruto PPh 21.</p>
+        <div role="radiogroup" aria-label="Dasar BPJS Kesehatan" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {choices.filter((k) => BPJS_KES_BASIS[k]).map((k) => {
+            const o = BPJS_KES_BASIS[k];
+            const on = value === k;
+            return (
+              <label key={k} data-testid={`bpjs-kes-basis-${k}`} className={`flex gap-3 rounded-md border px-4 py-3 cursor-pointer transition-colors ${on ? "border-brand-700 ring-2 ring-brand-700/20 bg-brand-50/40" : "border-slate-200 hover:border-brand-400"}`}>
+                <input type="radio" name="BPJS_KES_BASIS" value={k} checked={on} onChange={() => onChange(k)} className="mt-1 h-4 w-4 accent-brand-700 shrink-0" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 min-h-[24px] text-sm font-semibold text-slate-900">{o.title}{o.tag && <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{o.tag}</span>}</span>
+                  <span className="block num text-xs text-slate-700 mt-1">{o.formula}</span>
+                  <span className="block text-xs text-slate-500 mt-1">{o.note}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">Berlaku untuk slip yang dihitung sesudah disimpan: klik <b>Fetch Data Terbaru</b> di halaman periode untuk periode yang masih draft. Slip yang sudah di-approve tidak berubah. Pastikan nilai <b>UMK_BEKASI_REGENCY</b> di bawah sudah benar.</p>
+      </div>
+    </Panel>
+  );
+}
+
+// Dasar BPJS Ketenagakerjaan (permintaan user 1 Nov 2026): rumus gaji pokok, atau data given dari BPJS (diimpor per NIK, backend
+// engine.bpjs_tk_basis + routes_bpjs_tk). Karyawan tanpa data given tetap dihitung dengan rumus.
+const BPJS_TK_BASIS = {
+  import: {
+    title: "Import data given BPJS",
+    formula: "JKK, JKM, JHT, JP = angka dari Rincian Iuran BPJS (diimpor per NIK)",
+    note: "Memakai upah terdaftar dan iuran yang ditagih BPJS. Karyawan yang tidak ada di data given tetap dihitung dengan rumus.",
+  },
+  formula: {
+    title: "Rumus gaji pokok", tag: "bawaan",
+    formula: "JHT 3,7% + 2%, JKK 0,24%, JKM 0,3% dari gaji pokok; JP 2% + 1% dibatasi plafon",
+    note: "Semua program dihitung dari gaji pokok. Hanya JP yang dibatasi plafon (BPJS_JP_MAX_WAGE).",
+  },
+};
+
+function BpjsTkGivenBox({ basis }) {
+  const [info, setInfo] = useState(null);
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  const load = () => api.get("/hr/bpjs-tk-given").then((r) => setInfo(r.data)).catch((e) => toast.error(errMsg(e)));
+  useEffect(() => { load(); }, []);
+  const send = async (f, dry) => {
+    const fd = new FormData();
+    fd.append("file", f);
+    return (await api.post(`/hr/bpjs-tk-given/import?dry_run=${dry}`, fd)).data;
+  };
+  const pick = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setBusy(true);
+    try { setFile(f); setPreview(await send(f, true)); } catch (er) { setFile(null); toast.error(errMsg(er)); } finally { setBusy(false); }
+  };
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const d = await send(file, false);
+      toast.success(`${d.imported} karyawan diimpor${d.errors.length ? `, ${d.errors.length} baris ditolak` : ""}. Fetch Data Terbaru untuk menerapkan.`);
+      setFile(null); setPreview(null); load();
+    } catch (er) { toast.error(errMsg(er)); } finally { setBusy(false); }
+  };
+  const when = info?.updated_at ? new Date(info.updated_at).toLocaleString("id-ID") : null;
+  return (
+    <div className="mt-4 rounded-md border border-slate-200 px-4 py-3" data-testid="bpjs-tk-given-box">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm">
+          <span className="font-semibold text-slate-900">Data given BPJS TK:</span>{" "}
+          <span className="num" data-testid="bpjs-tk-given-count">{info ? info.count : "…"}</span> karyawan{when ? <span className="text-xs text-slate-500"> · terakhir diimpor {when}</span> : null}
+          {basis === "import" && info && info.count === 0 && <span className="block text-xs text-amber-700 mt-1">Mode import dipilih tetapi belum ada data: semua karyawan masih dihitung dengan rumus.</span>}
+        </div>
+        <div className="flex gap-2">
+          <Btn variant="outline" onClick={() => saveFile("get", "/hr/bpjs-tk-given/template", "template_bpjs_tk_given.csv").catch(async (e) => toast.error(await blobErrMsg(e)))} data-testid="bpjs-tk-template-button"><FileDown className="h-4 w-4" /> Template CSV</Btn>
+          <Btn onClick={() => fileRef.current?.click()} disabled={busy} data-testid="bpjs-tk-import-button"><Upload className="h-4 w-4" /> {busy ? "Memproses..." : "Impor CSV / Excel"}</Btn>
+          <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={pick} data-testid="bpjs-tk-file-input" />
+        </div>
+      </div>
+      {preview && (
+        <div className="mt-3 text-xs space-y-2" data-testid="bpjs-tk-preview">
+          <div className="text-sm"><b>Pratinjau {file?.name}</b>: <span className="num">{preview.imported}</span> baris siap diimpor, <span className="num">{preview.errors.length}</span> ditolak, <span className="num">{preview.warnings.length}</span> peringatan.</div>
+          {!!preview.errors.length && <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-md px-3 py-2 space-y-0.5">{preview.errors.map((m) => <div key={m}>{m}</div>)}</div>}
+          {!!preview.warnings.length && <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-md px-3 py-2 space-y-0.5">{preview.warnings.map((m) => <div key={m}>{m}</div>)}</div>}
+          {!!preview.participants_without_record.length && <div className="text-slate-600">Peserta BPJS TK tanpa data given (tetap dihitung rumus): {preview.participants_without_record.map((p) => `${p.name} (${p.nik})`).join(", ")}</div>}
+          <div className="flex gap-2 pt-1">
+            <Btn onClick={apply} disabled={busy || !preview.imported} data-testid="bpjs-tk-apply-button">Terapkan impor ({preview.imported})</Btn>
+            <Btn variant="outline" onClick={() => { setFile(null); setPreview(null); }} disabled={busy}>Batal</Btn>
+          </div>
+        </div>
+      )}
+      {!preview && info && !!info.participants_without_record.length && info.count > 0 && (
+        <div className="mt-2 text-xs text-slate-500" data-testid="bpjs-tk-missing">Peserta BPJS TK di periode terbaru yang belum punya data given (dihitung rumus): {info.participants_without_record.map((p) => `${p.name} (${p.nik})`).join(", ")}</div>
+      )}
+      <p className="text-xs text-slate-500 mt-2">Kolom berkas: <span className="num">nik, nama, upah_tk, jkk, jkm, jht_perusahaan, jht_karyawan, jp_dasar, jp_perusahaan, jp_karyawan</span> (rupiah per bulan). Impor menimpa data karyawan yang ada di berkas dan tidak menghapus yang lain.</p>
+    </div>
+  );
+}
+
+function BpjsTkBasisPanel({ value, choices, onChange }) {
+  return (
+    <Panel title="Dasar BPJS Ketenagakerjaan" className="mb-6">
+      <div className="px-5 py-4" data-testid="bpjs-tk-basis-panel">
+        <p className="text-xs text-slate-500 mb-3">Sumber angka JKK, JKM, JHT, dan JP. Porsi perusahaan JKK dan JKM masuk bruto PPh 21; JHT dan JP tidak. Porsi karyawan JHT dan JP dipotong dari gaji.</p>
+        <div role="radiogroup" aria-label="Dasar BPJS Ketenagakerjaan" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {choices.filter((k) => BPJS_TK_BASIS[k]).map((k) => {
+            const o = BPJS_TK_BASIS[k];
+            const on = value === k;
+            return (
+              <label key={k} data-testid={`bpjs-tk-basis-${k}`} className={`flex gap-3 rounded-md border px-4 py-3 cursor-pointer transition-colors ${on ? "border-brand-700 ring-2 ring-brand-700/20 bg-brand-50/40" : "border-slate-200 hover:border-brand-400"}`}>
+                <input type="radio" name="BPJS_TK_BASIS" value={k} checked={on} onChange={() => onChange(k)} className="mt-1 h-4 w-4 accent-brand-700 shrink-0" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 min-h-[24px] text-sm font-semibold text-slate-900">{o.title}{o.tag && <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{o.tag}</span>}</span>
+                  <span className="block num text-xs text-slate-700 mt-1">{o.formula}</span>
+                  <span className="block text-xs text-slate-500 mt-1">{o.note}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <BpjsTkGivenBox basis={value} />
+        <p className="text-xs text-slate-500 mt-3">Berlaku untuk slip yang dihitung sesudah disimpan: klik <b>Fetch Data Terbaru</b> di halaman periode untuk periode yang masih draft. Slip yang sudah di-approve tidak berubah. Pilihan dasar disimpan dengan tombol <b>Simpan</b> di atas; impor data langsung tersimpan.</p>
+      </div>
+    </Panel>
+  );
+}
+
 export default function Configs() {
   const [list, setList] = useState([]);
   const [vals, setVals] = useState({});
@@ -120,6 +268,8 @@ export default function Configs() {
   });
   useEffect(() => { load(); }, []);
   const basis = list.find((c) => c.config_key === "PPH21_BASIS" && c.choices?.length); // none until the backend has seeded it
+  const kes = list.find((c) => c.config_key === "BPJS_KES_BASIS" && c.choices?.length);
+  const tk = list.find((c) => c.config_key === "BPJS_TK_BASIS" && c.choices?.length);
 
   const save = async () => {
     try {
@@ -136,10 +286,12 @@ export default function Configs() {
         <Btn data-testid="save-config-button" onClick={save}><Save className="h-4 w-4" /> Simpan</Btn>
       </PageTitle>
       <SignerPanel />
+      {kes && <BpjsKesBasisPanel value={vals.BPJS_KES_BASIS} choices={kes.choices} onChange={(v) => setVals({ ...vals, BPJS_KES_BASIS: v })} />}
+      {tk && <BpjsTkBasisPanel value={vals.BPJS_TK_BASIS} choices={tk.choices} onChange={(v) => setVals({ ...vals, BPJS_TK_BASIS: v })} />}
       {basis && <Pph21BasisPanel value={vals.PPH21_BASIS} choices={basis.choices} onChange={(v) => setVals({ ...vals, PPH21_BASIS: v })} />}
       <Panel>
         <div className="divide-y divide-slate-100">
-          {list.filter((c) => c.config_key !== "PPH21_BASIS").map((c) => (
+          {list.filter((c) => c.config_key !== "PPH21_BASIS" && c.config_key !== "BPJS_KES_BASIS" && c.config_key !== "BPJS_TK_BASIS").map((c) => (
             <div key={c.config_key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-6 px-5 py-4">
               <div className="min-w-0">
                 <div className="num text-sm font-semibold">{c.config_key}</div>
