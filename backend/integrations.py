@@ -76,8 +76,16 @@ FEED = "/api/ham/v2/payroll-feed"
 logger = logging.getLogger("integrations")
 
 
+def attendance_from_rumatku() -> bool:
+    """ATTENDANCE_SOURCE=rumatku (4 Nov 2026): presensi harian dibaca LANGSUNG dari RUMATKU (CMS /api/presensi/harian), bukan dari
+    HAM. Semua PT memakai mesin presensi yang sama; karyawan dicocokkan lewat user_id_rumatku (NIK banyak yang placeholder)."""
+    return os.environ.get("ATTENDANCE_SOURCE", "").strip().lower() == "rumatku"
+
+
 def mode(system: str) -> str:
-    """ROSY (employees) and RUMATKU (attendance) are both served by HAM's payroll feed."""
+    """ROSY (employees) and RUMATKU (attendance) are both served by HAM's payroll feed — kecuali ATTENDANCE_SOURCE=rumatku."""
+    if system == "RUMATKU" and attendance_from_rumatku():
+        return "rumatku"
     return "live" if os.environ.get("HAM_API_URL") else "mock"
 
 
@@ -97,6 +105,65 @@ async def _get(path: str, params: dict) -> dict:
     if r.status_code != 200:
         raise RuntimeError(f"HAM {r.status_code}: {body.get('message') or r.text[:200]}")
     return body
+
+
+def in_work_window(emp: dict, work_date: str) -> bool:
+    """Tanggal masuk <= work_date <= tanggal keluar (kosong = tak dibatasi). Sama dengan pemotongan jendela kerja di HAM."""
+    join, leave = emp.get("join_date"), emp.get("exit_date")
+    return not ((join and work_date < join) or (leave and work_date > leave))
+
+
+FEED_BATCH = 120   # user_id per panggilan feed RUMATKU (menjaga panjang URL)
+
+
+async def _get_rumatku(params: dict) -> dict:
+    base = os.environ.get("RUMATKU_FEED_URL", "").rstrip("/")
+    if not base:
+        raise RuntimeError("RUMATKU_FEED_URL belum diatur")
+    headers = {"X-Integrasi-Key": os.environ.get("RUMATKU_FEED_KEY", ""), "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=180) as c:
+        r = await c.get(base + "/api/presensi/harian", headers=headers, params=params)
+    try:
+        body = r.json()
+    except ValueError:
+        body = {}
+    if r.status_code != 200:
+        raise RuntimeError(f"RUMATKU {r.status_code}: {body.get('message') or r.text[:200]}")
+    return body
+
+
+async def fetch_attendance_rumatku(start: str, end: str, employees: list) -> tuple:
+    """Presensi harian dari RUMATKU untuk karyawan yang DIGAJI di periode ini dan punya tautan user_id_rumatku.
+    Siapa yang ditarik = daftar karyawan periode (employees), bukan seluruh akun RUMATKU: dikurangi yang bebas presensi.
+    Yang belum bertaut TIDAK dibuang diam-diam: dikembalikan di meta.unlinked (tunjangan kehadiran penuh sampai ditautkan).
+    Baris berkunci user_id_rumatku; jendela masuk/keluar dipotong oleh pemanggil (feed memberi kalender penuh)."""
+    linked, unlinked = {}, []
+    for e in employees:
+        if e.get("attendance_exempt"):
+            continue
+        uid = (e.get("user_id_rumatku") or "").strip()
+        if not uid:
+            unlinked.append({"employee_id": e.get("rosy_employee_id"), "rusa_id": e.get("id"), "nik": e.get("nik"),
+                             "name": e.get("name")})
+            continue
+        linked[uid] = e
+    rows, effective_end, salah_pt = [], None, []
+    ids = sorted(linked)
+    for i in range(0, len(ids), FEED_BATCH):
+        body = await _get_rumatku({"company_id": company_id(), "start": start, "end": end,
+                                   "user_ids": ",".join(ids[i:i + FEED_BATCH])})
+        meta = body.get("meta") or {}
+        effective_end = meta.get("effective_end") or effective_end
+        salah_pt += meta.get("user_ids_tidak_ditemukan") or []
+        rows += [{"user_id_rumatku": str(r["user_id_rumatku"]), **normalize_attendance(r)} for r in body.get("data") or []]
+    # tautan ke akun yang BUKAN milik PT ini (salah PT / akun sudah tidak ada): dipisahkan dari PT lain, tak dihitung diam-diam
+    for uid in salah_pt:
+        e = linked.get(uid)
+        if e:
+            unlinked.append({"employee_id": e.get("rosy_employee_id"), "rusa_id": e.get("id"), "nik": e.get("nik"),
+                             "name": e.get("name"), "user_id_rumatku": uid, "alasan": "Akun RUMATKU bukan milik perusahaan ini"})
+    return rows, {"unlinked": unlinked, "source": "rumatku", "effective_end": effective_end,
+                  "employees": len(linked) - len(salah_pt)}
 
 
 async def verify_rosy_login(username: str, password: str, client_ip: str = "") -> dict:
@@ -306,7 +373,9 @@ async def fetch_overtime(periode_bayar: str):
 
 
 async def fetch_attendance(start: str, end: str, employees: list) -> tuple:
-    """Returns (rows, meta). Live rows are keyed by rosy_employee_id; mock rows by nik."""
+    """Returns (rows, meta). Live rows are keyed by rosy_employee_id; mock rows by nik; RUMATKU rows by user_id_rumatku."""
+    if attendance_from_rumatku():
+        return await fetch_attendance_rumatku(start, end, employees)
     if mode("RUMATKU") == "live":
         body = await _get("/presensi", {"payroll_company_id": company_id(), "start": start, "end": end})
         raw, meta = body.get("data") or [], body.get("meta") or {}
