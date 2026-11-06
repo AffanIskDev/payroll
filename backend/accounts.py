@@ -5,7 +5,9 @@ SINI (Manager HRD menunjuk orangnya), bukan ditebak dari jabatan di ROSY. Tiap p
   username, name, role (manager_hrd | supervisor), is_active, companies [id perusahaan yang boleh diakses],
   auth_mode: "local"  = kata sandi disimpan di RUSA (bcrypt), wajib diganti saat login pertama bila dibuatkan Manager
              "rosy"   = kata sandi ROSY, diperiksa HAM (hanya verifikasi; HAM tak menulis apa pun)
-Satu instance RUSA = satu perusahaan (PAYROLL_COMPANY_ID); daftar `companies` disimpan supaya bila nanti satu aplikasi dipakai
+Multi-PT (6 Nov 2026): satu RUSA untuk semua PT. Akses pengguna HR per PT: `akses` [{company_id, role}] atau `semua_pt`
+(semua PT aktif, termasuk yang ditambahkan kemudian, dengan peran `role`); `pt_utama` = PT yang dibuka saat login.
+Master Admin tanpa PT (hanya mengatur pengguna). Catatan lama: daftar `companies` disimpan supaya bila nanti satu aplikasi dipakai
 beberapa perusahaan, bentuk datanya sudah siap."""
 import os
 import re
@@ -17,7 +19,8 @@ from typing import Optional
 import bcrypt
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from core import HR_ROLES, MASTER_ADMIN, actor, current_company, db, get_current_user, now_iso, require_master_admin
+from core import (HR_ROLES, MASTER_ADMIN, actor, akses_user, daftar_pt, db, env_company, get_current_user, now_iso,
+                  require_master_admin)
 import integrations
 
 ROLES = (MASTER_ADMIN, "manager_hrd", "supervisor")
@@ -62,7 +65,8 @@ def public(u: dict) -> dict:
     return {k: v for k, v in u.items() if k not in ("password_hash", "_id")}
 
 
-async def create_user(username: str, name: str, role: str, auth_mode: str, by: str, password: Optional[str] = None) -> tuple:
+async def create_user(username: str, name: str, role: str, auth_mode: str, by: str, password: Optional[str] = None,
+                      akses: Optional[list] = None, semua: bool = False, pt_utama: Optional[str] = None) -> tuple:
     """Membuat pengguna. Mengembalikan (dokumen, kata sandi sementara | None). Raise HTTPException bila tak sah."""
     username = (username or "").strip()
     name = (name or "").strip()
@@ -80,8 +84,8 @@ async def create_user(username: str, name: str, role: str, auth_mode: str, by: s
         raise HTTPException(409, "Username sudah dipakai")
     temp = None
     doc = {"id": str(uuid.uuid4()), "username": username, "username_lower": username.lower(), "name": name, "role": role,
-           "is_active": True, "auth_mode": auth_mode, "companies": [current_company()], "access_v2": True,
-           "created_at": now_iso(), "created_by": by}
+           "is_active": True, "auth_mode": auth_mode, "access_v2": True, "created_at": now_iso(), "created_by": by,
+           **await _akses_sah(role, akses, semua, pt_utama)}
     if auth_mode == "local":
         pw = password or generate_password()
         if password and (problem := password_problem(password, username)):
@@ -90,6 +94,31 @@ async def create_user(username: str, name: str, role: str, auth_mode: str, by: s
         doc.update(password_hash=hash_password(pw), must_change_password=True)
     await db.users.insert_one({**doc})
     return public(doc), temp
+
+
+async def _akses_sah(role: str, akses: Optional[list], semua: bool, pt_utama: Optional[str]) -> dict:
+    """Akses per PT yang sudah diperiksa. Master Admin: tanpa akses data gaji. Pengguna HR: `semua_pt` ATAU minimal satu PT,
+    tiap PT sekali dengan peran Manager HRD / Supervisor HRD; PT utama harus salah satu PT-nya."""
+    if role == MASTER_ADMIN:
+        return {"akses": [], "semua_pt": False, "pt_utama": None}
+    sah = {c["id"] for c in await daftar_pt(aktif_saja=False)}
+    bersih, lihat = [], set()
+    for a in akses or []:
+        pt, peran = (a or {}).get("company_id"), (a or {}).get("role")
+        if pt not in sah:
+            raise HTTPException(422, f"Perusahaan {pt} tidak dikenal")
+        if peran not in HR_ROLES:
+            raise HTTPException(422, "Peran per perusahaan harus Manager HRD atau Supervisor HRD")
+        if pt in lihat:
+            raise HTTPException(422, f"Perusahaan {pt} disebut dua kali")
+        lihat.add(pt)
+        bersih.append({"company_id": pt, "role": peran})
+    if not semua and not bersih:
+        raise HTTPException(422, "Pilih minimal satu perusahaan, atau centang Semua PT")
+    pilihan = sah if semua else lihat
+    if pt_utama not in pilihan:
+        pt_utama = sorted(pilihan)[0]
+    return {"akses": [] if semua else bersih, "semua_pt": bool(semua), "pt_utama": pt_utama}
 
 
 def rosy_available() -> bool:
@@ -117,8 +146,8 @@ async def authenticate(username: str, password: str, ip: str) -> dict:
         ok = check_password(password, u.get("password_hash") if usable and u.get("auth_mode") == "local" else None)
         if not (usable and ok):
             raise HTTPException(401, GENERIC_FAIL)
-    if current_company() not in (u.get("companies") or []):
-        raise HTTPException(403, "Akun Anda tidak punya akses ke perusahaan ini")
+    if u.get("role") != MASTER_ADMIN and not await akses_user(u):
+        raise HTTPException(403, "Akun Anda belum diberi akses ke perusahaan mana pun. Hubungi Master Admin")
     return u
 
 
@@ -132,7 +161,12 @@ async def migrate_users():
     async for u in db.users.find({"access_v2": {"$ne": True}}, {"_id": 0}):
         await db.users.update_one({"id": u["id"]}, {"$set": {
             "username_lower": (u.get("username") or "").lower(), "auth_mode": "rosy" if u.get("rosy_user_id") else "local",
-            "is_active": u.get("role") in HR_ROLES, "companies": [current_company()], "access_v2": True}})
+            "is_active": u.get("role") in HR_ROLES, "companies": [env_company()], "access_v2": True}})
+    # multi-PT (6 Nov 2026): `companies` (satu instance = satu PT) → `akses` per PT dengan peran pengguna itu
+    async for u in db.users.find({"akses": {"$exists": False}, "role": {"$in": list(HR_ROLES)}}, {"_id": 0}):
+        pts = u.get("companies") or [env_company()]
+        await db.users.update_one({"id": u["id"]}, {"$set": {
+            "akses": [{"company_id": c, "role": u["role"]} for c in pts], "semua_pt": False, "pt_utama": pts[0]}})
     await db.users.create_index("id", unique=True)
     await db.users.create_index("rosy_user_id", unique=True, name="rosy_user_id_unique",
                                 partialFilterExpression={"rosy_user_id": {"$type": "string"}})
@@ -167,8 +201,7 @@ auth_router = APIRouter(prefix="/api/auth")
 
 
 async def _admins_left(excluding_id: str) -> int:
-    return await db.users.count_documents({"id": {"$ne": excluding_id}, "role": MASTER_ADMIN, "is_active": True,
-                                           "companies": current_company()})
+    return await db.users.count_documents({"id": {"$ne": excluding_id}, "role": MASTER_ADMIN, "is_active": True})
 
 
 async def _log(by: str, action: str, target: dict, detail: Optional[dict] = None):
@@ -178,21 +211,22 @@ async def _log(by: str, action: str, target: dict, detail: Optional[dict] = None
 
 @router.get("/users")
 async def list_users():
-    users = await db.users.find({"companies": current_company()}, {"_id": 0, "password_hash": 0}).sort("username_lower", 1).to_list(500)
-    return {"users": users, "company": current_company(), "rosy_available": rosy_available()}
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("username_lower", 1).to_list(500)
+    return {"users": users, "companies": await daftar_pt(), "rosy_available": rosy_available()}
 
 
 @router.post("/users")
 async def add_user(body: dict = Body(...), me: dict = Depends(require_master_admin)):
     u, temp = await create_user(body.get("username"), body.get("name"), body.get("role"), body.get("auth_mode") or "local",
-                                actor(me), body.get("password") or None)
+                                actor(me), body.get("password") or None, body.get("akses"), bool(body.get("semua_pt")),
+                                body.get("pt_utama"))
     await _log(actor(me), "tambah", u, {"role": u["role"], "auth_mode": u["auth_mode"]})
     return {"user": u, "temp_password": temp}
 
 
 @router.put("/users/{uid}")
 async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require_master_admin)):
-    u = await db.users.find_one({"id": uid, "companies": current_company()}, {"_id": 0})
+    u = await db.users.find_one({"id": uid}, {"_id": 0})
     if not u:
         raise HTTPException(404, "Pengguna tidak ditemukan")
     upd, temp = {}, None
@@ -206,6 +240,9 @@ async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require
         upd["role"] = body["role"]
     if "is_active" in body:
         upd["is_active"] = bool(body["is_active"])
+    if any(k in body for k in ("akses", "semua_pt", "pt_utama", "role")):
+        upd.update(await _akses_sah(upd.get("role", u["role"]), body.get("akses", u.get("akses")),
+                                    bool(body.get("semua_pt", u.get("semua_pt"))), body.get("pt_utama", u.get("pt_utama"))))
     if "auth_mode" in body and body["auth_mode"] != u.get("auth_mode"):
         if body["auth_mode"] == "rosy" and not rosy_available():
             raise HTTPException(422, "Perusahaan ini tidak terhubung ke ROSY; pakai kata sandi RUSA")
@@ -237,7 +274,7 @@ async def reset_password(uid: str, me: dict = Depends(require_master_admin)):
     # Reset akun sendiri = mengunci diri sendiri: sandi sementara membuat SEMUA rute (termasuk layar ini) 403 sampai diganti (5 Nov 2026).
     if uid == me["id"]:
         raise HTTPException(409, "Kata sandi akun sendiri diganti lewat menu akun (Ganti kata sandi), bukan direset di sini")
-    u = await db.users.find_one({"id": uid, "companies": current_company()}, {"_id": 0})
+    u = await db.users.find_one({"id": uid}, {"_id": 0})
     if not u:
         raise HTTPException(404, "Pengguna tidak ditemukan")
     if u.get("auth_mode") != "local":

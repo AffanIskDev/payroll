@@ -12,7 +12,8 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from pydantic import BaseModel  # noqa: E402
 from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
-from core import db, client, now_iso, create_access_token, get_current_user  # noqa: E402
+from core import (MASTER_ADMIN, akses_user, client, create_access_token, daftar_pt, db, get_current_user,  # noqa: E402
+                  now_iso, pt_awal)
 from seed import seed  # noqa: E402
 import accounts  # noqa: E402
 import integrations  # noqa: E402
@@ -32,6 +33,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 class LoginIn(BaseModel):
     username: str
     password: str
+
+
+class PtIn(BaseModel):
+    company_id: str
 
 
 @auth.post("/login")
@@ -55,13 +60,41 @@ async def login(body: LoginIn, request: Request, response: Response):
         raise
     await db.login_attempts.delete_one({"identifier": key})
     await db.users.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_iso()}})
-    return _issue(user, response)
+    akses = await akses_user(user)
+    return await _issue(user, response, pt_awal(user, akses), akses)
 
 
-def _issue(user: dict, response: Response) -> dict:
-    token = create_access_token(user["id"], user["role"])
+async def _issue(user: dict, response: Response, pt=None, akses=None) -> dict:
+    """Token sesi. Pengguna HR: berlaku untuk SATU PT aktif (`pt`) dengan perannya di PT itu; Master Admin: tanpa PT."""
+    akses = akses or {}
+    role = user["role"] if user.get("role") == MASTER_ADMIN else akses.get(pt, user.get("role"))
+    token = create_access_token(user["id"], role, pt)
     response.set_cookie("access_token", token, httponly=True, secure=True, samesite="none", max_age=43200, path="/")
-    return {"token": token, "user": {k: user.get(k) for k in ("id", "username", "name", "role", "akun_uji", "must_change_password")}}
+    out = {k: user.get(k) for k in ("id", "username", "name", "akun_uji", "must_change_password")}
+    return {"token": token, "user": {**out, "role": role, **await _pt_info(pt, akses)}}
+
+
+async def _pt_info(pt, akses: dict) -> dict:
+    """PT aktif + daftar PT yang boleh dibuka (untuk pilihan PT di sidebar)."""
+    nama = {c["id"]: c for c in await daftar_pt()}
+    daftar = [{"id": i, "nama": nama[i].get("nama"), "nama_legal": nama[i].get("nama_legal"), "role": r}
+              for i, r in sorted(akses.items()) if i in nama]
+    aktif = next((d for d in daftar if d["id"] == pt), None)
+    return {"pt": aktif, "daftar_pt": daftar}
+
+
+@auth.post("/pt")
+async def ganti_pt(body: PtIn, response: Response, user: dict = Depends(get_current_user)):
+    """Ganti PT aktif (pilihan PT di sidebar): token baru untuk PT itu bila pengguna punya akses ke sana. PT terakhir
+    diingat supaya login berikutnya membuka PT yang sama."""
+    if user.get("role") == MASTER_ADMIN:
+        raise HTTPException(403, "Master Admin tidak membuka data gaji perusahaan")
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    akses = await akses_user(u)
+    if body.company_id not in akses:
+        raise HTTPException(403, "Anda tidak punya akses ke perusahaan ini")
+    await db.users.update_one({"id": u["id"]}, {"$set": {"pt_terakhir": body.company_id}})
+    return await _issue(u, response, body.company_id, akses)
 
 
 @auth.post("/logout")
@@ -72,7 +105,10 @@ async def logout(response: Response):
 
 @auth.get("/me")
 async def me(user: dict = Depends(get_current_user)):
-    return user
+    if user.get("role") == MASTER_ADMIN:
+        return {**user, "pt": None, "daftar_pt": []}
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return {**user, **await _pt_info(user.get("pt"), await akses_user(u))}
 
 
 @app.get("/api/health")

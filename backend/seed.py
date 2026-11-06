@@ -3,7 +3,7 @@ import logging
 from pymongo.errors import OperationFailure
 
 import accounts
-from core import db, DEFAULT_CONFIGS
+from core import db, DEFAULT_CONFIGS, DEFAULT_COMPANIES, GLOBAL_COLLECTIONS, daftar_pt, dengan_pt, env_company, now_iso, semua_pt
 from integrations import LEAVE_MAP
 from periods import BULAN, payroll_month, period_name_for
 from schedules import seed_schedules
@@ -15,8 +15,11 @@ async def migrate_employee_indexes():
     """HAM's nik is not unique (placeholders '-', '0'); employees are keyed by rosy_employee_id instead."""
     if (await db.employees.index_information()).get("nik_1", {}).get("unique"):
         await db.employees.drop_index("nik_1")
-    await db.employees.create_index("nik")
-    await db.employees.create_index("rosy_employee_id", unique=True, name="rosy_employee_id_unique",
+    await db.employees.create_index([("company_id", 1), ("nik", 1)])
+    # multi-PT: id karyawan ROSY unik PER PT — karyawan yang mutasi antar-PT punya id yang sama di dua PT
+    if "rosy_employee_id_unique" in await db.employees.index_information():
+        await db.employees.drop_index("rosy_employee_id_unique")
+    await db.employees.create_index([("company_id", 1), ("rosy_employee_id", 1)], unique=True, name="pt_rosy_employee_id_unique",
                                     partialFilterExpression={"rosy_employee_id": {"$type": "string"}})
 
 
@@ -37,13 +40,14 @@ async def migrate_periods():
     # periode lama = gaji; THR & Bonus Tahunan (user 30 Okt 2026) hidup di koleksi yang sama dengan run_type sendiri, jadi
     # keunikan per bulan berlaku per jenis run: satu gaji, satu THR, satu Bonus Tahunan per bulan
     await db.payroll_periods.update_many({"run_type": {"$exists": False}}, {"$set": {"run_type": "gaji"}})
+    for lama in ("bulan_unique", "bulan_run_unique"):   # multi-PT: keunikan bulan berlaku per PT
+        try:
+            await db.payroll_periods.drop_index(lama)
+        except OperationFailure:
+            pass  # sudah diganti
     try:
-        await db.payroll_periods.drop_index("bulan_unique")
-    except OperationFailure:
-        pass  # sudah diganti
-    try:
-        await db.payroll_periods.create_index([("bulan", 1), ("run_type", 1)], unique=True, name="bulan_run_unique",
-                                              partialFilterExpression={"bulan": {"$type": "string"}})
+        await db.payroll_periods.create_index([("company_id", 1), ("bulan", 1), ("run_type", 1)], unique=True,
+                                              name="pt_bulan_run_unique", partialFilterExpression={"bulan": {"$type": "string"}})
     except OperationFailure as e:
         logger.warning("Indeks unik bulan periode tidak dibuat (ada periode ganda di satu bulan): %s", e)
 
@@ -55,7 +59,31 @@ async def migrate_leave_types():
                                                    {"$set": {"leave_type": lt}})
 
 
+async def migrate_multi_pt():
+    """Multi-PT (6 Nov 2026): satu DB untuk semua PT. PT bawaan dicatat di koleksi global `companies`; data lama (satu
+    instance = satu PT) diberi company_id dari PAYROLL_COMPANY_ID. Idempoten — hanya menyentuh dokumen tanpa company_id."""
+    for c in DEFAULT_COMPANIES:
+        await db.companies.update_one({"id": c["id"]}, {"$setOnInsert": {**c, "is_active": True, "created_at": now_iso()}},
+                                      upsert=True)
+    lama = env_company()
+    for name in await db.list_collection_names():
+        if name in GLOBAL_COLLECTIONS or name.startswith("system."):
+            continue
+        res = await db[name].update_many({"company_id": {"$exists": False}}, {"$set": {"company_id": lama}})
+        if res.modified_count:
+            logger.info("multi-PT: %s dokumen %s diberi company_id %s", res.modified_count, name, lama)
+
+
 async def seed():
+    with semua_pt():   # migrasi lintas PT (tanpa saringan); seed per PT di bawah memakai dengan_pt()
+        await migrate_multi_pt()
+        await _seed_lintas_pt()
+    for c in await daftar_pt(aktif_saja=False):
+        with dengan_pt(c["id"]):
+            await _seed_per_pt()
+
+
+async def _seed_lintas_pt():
     await migrate_users()
     await migrate_employee_indexes()
     await migrate_periods()
@@ -72,10 +100,14 @@ async def seed():
     # Kompensasi Denda Keterlambatan was removed; approved slips keep their history untouched
     await db.payslips.update_many({"status": {"$ne": "approved"}, "late_penalty_compensation": {"$exists": True}},
                                   {"$unset": {"late_penalty_compensation": ""}})
+    await db.employees.update_many({"work_schedule_code": {"$exists": False}},
+                                   {"$set": {"work_schedule_code": "KANTOR_PUSAT"}})
+
+
+async def _seed_per_pt():
+    """Konfigurasi & jadwal kerja bawaan untuk SETIAP PT (tiap PT punya UMK, rekening debet, dll. sendiri)."""
     for k, (v, desc) in DEFAULT_CONFIGS.items():
         await db.payroll_configs.update_one({"config_key": k}, {"$setOnInsert": {"config_key": k, "config_value": v},
                                                                 "$set": {"description": desc}}, upsert=True)
     await db.payroll_configs.delete_many({"config_key": {"$nin": list(DEFAULT_CONFIGS)}})
     await seed_schedules()
-    await db.employees.update_many({"work_schedule_code": {"$exists": False}},
-                                   {"$set": {"work_schedule_code": "KANTOR_PUSAT"}})

@@ -95,7 +95,21 @@ def rosy_enabled() -> bool:
 
 
 def company_id() -> str:
-    return os.environ.get("PAYROLL_COMPANY_ID", "CP-001")
+    """PT aktif sesi (multi-PT 6 Nov 2026) — dikirim ke feed ROSY v2 sebagai payroll_company_id dan ke RUMATKU sebagai company_id."""
+    from core import current_company
+    return current_company()
+
+
+def _pt_login() -> str:
+    """Login lewat sandi ROSY terjadi sebelum ada PT aktif: pakai PT sesi bila ada, selain itu PT bawaan .env."""
+    from core import ada_pt, env_company
+    return company_id() if ada_pt() else env_company()
+
+
+def rumatku_key() -> str:
+    """Kunci feed RUMATKU TERIKAT PT (CMS menolak kunci PT lain): RUMATKU_FEED_KEY_<PT> (mis. RUMATKU_FEED_KEY_CP_003),
+    cadangan RUMATKU_FEED_KEY untuk instalasi lama satu PT."""
+    return os.environ.get("RUMATKU_FEED_KEY_" + company_id().replace("-", "_"), "") or os.environ.get("RUMATKU_FEED_KEY", "")
 
 
 async def _get(path: str, params: dict) -> dict:
@@ -125,7 +139,7 @@ async def _get_rumatku(params: dict) -> dict:
     base = os.environ.get("RUMATKU_FEED_URL", "").rstrip("/")
     if not base:
         raise RuntimeError("RUMATKU_FEED_URL belum diatur")
-    headers = {"X-Integrasi-Key": os.environ.get("RUMATKU_FEED_KEY", ""), "Accept": "application/json"}
+    headers = {"X-Integrasi-Key": rumatku_key(), "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=180) as c:
         r = await c.get(base + "/api/presensi/harian", headers=headers, params=params)
     try:
@@ -185,7 +199,7 @@ async def verify_rosy_login(username: str, password: str, client_ip: str = "", c
     try:
         async with httpx.AsyncClient(timeout=20) as c:
             r = await c.post(url, headers=headers,
-                             params={"payroll_company_id": company_id(), **({"verifikasi": "kredensial"} if credentials_only else {})},
+                             params={"payroll_company_id": _pt_login(), **({"verifikasi": "kredensial"} if credentials_only else {})},
                              json={"username": username, "password": password})
         body = r.json()
     except (httpx.HTTPError, ValueError):

@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 
 import accounts  # noqa: E402
-from core import current_company, db  # noqa: E402
+from core import db  # noqa: E402
 
 
 async def main() -> int:
@@ -39,7 +39,7 @@ async def main() -> int:
     user, _ = await accounts.create_user(a.username, a.name, a.role, "rosy" if a.rosy else "local", "skrip:create_admin", password)
     if not a.rosy:   # sandi dipilih sendiri oleh pembuatnya
         await db.users.update_one({"id": user["id"]}, {"$set": {"must_change_password": False}})
-    print(f"OK: {user['username']} ({user['role']}) untuk {current_company()} — {'ROSY' if a.rosy else 'kata sandi RUSA'}")
+    print(f"OK: {user['username']} ({user['role']}) — {'ROSY' if a.rosy else 'kata sandi RUSA'}")
     return 0
 
 
