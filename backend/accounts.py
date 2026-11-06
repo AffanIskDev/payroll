@@ -234,6 +234,9 @@ async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require
 
 @router.post("/users/{uid}/reset-password")
 async def reset_password(uid: str, me: dict = Depends(require_master_admin)):
+    # Reset akun sendiri = mengunci diri sendiri: sandi sementara membuat SEMUA rute (termasuk layar ini) 403 sampai diganti (5 Nov 2026).
+    if uid == me["id"]:
+        raise HTTPException(409, "Kata sandi akun sendiri diganti lewat menu akun (Ganti kata sandi), bukan direset di sini")
     u = await db.users.find_one({"id": uid, "companies": current_company()}, {"_id": 0})
     if not u:
         raise HTTPException(404, "Pengguna tidak ditemukan")

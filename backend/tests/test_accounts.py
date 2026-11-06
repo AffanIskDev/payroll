@@ -85,3 +85,9 @@ def test_master_admin_is_not_a_payroll_role_and_only_it_passes_the_admin_gate():
     assert e.value.status_code == 403
     with pytest.raises(HTTPException):
         asyncio.run(core.require_manager({"role": "master_admin"}))
+
+
+def test_master_admin_cannot_reset_own_password_it_would_lock_the_session():
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(ac.reset_password("u-1", me={"id": "u-1"}))
+    assert e.value.status_code == 409 and "akun sendiri" in e.value.detail
