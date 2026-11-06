@@ -20,13 +20,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  // Multi-PT (6 Nov 2026): ganti PT aktif = token baru untuk PT itu. Muat ulang penuh supaya semua data di layar milik PT baru.
+  const gantiPt = async (companyId) => {
+    const { data } = await api.post("/auth/pt", { company_id: companyId });
+    localStorage.setItem("payroll_token", data.token);
+    window.location.assign("/hr-manager");
+  };
+
   const logout = async () => {
     await api.post("/auth/logout").catch(() => {});
     localStorage.removeItem("payroll_token");
     setUser(false);
   };
 
-  return <AuthCtx.Provider value={{ user, login, logout, refresh }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, login, logout, refresh, gantiPt }}>{children}</AuthCtx.Provider>;
 }
 
 export const useAuth = () => useContext(AuthCtx);

@@ -29,7 +29,14 @@ const readCiut = () => {
 };
 
 export default function HrLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, gantiPt } = useAuth();
+  const [pindah, setPindah] = useState(false);
+  const daftarPt = user?.daftar_pt || [];
+  const pilihPt = async (id) => {
+    if (!id || id === user?.pt?.id) return;
+    setPindah(true);
+    try { await gantiPt(id); } catch { setPindah(false); }
+  };
   const admin = isMasterAdmin(user);
   const nav = NAV.filter((item) => (item.group ? !admin : admin ? !!item[5] : !item[5] && (!item[4] || isManager(user))));
   const { pathname } = useLocation();
@@ -71,6 +78,21 @@ export default function HrLayout() {
               <div className="text-xs text-brand-100 hidden lg:block">RUMAT Salary Administration</div>
             </div>
           </div>
+          {/* Multi-PT (6 Nov 2026): PT aktif & pilihan PT. Ganti PT = token baru + muat ulang; alamat tetap sama. */}
+          {user?.pt && (
+            <div className={`shrink-0 ${ciut ? "lg:hidden" : ""}`} data-testid="pt-aktif">
+              <div className="hidden lg:block text-[11px] uppercase tracking-wider text-brand-100 px-2 mb-1">Perusahaan</div>
+              {daftarPt.length > 1 ? (
+                <select value={user.pt.id} disabled={pindah} onChange={(e) => pilihPt(e.target.value)} data-testid="pilih-pt"
+                  aria-label="Pilih perusahaan" title={user.pt.nama_legal || user.pt.nama}
+                  className="w-full max-w-[9rem] lg:max-w-none rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-semibold px-2 py-1.5 lg:py-2 border border-white/25 focus:outline-none focus:ring-2 focus:ring-white/60 disabled:opacity-60">
+                  {daftarPt.map((p) => <option key={p.id} value={p.id} className="text-slate-900">{p.nama}</option>)}
+                </select>
+              ) : (
+                <div className="rounded-lg bg-white/10 px-2 py-1.5 lg:py-2 text-sm font-semibold truncate" title={user.pt.nama_legal || user.pt.nama}>{user.pt.nama}</div>
+              )}
+            </div>
+          )}
           <nav id="main-nav" className="flex lg:flex-col items-center lg:items-stretch gap-0.5 sm:gap-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:flex-1" data-testid="main-nav" aria-label="Menu utama">
             {nav.map((item) => item.group ? (
               <div key={item.group} className="contents">
@@ -104,6 +126,11 @@ export default function HrLayout() {
         {user?.akun_uji && (
           <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 sm:px-6 py-2" data-testid="akun-uji-banner">
             <b>Akun uji</b> — peran Supervisor untuk pengujian. Data yang tampil adalah data gaji asli; approve tetap oleh Manager HRD.
+          </div>
+        )}
+        {daftarPt.length > 1 && user?.pt && (
+          <div className="bg-brand-50 border-b border-brand-100 text-brand-800 text-sm px-4 sm:px-6 py-2" data-testid="pt-banner">
+            Sedang membuka payroll <b>{user.pt.nama_legal || user.pt.nama}</b> · peran Anda di sini: {ROLE_LABELS[user?.role]}
           </div>
         )}
         {/* 1600 px (dulu 1400, user 15 Okt 2026): tabel review periode yang penuh angka muat tanpa digeser di layar lebar */}
