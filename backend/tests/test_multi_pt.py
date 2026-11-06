@@ -14,8 +14,14 @@ from starlette.requests import Request
 
 import accounts
 import core
-import server
 from core import TanpaKonteksPT, dengan_pt
+
+_env = dict(os.environ)
+try:
+    import server   # memuat .env backend yang asli: dibatalkan di bawah supaya tes lain memakai setelannya sendiri
+finally:
+    os.environ.clear()
+    os.environ.update(_env)
 
 PT_UJI = ["CP-901", "CP-902"]
 

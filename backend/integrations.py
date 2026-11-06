@@ -276,6 +276,25 @@ async def fetch_signer() -> tuple:
     return body.get("data"), (body.get("meta") or {}).get("company")
 
 
+
+async def fetch_company_logo(versi_tersimpan: str = None):
+    """Logo PT aktif dari ROSY (GET /perusahaan/logo, ROSY v2 6 Nov 2026). None = mode mock atau sidiknya sama dengan yang
+    tersimpan (tak perlu diproses lagi); (None, None) = ROSY belum punya logo PT ini (404); (bytes, versi) = logo baru."""
+    if mode("ROSY") != "live":
+        return None
+    url = os.environ["HAM_API_URL"].rstrip("/") + FEED + "/perusahaan/logo"
+    headers = {"X-Integrasi-Key": os.environ.get("HAM_INTEGRASI_KEY", "")}
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.get(url, headers=headers, params={"payroll_company_id": company_id()})
+    if r.status_code == 404:
+        return None, None
+    if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image/"):
+        raise RuntimeError(f"ROSY {r.status_code}")
+    versi = r.headers.get("x-logo-versi") or ""
+    if versi and versi == versi_tersimpan:
+        return None
+    return r.content, versi
+
 async def fetch_employees(periode: str) -> tuple:
     """Returns (employees, meta). periode = 'YYYY-MM'."""
     if mode("ROSY") == "live":

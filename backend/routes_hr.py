@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
 
-from core import db, now_iso, require_hr, require_manager, actor, get_configs, DEFAULT_CONFIGS, CONFIG_CHOICES
+from core import db, now_iso, require_hr, require_manager, actor, get_configs, current_company, DEFAULT_CONFIGS, CONFIG_CHOICES
 from pipeline import (recompute_final_tax_periods, get_period, get_employee, period_logs, build_slip, recalc_and_save, process_period,
                       approve_slip, queue_delivery, ADJ_KEYS)
 from pdf_service import render_payslip
@@ -18,6 +18,7 @@ from labels import position_allowance_label
 from periods import BULAN, payroll_month, period_name_for, validate_dates, overlaps, run_type_of, RUN_TYPES, RUN_SPECIAL
 from bank_batch import approval_blockers
 import integrations
+import perusahaan
 import signer as signer_mod
 import verify
 
@@ -278,6 +279,20 @@ async def refresh_slip_signer():
         raise HTTPException(502, f"Gagal mengambil penandatangan dari ROSY: {e}")
 
 
+
+@router.get("/perusahaan")
+async def identitas_perusahaan():
+    """Identitas PT aktif (dari ROSY v2, cadangan Konfigurasi) untuk halaman Konfigurasi."""
+    return await perusahaan.identitas()
+
+
+@router.get("/perusahaan/logo")
+async def logo_perusahaan():
+    p = perusahaan.logo_path(current_company())
+    if not p:
+        raise HTTPException(404, "Logo perusahaan ini belum tersimpan di RUSA (Fetch Data Terbaru mengambilnya dari ROSY)")
+    return Response(p.read_bytes(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
 @router.get("/employees")
 async def list_employees():
     return await db.employees.find({}, {"_id": 0}).sort("nik", 1).to_list(2000)
@@ -292,6 +307,9 @@ async def sync_employees(periode: str) -> tuple:
         rows, meta = await integrations.fetch_employees(periode)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data karyawan dari ROSY: {e}")
+    # identitas PT (nama legal, NPWP, alamat, logo) dipegang ROSY: ikut segar setiap Fetch (multi-PT 6 Nov 2026)
+    await perusahaan.simpan_identitas(meta.get("company"))
+    meta["logo_masalah"] = await perusahaan.segarkan_logo()
     ids = []
     for r in rows:
         existing = await db.employees.find_one({"rosy_employee_id": r["rosy_employee_id"]}, {"_id": 0, "id": 1}) or \

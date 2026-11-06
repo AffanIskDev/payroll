@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from core import db, get_configs
 from engine import annual_tax_summary, resolve_ptkp
 from pdf_service import rp, NAVY
+import perusahaan
 
 ITEM_LABELS = [
     ("i1", "1. Gaji / Pensiun atau THT/JHT"), ("i2", "2. Tunjangan PPh"),
@@ -107,6 +108,8 @@ def _kv(rows, widths):
 
 async def render_1721a1(f: dict) -> bytes:
     cfg = await get_configs()
+    # pemotong = PT aktif: identitas dari ROSY v2 (Master Perusahaan), cadangan Konfigurasi RUSA (multi-PT 6 Nov 2026)
+    pt = await perusahaan.identitas(cfg)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm)
     ss = getSampleStyleSheet()
@@ -121,8 +124,8 @@ async def render_1721a1(f: dict) -> bytes:
     head.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     els = [head, Spacer(1, 6),
-           _kv([["NPWP Pemotong", cfg.get("COMPANY_NPWP", "-"), "Nama Pemotong", cfg.get("COMPANY_NAME", "-")],
-                ["Alamat", cfg.get("COMPANY_ADDRESS", "-"), "", ""]],
+           _kv([["NPWP Pemotong", pt["npwp"] or "-", "Nama Pemotong", pt["nama_legal"] or "-"],
+                ["Alamat", pt["alamat"] or "-", "", ""]],
                [28 * mm, 63 * mm, 28 * mm, 63 * mm]), Spacer(1, 6),
            Paragraph("<b>A. IDENTITAS PENERIMA PENGHASILAN YANG DIPOTONG</b>", small), Spacer(1, 2),
            _kv([["NPWP", f["npwp"] or "-", "NIK Karyawan", f["nik"]],

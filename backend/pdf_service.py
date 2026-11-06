@@ -10,13 +10,15 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
 from labels import PJUNIT_TARGET_NOTE, position_allowance_label
 from periods import BULAN
+import perusahaan
+from core import current_company
 
 STORAGE = Path(__file__).parent / "storage" / "payslips"
 STORAGE.mkdir(parents=True, exist_ok=True)
@@ -116,11 +118,29 @@ def _presence_detail(slip: dict) -> str:
     return ", ".join(late + days) or f"{slip.get('late_penalty_points', 0)} poin"
 
 
-def _logo(name: str, max_w: float, logo_h: float = LOGO_H) -> Image:
-    path = ASSETS / name
+def _logo(name, max_w: float, logo_h: float = LOGO_H) -> Image:
+    path = name if isinstance(name, Path) else ASSETS / name
     w, h = ImageReader(str(path)).getSize()
     height = logo_h if w * logo_h / h <= max_w else max_w * h / w
     return Image(str(path), width=w * height / h, height=height, mask="auto")
+
+
+def _kop(period: dict, ss) -> Table:
+    """Kop slip per PT (multi-PT 6 Nov 2026). RUMAT: RPI (PT Rumah Perawatan Indonesia) kiri, RUMAT kanan — kop lama,
+    seperti offering letter e-recruitment. PT lain: logo PT dari ROSY (Master Perusahaan) kiri, nama legal kanan; tanpa
+    logo = nama legal saja. Kolom tetap 83 + 83 mm supaya isi slip di bawahnya tidak bergeser."""
+    pt = period.get("company_id") or (period.get("company") or {}).get("id") or current_company()
+    if pt in perusahaan.KOP_RPI_RUMAT:
+        return Table([[_logo("logo-rpi.png", 58 * mm), _logo("logo-rumat.png", 58 * mm, RUMAT_LOGO_H)]],
+                     colWidths=[83 * mm, 83 * mm])
+    nama = (period.get("company") or {}).get("nama_legal") or (period.get("company") or {}).get("nama") or ""
+    gaya = ParagraphStyle("kop", parent=ss["Normal"], fontName="Helvetica-Bold", fontSize=11, leading=14,
+                          alignment=TA_RIGHT, textColor=NAVY)
+    logo = perusahaan.logo_path(pt)
+    if logo:
+        return Table([[_logo(logo, 70 * mm), Paragraph(escape(nama), gaya)]], colWidths=[83 * mm, 83 * mm])
+    gaya.alignment = TA_LEFT
+    return Table([[Paragraph(escape(nama), gaya), ""]], colWidths=[83 * mm, 83 * mm])
 
 
 def _qr(url: str) -> Drawing:
@@ -275,9 +295,7 @@ def render_payslip(slip: dict, period: dict) -> bytes:
     emp = slip["employee"]
     title = ParagraphStyle("t", parent=ss["Title"], fontSize=ss["Title"].fontSize * 0.7,
                            leading=ss["Title"].leading * 0.7)
-    # Kop like the e-recruitment offering letter: RPI (PT Rumah Perawatan Indonesia) left, RUMAT right
-    kop = Table([[_logo("logo-rpi.png", 58 * mm), _logo("logo-rumat.png", 58 * mm, RUMAT_LOGO_H)]],
-                colWidths=[83 * mm, 83 * mm])
+    kop = _kop(period, ss)
     kop.hAlign = "LEFT"
     # MIDDLE: logo RUMAT yang lebih pendek berada di tengah tinggi logo RPI, bukan menempel di atas
     kop.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),

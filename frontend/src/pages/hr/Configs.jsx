@@ -259,6 +259,48 @@ function BpjsTkBasisPanel({ value, choices, onChange }) {
   );
 }
 
+// Identitas perusahaan (multi-PT 6 Nov 2026): dipegang ROSY v2 (Holding → Master Perusahaan), RUSA hanya membaca saat
+// Fetch Data Terbaru. Di sini hanya ditampilkan; yang kosong diisi di ROSY, bukan di RUSA.
+const LABEL_KOSONG = { npwp: "NPWP", alamat: "alamat", logo: "logo" };
+function IdentitasPanel() {
+  const [p, setP] = useState(null);
+  const [logo, setLogo] = useState(null);
+  useEffect(() => {
+    api.get("/hr/perusahaan").then((r) => {
+      setP(r.data);
+      if (r.data.logo) api.get("/hr/perusahaan/logo", { responseType: "blob" }).then((b) => setLogo(URL.createObjectURL(b.data))).catch(() => {});
+    }).catch((e) => toast.error(errMsg(e)));
+  }, []);
+  const asal = (k) => p?.sumber?.[k] === "rusa" ? <span className="ml-1 text-xs text-amber-700">(cadangan Konfigurasi RUSA)</span> : null;
+  return (
+    <Panel title="Identitas Perusahaan" className="mb-6">
+      {!p ? <div className="px-5 py-4 text-sm text-slate-500">Memuat...</div> : (
+        <div className="flex flex-col sm:flex-row gap-5 px-5 py-4" data-testid="identitas-panel">
+          <div className="sm:w-60 h-24 shrink-0 border border-dashed border-slate-300 rounded-md bg-white flex items-center justify-center p-2">
+            {p.kop_rpi_rumat ? <span className="text-xs text-slate-500 text-center">Kop slip: logo RPI + RUMAT</span>
+              : logo ? <img src={logo} alt={`Logo ${p.nama}`} className="max-h-20 max-w-full object-contain" data-testid="identitas-logo" />
+              : <span className="text-xs text-slate-500 text-center">Belum ada logo — kop slip memakai nama legal</span>}
+          </div>
+          <div className="text-sm space-y-1 min-w-0">
+            <div className="font-semibold text-slate-900" data-testid="identitas-nama">{p.nama_legal || p.nama}{asal("nama_legal")}</div>
+            <div className="text-slate-600">NPWP: <b data-testid="identitas-npwp">{p.npwp || "—"}</b>{p.npwp && asal("npwp")}</div>
+            <div className="text-slate-600">Alamat: {p.alamat || "—"}{p.alamat && asal("alamat")}</div>
+            <div className="text-xs text-slate-500">Diatur di <b>ROSY v2 → Holding → Master Perusahaan</b>; RUSA mengambilnya setiap <b>Fetch Data Terbaru</b>
+              {p.rosy_synced_at ? ` (terakhir ${wib(p.rosy_synced_at)})` : " (belum pernah diambil)"}.</div>
+            {(p.kosong?.length > 0 || p.logo_masalah) && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 text-xs" data-testid="identitas-peringatan">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{p.kosong?.length > 0 && <>Belum diisi di ROSY: <b>{p.kosong.map((k) => LABEL_KOSONG[k]).join(", ")}</b>. </>}
+                  {p.logo_masalah && <>{p.logo_masalah}. </>}NPWP & alamat dipakai di bukti potong 1721-A1; logo di kop slip.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 export default function Configs() {
   const [list, setList] = useState([]);
   const [vals, setVals] = useState({});
@@ -282,9 +324,10 @@ export default function Configs() {
   // selebar halaman (user 15 Okt 2026: dulu max-w-3xl, isinya "menggantung" dengan ruang kosong di kanan)
   return (
     <div>
-      <PageTitle title="Konfigurasi Payroll" subtitle="payroll_configs — parameter global">
+      <PageTitle title="Konfigurasi Payroll" subtitle="Setelan payroll perusahaan yang sedang dipilih (UMK, BPJS, PPh 21, rekening debet). Identitas perusahaan diambil dari ROSY.">
         <Btn data-testid="save-config-button" onClick={save}><Save className="h-4 w-4" /> Simpan</Btn>
       </PageTitle>
+      <IdentitasPanel />
       <SignerPanel />
       {kes && <BpjsKesBasisPanel value={vals.BPJS_KES_BASIS} choices={kes.choices} onChange={(v) => setVals({ ...vals, BPJS_KES_BASIS: v })} />}
       {tk && <BpjsTkBasisPanel value={vals.BPJS_TK_BASIS} choices={tk.choices} onChange={(v) => setVals({ ...vals, BPJS_TK_BASIS: v })} />}

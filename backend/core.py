@@ -276,17 +276,17 @@ def csv_delimiter(cfg: dict) -> str:
 
 
 DEFAULT_CONFIGS = {
-    "UMK_BEKASI_REGENCY": ("5219263", "UMK Kabupaten Bekasi (floor basis BPJS Kesehatan)"),
+    "UMK_BEKASI_REGENCY": ("5219263", "UMK lokasi perusahaan ini (dasar BPJS Kesehatan flat UMK & batas bawah) — isi sesuai kota/kabupaten PT"),
     "BPJS_JP_MAX_WAGE": ("10042300", "Plafon upah maksimal Jaminan Pensiun"),
     "BPJS_KES_MAX_WAGE": ("12000000", "Plafon upah maksimal BPJS Kesehatan"),
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
     "BPJS_KES_BASIS": ("flat_umk", "Dasar BPJS Kesehatan: flat_umk = semua karyawan memakai nilai UMK, formula = yang terbesar antara gaji pokok dan UMK (maks. plafon)"),
     "BPJS_TK_BASIS": ("formula", "Dasar BPJS Ketenagakerjaan: import = JKK/JKM/JHT/JP memakai data given dari BPJS (diimpor di halaman Konfigurasi), formula = dihitung dari gaji pokok; karyawan tanpa data given tetap memakai rumus"),
     "PPH21_BASIS": ("bersih", "Dasar PPh 21: bersih = sesudah Potongan Presensi & Absensi, kotor = sebelum potongan itu"),
-    "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Nama pemotong pajak (1721-A1)"),
-    "COMPANY_ADDRESS": ("[ALAMAT_PERUSAHAAN]", "Alamat perusahaan (1721-A1; kop slip gaji memakai logo RPI & RUMAT)"),
+    "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Cadangan nama pemotong 1721-A1 — dipakai hanya bila nama legal di ROSY (Master Perusahaan) kosong"),
+    "COMPANY_ADDRESS": ("[ALAMAT_PERUSAHAAN]", "Cadangan alamat 1721-A1 — dipakai hanya bila alamat di ROSY (Master Perusahaan) kosong"),
     "CSV_DELIMITER": (",", "Pemisah kolom ekspor CSV: , atau ; atau | atau tab"),
-    "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "NPWP pemotong pajak (1721-A1)"),
+    "COMPANY_NPWP": ("[NPWP_PEMOTONG]", "Cadangan NPWP pemotong 1721-A1 — dipakai hanya bila NPWP di ROSY (Master Perusahaan) kosong"),
     "BSI_COMPANY_DEBIT_ACCOUNT": ("[ISI_REKENING_DEBET_PERUSAHAAN]", "No. rekening debet BSI perusahaan (ekspor transfer massal)"),
     "SLIP_VERIFY_BASE_URL": ("", "Alamat publik RUSA untuk QR verifikasi slip, mis. https://rusa.rumat.id (kosong = alamat frontend pertama di CORS_ORIGINS)"),
 }
