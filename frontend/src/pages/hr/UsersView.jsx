@@ -19,7 +19,7 @@ export default function UsersView() {
   const [temp, setTemp] = useState(null);       // {username, password}: kata sandi sementara, hanya tampil sekali
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const load = () => api.get("/hr/users").then((r) => setData(r.data));
+  const load = () => api.get("/hr/users").then((r) => setData(r.data)).catch((e) => toast.error(errMsg(e)));
   useEffect(() => { load(); }, []);
 
   const open = () => { setError(""); setForm({ username: "", name: "", role: "supervisor", auth_mode: "local" }); };
@@ -74,7 +74,7 @@ export default function UsersView() {
                     <td className="px-3 py-2.5 text-xs"><span className={`inline-flex items-center gap-1.5 font-medium ${u.is_active === false ? "text-slate-500" : "text-emerald-700"}`}><span className={`h-2 w-2 rounded-full ${u.is_active === false ? "bg-slate-400" : "bg-emerald-500"}`} />{u.is_active === false ? "Nonaktif" : "Aktif"}</span></td>
                     <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{u.last_login_at ? formatDateTime(u.last_login_at) : "Belum pernah"}</td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                      {u.auth_mode === "local" && <Btn variant="ghost" onClick={() => reset(u)} data-testid={`user-reset-${u.username}`}><KeyRound className="h-4 w-4" /> Reset sandi</Btn>}
+                      {u.auth_mode === "local" && !self && <Btn variant="ghost" onClick={() => reset(u)} data-testid={`user-reset-${u.username}`}><KeyRound className="h-4 w-4" /> Reset sandi</Btn>}
                       {!self && <Btn variant="ghost" className={u.is_active === false ? "" : "!text-rose-600 hover:!bg-rose-50"} data-testid={`user-toggle-${u.username}`}
                         onClick={() => patch(u, { is_active: u.is_active === false }, u.is_active === false ? "Pengguna diaktifkan" : "Pengguna dinonaktifkan")}>{u.is_active === false ? "Aktifkan" : "Nonaktifkan"}</Btn>}
                     </td>
