@@ -89,6 +89,11 @@ def mode(system: str) -> str:
     return "live" if os.environ.get("HAM_API_URL") else "mock"
 
 
+def rosy_enabled() -> bool:
+    """ROSY_FEED_ENABLED=false mematikan SEMUA tarikan dari ROSY (perusahaan tanpa ROSY). Bawaan: aktif."""
+    return os.environ.get("ROSY_FEED_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
+
+
 def company_id() -> str:
     return os.environ.get("PAYROLL_COMPANY_ID", "CP-001")
 
