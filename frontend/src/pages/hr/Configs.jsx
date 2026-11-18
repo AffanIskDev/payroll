@@ -153,6 +153,48 @@ function BpjsKesBasisPanel({ value, choices, onChange }) {
   );
 }
 
+// Sumber gaji per PT (user 18 Nov 2026): RUMAT tetap Kontrak Gaji ROSY; Botanova/RUMI/RKM boleh mengisi gaji di RUSA (menu
+// Karyawan → Atur Gaji). Identitas karyawan selalu dari ROSY. Backend gaji_rusa.py.
+const GAJI_SUMBER = {
+  rosy: {
+    title: "Kontrak Gaji ROSY", tag: "bawaan",
+    formula: "Gaji pokok, tunjangan, tarif lembur & BPJS = Kontrak Gaji di ROSY HRD",
+    note: "Seperti selama ini: gaji diubah di ROSY, RUSA hanya membaca saat Fetch Data Terbaru.",
+  },
+  rusa: {
+    title: "Diinput di RUSA",
+    formula: "Gaji diisi di menu Karyawan → Atur Gaji; identitas, PTKP & rekening tetap dari ROSY",
+    note: "Kontrak Gaji ROSY tidak dipakai. Karyawan yang gajinya belum diisi tidak ikut periode — gunakan \"Salin gaji dari ROSY\" di menu Karyawan saat pertama pindah.",
+  },
+};
+
+function GajiSumberPanel({ value, choices, onChange }) {
+  return (
+    <Panel title="Sumber Gaji Karyawan" className="mb-6">
+      <div className="px-5 py-4" data-testid="gaji-sumber-panel">
+        <p className="text-xs text-slate-500 mb-3">Dari mana RUSA mengambil gaji karyawan perusahaan ini. Berlaku per perusahaan.</p>
+        <div role="radiogroup" aria-label="Sumber Gaji" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {choices.filter((k) => GAJI_SUMBER[k]).map((k) => {
+            const o = GAJI_SUMBER[k];
+            const on = value === k;
+            return (
+              <label key={k} data-testid={`gaji-sumber-${k}`} className={`flex gap-3 rounded-md border px-4 py-3 cursor-pointer transition-colors ${on ? "border-brand-700 ring-2 ring-brand-700/20 bg-brand-50/40" : "border-slate-200 hover:border-brand-400"}`}>
+                <input type="radio" name="GAJI_SUMBER" value={k} checked={on} onChange={() => onChange(k)} className="mt-1 h-4 w-4 accent-brand-700 shrink-0" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 min-h-[24px] text-sm font-semibold text-slate-900">{o.title}{o.tag && <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{o.tag}</span>}</span>
+                  <span className="block text-xs text-slate-700 mt-1">{o.formula}</span>
+                  <span className="block text-xs text-slate-500 mt-1">{o.note}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">Berlaku sesudah disimpan, pada <b>Fetch Data Terbaru</b> berikutnya di periode draft. Slip yang sudah di-approve tidak berubah.</p>
+      </div>
+    </Panel>
+  );
+}
+
 // Dasar BPJS Ketenagakerjaan (permintaan user 1 Nov 2026): rumus gaji pokok, atau data given dari BPJS (diimpor per NIK, backend
 // engine.bpjs_tk_basis + routes_bpjs_tk). Karyawan tanpa data given tetap dihitung dengan rumus.
 const BPJS_TK_BASIS = {
@@ -312,6 +354,7 @@ export default function Configs() {
   const basis = list.find((c) => c.config_key === "PPH21_BASIS" && c.choices?.length); // none until the backend has seeded it
   const kes = list.find((c) => c.config_key === "BPJS_KES_BASIS" && c.choices?.length);
   const tk = list.find((c) => c.config_key === "BPJS_TK_BASIS" && c.choices?.length);
+  const sumber = list.find((c) => c.config_key === "GAJI_SUMBER" && c.choices?.length);
 
   const save = async () => {
     try {
@@ -329,12 +372,13 @@ export default function Configs() {
       </PageTitle>
       <IdentitasPanel />
       <SignerPanel />
+      {sumber && <GajiSumberPanel value={vals.GAJI_SUMBER} choices={sumber.choices} onChange={(v) => setVals({ ...vals, GAJI_SUMBER: v })} />}
       {kes && <BpjsKesBasisPanel value={vals.BPJS_KES_BASIS} choices={kes.choices} onChange={(v) => setVals({ ...vals, BPJS_KES_BASIS: v })} />}
       {tk && <BpjsTkBasisPanel value={vals.BPJS_TK_BASIS} choices={tk.choices} onChange={(v) => setVals({ ...vals, BPJS_TK_BASIS: v })} />}
       {basis && <Pph21BasisPanel value={vals.PPH21_BASIS} choices={basis.choices} onChange={(v) => setVals({ ...vals, PPH21_BASIS: v })} />}
       <Panel>
         <div className="divide-y divide-slate-100">
-          {list.filter((c) => c.config_key !== "PPH21_BASIS" && c.config_key !== "BPJS_KES_BASIS" && c.config_key !== "BPJS_TK_BASIS").map((c) => (
+          {list.filter((c) => !["PPH21_BASIS", "BPJS_KES_BASIS", "BPJS_TK_BASIS", "GAJI_SUMBER"].includes(c.config_key)).map((c) => (
             <div key={c.config_key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-6 px-5 py-4">
               <div className="min-w-0">
                 <div className="num text-sm font-semibold">{c.config_key}</div>

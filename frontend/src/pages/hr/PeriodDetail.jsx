@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, Landmark, FileSpreadsheet, Send, XCircle, AlertTriangle, History, RotateCw, Smartphone } from "lucide-react";
+import { Search, DownloadCloud, LockKeyhole, ChevronLeft, ChevronRight, ChevronDown, Landmark, FileSpreadsheet, Send, XCircle, AlertTriangle, History, RotateCw, Smartphone, ListPlus } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, saveFile, blobErrMsg } from "@/lib/api";
 import { rp, formatDate, formatDateRange, jamMenit, unfinishedSyncDay } from "@/lib/format";
 import { PageTitle, Panel, PeriodStatusChip, Btn, KpiCard, FilterTab } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 import SyncTodayDialog from "@/components/SyncTodayDialog";
+import TambahanBulananDialog from "@/components/TambahanBulananDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -103,6 +104,10 @@ function PeriodDetail({ pid }) {
   const [syncing, setSyncing] = useState(false);
   const [confirmDay, setConfirmDay] = useState(null);
   const [bankOpen, setBankOpen] = useState(false);
+  // Sumber Gaji RUSA (18 Nov 2026): Tambahan Bulanan diisi di RUSA lewat dialog, bukan dari ROSY
+  const [gajiSumber, setGajiSumber] = useState("rosy");
+  const [tambahanOpen, setTambahanOpen] = useState(false);
+  useEffect(() => { api.get("/hr/gaji-karyawan/info").then((r) => setGajiSumber(r.data?.sumber || "rosy")).catch(() => {}); }, []);
   const { user } = useAuth();
   const isManager = user?.role === "manager_hrd";
   const load = useCallback(() => api.get(`/hr/periods/${pid}`).then((r) => setD(r.data)), [pid]);
@@ -305,7 +310,8 @@ function PeriodDetail({ pid }) {
           <span className="block" data-testid="period-sync-status">Sinkron terakhir: <span className="text-slate-700">{syncedAt}</span></span>
         </>}>
         <div className="flex w-full sm:w-auto flex-col sm:flex-row sm:flex-wrap xl:flex-nowrap gap-2" data-testid="period-actions">
-          {editable && <Btn variant="outline" className="w-full sm:w-auto justify-center whitespace-nowrap" data-testid="fetch-attendance-button" disabled={busy} onClick={requestSync} title="Karyawan & gaji, absensi, klaim lembur, dan Tambahan Bulanan (Transport, Bonus, THR, Potongan Target, Cicilan) terbaru dari ROSY"><DownloadCloud className={`h-4 w-4 ${syncing ? "animate-pulse" : ""}`} /> {syncing ? "Menyinkronkan..." : "Fetch Data Terbaru"}</Btn>}
+          {editable && <Btn variant="outline" className="w-full sm:w-auto justify-center whitespace-nowrap" data-testid="fetch-attendance-button" disabled={busy} onClick={requestSync} title={gajiSumber === "rusa" ? "Karyawan (identitas dari ROSY, gaji & Tambahan Bulanan dari RUSA), absensi, dan klaim lembur terbaru" : "Karyawan & gaji, absensi, klaim lembur, dan Tambahan Bulanan (Transport, Bonus, THR, Potongan Target, Cicilan) terbaru dari ROSY"}><DownloadCloud className={`h-4 w-4 ${syncing ? "animate-pulse" : ""}`} /> {syncing ? "Menyinkronkan..." : "Fetch Data Terbaru"}</Btn>}
+          {gajiSumber === "rusa" && (period.run_type || "gaji") === "gaji" && <Btn variant="outline" className="w-full sm:w-auto justify-center whitespace-nowrap" data-testid="tambahan-bulanan-button" onClick={() => setTambahanOpen(true)} title="Bonus, Transport Homecare, Potongan Tidak Mencapai Target, Cicilan / Pinjaman periode ini — diisi di RUSA"><ListPlus className="h-4 w-4" /> Tambahan Bulanan</Btn>}
           {!isManager && editable && <Btn variant="primary" className="w-full sm:w-auto justify-center whitespace-nowrap" data-testid="submit-period-button" disabled={busy || !payslips.length || blocked} title={actionTitle} onClick={() => act("submit", "Draft payroll diajukan ke Manager HRD")}><Send className="h-4 w-4" /> Ajukan ke Manager</Btn>}
           {isManager && pending && <Btn variant="outline" data-testid="reject-period-button" disabled={busy} onClick={() => setRejectOpen(true)} className="w-full sm:w-auto justify-center whitespace-nowrap !border-rose-300 !text-rose-700 hover:!bg-rose-50"><XCircle className="h-4 w-4" /> Tolak Draft</Btn>}
           {isManager && (
@@ -642,6 +648,7 @@ function PeriodDetail({ pid }) {
           </div>
         </DialogContent>
       </Dialog>
+      <TambahanBulananDialog open={tambahanOpen} pid={pid} onClose={() => setTambahanOpen(false)} onSaved={load} />
     </div>
   );
 }

@@ -18,6 +18,8 @@ from seed import seed  # noqa: E402
 import accounts  # noqa: E402
 import integrations  # noqa: E402
 import routes_hr  # noqa: E402
+import gaji_rusa  # noqa: E402
+import tambahan_rusa  # noqa: E402
 import special_runs  # noqa: E402
 import routes_tax  # noqa: E402
 import export_data  # noqa: E402
@@ -120,6 +122,8 @@ app.include_router(auth)
 app.include_router(accounts.auth_router)  # ganti kata sandi (akun RUSA)
 app.include_router(accounts.router)  # daftar pengguna RUSA (Manager)
 app.include_router(routes_hr.router)
+app.include_router(gaji_rusa.router)  # gaji diinput di RUSA per PT (18 Nov 2026)
+app.include_router(tambahan_rusa.router)  # Tambahan Bulanan diinput di RUSA (18 Nov 2026)
 app.include_router(special_runs.router)  # THR & Bonus Tahunan (30 Okt 2026)
 app.include_router(routes_tax.router)
 app.include_router(export_data.router)  # Export Data Payroll (Excel), Manager HRD — 3 Nov 2026

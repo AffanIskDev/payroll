@@ -17,7 +17,9 @@ from pdf_service import render_payslip
 from labels import position_allowance_label
 from periods import BULAN, payroll_month, period_name_for, validate_dates, overlaps, run_type_of, RUN_TYPES, RUN_SPECIAL
 from bank_batch import approval_blockers
+import gaji_rusa
 import integrations
+import tambahan_rusa
 import perusahaan
 import signer as signer_mod
 import verify
@@ -302,11 +304,25 @@ async def sync_employees(periode: str) -> tuple:
     """Fetch master karyawan & gaji dari ROSY (HAM); upsert by rosy_employee_id. Returns (employee ids, meta).
 
     HAM's nik is not unique, so it is never the key. Employees created before rosy_employee_id existed
-    are adopted once by nik."""
+    are adopted once by nik.
+
+    Sumber gaji RUSA (Konfigurasi GAJI_SUMBER=rusa, 18 Nov 2026): ROSY juga mengirim karyawan tanpa Kontrak Gaji, gajinya
+    diganti gaji yang diinput di RUSA (gaji_rusa.py). Karyawan yang gajinya belum diisi tetap disimpan (tampil di menu
+    Karyawan untuk diisi) tetapi tidak ikut periode — dilaporkan di meta.dilewati."""
+    mode_rusa = await gaji_rusa.sumber() == "rusa"
     try:
-        rows, meta = await integrations.fetch_employees(periode)
+        rows, meta = await integrations.fetch_employees(periode, tanpa_kontrak=mode_rusa)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data karyawan dari ROSY: {e}")
+    if mode_rusa:
+        rows, belum = await gaji_rusa.gabungkan(rows)
+        meta["dilewati"] = list(meta.get("dilewati") or []) + belum
+        # satu sumber: Tambahan Bulanan (juga THR / Bonus Tahunan) ROSY tidak dipakai — diisi di RUSA (tambahan_rusa.py,
+        # special_runs.py)
+        meta["components"] = {}
+    else:
+        rows = [{**r, "gaji_sumber": "rosy", "gaji_ada": True} for r in rows]
+    meta["gaji_sumber"] = "rusa" if mode_rusa else "rosy"
     # identitas PT (nama legal, NPWP, alamat, logo) dipegang ROSY: ikut segar setiap Fetch (multi-PT 6 Nov 2026)
     await perusahaan.simpan_identitas(meta.get("company"))
     meta["logo_masalah"] = await perusahaan.segarkan_logo()
@@ -318,7 +334,8 @@ async def sync_employees(periode: str) -> tuple:
         await db.employees.update_one({"id": eid}, {"$set": {**r, "source": "rosy", "in_rosy": True,
                                                             "synced_at": now_iso()},
                                                    "$setOnInsert": {"created_at": now_iso()}}, upsert=True)
-        ids.append(eid)
+        if r["gaji_ada"]:
+            ids.append(eid)
     # Employees ROSY no longer returns (resigned, moved company, lost their salary contract) stay for history
     # but are flagged, so the list never silently mixes them with the current payroll population
     gone = await db.employees.update_many(
@@ -327,9 +344,10 @@ async def sync_employees(periode: str) -> tuple:
     await db.sync_status.update_one({"key": "employees"}, {"$set": {
         "key": "employees", "synced_at": now_iso(), "periode": periode, "source": integrations.mode("ROSY"),
         "count": len(ids), "skipped": meta.get("dilewati") or [], "company": meta.get("company"),
+        "gaji_sumber": meta["gaji_sumber"],
         "not_in_rosy": await db.employees.count_documents({"source": "rosy", "in_rosy": False}),
         "newly_not_in_rosy": gone.modified_count,
-        "data_issues": dict(Counter(i for r in rows for i in r.get("data_issues") or []))}}, upsert=True)
+        "data_issues": dict(Counter(i for r in rows if r["gaji_ada"] for i in r.get("data_issues") or []))}}, upsert=True)
     return ids, meta
 
 
@@ -436,12 +454,13 @@ async def _sync(pid: str) -> dict:
     by_uid = {e["user_id_rumatku"]: e["id"] for e in emps if e.get("user_id_rumatku")}
     emp_by_id = {e["id"]: e for e in emps}
     # every HAM read happens before anything of this period is deleted
+    tanpa_kontrak = emp_meta.get("gaji_sumber") == "rusa"
     try:
-        rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps)
+        rows, meta = await integrations.fetch_attendance(period["start_date"], period["end_date"], emps, tanpa_kontrak=tanpa_kontrak)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data absensi dari RUMATKU: {e}")
     try:
-        overtime = await integrations.fetch_overtime(payroll_month(period["start_date"]))
+        overtime = await integrations.fetch_overtime(payroll_month(period["start_date"]), tanpa_kontrak=tanpa_kontrak)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gagal mengambil data lembur dari ROSY: {e}")
     # slip signer = ROSY's payroll Document Signer for this company (same as ROSY's own slips): name & position, printed
@@ -451,7 +470,7 @@ async def _sync(pid: str) -> dict:
     await db.payroll_periods.update_one({"id": pid}, {"$set": {
         "employee_ids": ids, "employee_count": len(ids), "employees_synced_at": now_iso(),
         "employees_source": integrations.mode("ROSY"), "employees_skipped": emp_meta.get("dilewati") or [],
-        "company": emp_meta.get("company"), "signer": signer}})
+        "company": emp_meta.get("company"), "signer": signer, "gaji_sumber": emp_meta.get("gaji_sumber", "rosy")}})
     # draft slips of people who dropped out of the population (resigned, no salary contract) must not linger
     await db.payslips.delete_many({"payroll_period_id": pid, "employee_id": {"$nin": ids}, "status": {"$ne": "approved"}})
     # ROSY Tambahan Bulanan for this month: Transport Homecare, Bonus, THR, Potongan Tidak Mencapai Target, Cicilan
@@ -460,6 +479,8 @@ async def _sync(pid: str) -> dict:
                   "component_id": component_ids[kode], "nominal": nominal, "synced_at": now_iso()}
                  for rid, comps in (emp_meta.get("components") or {}).items() if rid in by_rosy
                  for kode, nominal in comps.items()]
+    if tanpa_kontrak:   # Sumber Gaji RUSA: Tambahan Bulanan dari input RUSA bulan ini
+        comp_docs = await tambahan_rusa.docs_periode(period, by_rosy)
     transport_docs = [d for d in comp_docs if d["kode"] == "TRANSPORT_HOMECARE"]
     await db.period_components.delete_many({"payroll_period_id": pid})
     if comp_docs:

@@ -264,6 +264,8 @@ def normalize_employee(r: dict) -> dict:
         "bank_name": bank.get("name") or "", "bank_code": bank.get("code") or "",
         "bank_account_number": bank.get("account_number") or "", "bank_account_name": bank.get("account_name") or "",
         "overtime_access": bool(r.get("lembur_akses")), "data_issues": list(r.get("data_issues") or []),
+        # False hanya bila ROSY mengirimnya lewat tanpa_kontrak=1 (gaji diinput di RUSA)
+        "punya_kontrak_rosy": r.get("punya_kontrak", True) is not False,
     }
 
 
@@ -295,10 +297,16 @@ async def fetch_company_logo(versi_tersimpan: str = None):
         return None
     return r.content, versi
 
-async def fetch_employees(periode: str) -> tuple:
+def _tanpa_kontrak(params: dict, tanpa_kontrak: bool) -> dict:
+    """tanpa_kontrak=1 (ROSY v2, 18 Nov 2026): karyawan tanpa Kontrak Gaji ikut dikirim — untuk PT yang gajinya diinput di
+    RUSA (gaji_rusa.py). HAM lama mengabaikan parameter ini."""
+    return {**params, "tanpa_kontrak": 1} if tanpa_kontrak else params
+
+
+async def fetch_employees(periode: str, tanpa_kontrak: bool = False) -> tuple:
     """Returns (employees, meta). periode = 'YYYY-MM'."""
     if mode("ROSY") == "live":
-        body = await _get("/karyawan", {"payroll_company_id": company_id(), "periode": periode})
+        body = await _get("/karyawan", _tanpa_kontrak({"payroll_company_id": company_id(), "periode": periode}, tanpa_kontrak))
         raw, meta = body.get("data") or [], body.get("meta") or {}
     else:
         raw, meta = _mock_rosy(), {"dilewati": [], "company": None}
@@ -401,14 +409,14 @@ async def push_payslip(slip: dict, period: dict, pdf_path: str) -> dict:
     return {"ref": (body.get("data") or body).get("id") if isinstance(body, dict) else None}
 
 
-async def fetch_overtime(periode_bayar: str):
+async def fetch_overtime(periode_bayar: str, tanpa_kontrak: bool = False):
     """Approved overtime claims paid in this payslip month (HAM lembur, rumatku.mt_lembur).
 
     Returns (claims, meta) in live mode, or None in mock mode — the simulation keeps overtime in the
     daily logs. Pay month is periode_bayar, not the claim date: a late-approved claim moves to the next slip."""
     if mode("RUMATKU") != "live":
         return None
-    body = await _get("/lembur", {"payroll_company_id": company_id(), "periode_bayar": periode_bayar})
+    body = await _get("/lembur", _tanpa_kontrak({"payroll_company_id": company_id(), "periode_bayar": periode_bayar}, tanpa_kontrak))
     claims = [{"claim_id": int(r["claim_id"]), "rosy_employee_id": str(r["employee_id"]), "tanggal": r["tanggal"],
                "jam_mulai": r.get("jam_mulai"), "jam_selesai": r.get("jam_selesai"),
                "menit_diklaim": int(r.get("menit_diklaim") or 0), "menit_disetujui": int(r["menit_disetujui"]),
@@ -417,12 +425,12 @@ async def fetch_overtime(periode_bayar: str):
     return claims, body.get("meta") or {}
 
 
-async def fetch_attendance(start: str, end: str, employees: list) -> tuple:
+async def fetch_attendance(start: str, end: str, employees: list, tanpa_kontrak: bool = False) -> tuple:
     """Returns (rows, meta). Live rows are keyed by rosy_employee_id; mock rows by nik; RUMATKU rows by user_id_rumatku."""
     if attendance_from_rumatku():
         return await fetch_attendance_rumatku(start, end, employees)
     if mode("RUMATKU") == "live":
-        body = await _get("/presensi", {"payroll_company_id": company_id(), "start": start, "end": end})
+        body = await _get("/presensi", _tanpa_kontrak({"payroll_company_id": company_id(), "start": start, "end": end}, tanpa_kontrak))
         raw, meta = body.get("data") or [], body.get("meta") or {}
         return [{"rosy_employee_id": str(r["employee_id"]), **normalize_attendance(r)} for r in raw], meta
     raw = _mock_rumatku(start, end, employees)

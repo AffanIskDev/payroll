@@ -21,6 +21,12 @@ async def migrate_employee_indexes():
         await db.employees.drop_index("rosy_employee_id_unique")
     await db.employees.create_index([("company_id", 1), ("rosy_employee_id", 1)], unique=True, name="pt_rosy_employee_id_unique",
                                     partialFilterExpression={"rosy_employee_id": {"$type": "string"}})
+    # gaji diinput di RUSA (18 Nov 2026): satu baris gaji per karyawan ROSY per PT
+    await db.gaji_karyawan.create_index([("company_id", 1), ("rosy_employee_id", 1)], unique=True, name="pt_gaji_rosy_employee_id")
+    await db.gaji_karyawan_riwayat.create_index([("company_id", 1), ("rosy_employee_id", 1), ("at", -1)])
+    await db.komponen_bulanan.create_index([("company_id", 1), ("bulan", 1), ("rosy_employee_id", 1), ("kode", 1)], unique=True,
+                                           name="pt_komponen_bulanan")
+    await db.komponen_bulanan_riwayat.create_index([("company_id", 1), ("bulan", 1), ("at", -1)])
 
 
 async def migrate_users():

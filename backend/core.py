@@ -288,6 +288,7 @@ DEFAULT_CONFIGS = {
     "DEFAULT_WORK_DAYS": ("25", "Standar hari kerja bulanan (PP 35/2021)"),
     "BPJS_KES_BASIS": ("flat_umk", "Dasar BPJS Kesehatan: flat_umk = semua karyawan memakai nilai UMK, formula = yang terbesar antara gaji pokok dan UMK (maks. plafon)"),
     "BPJS_TK_BASIS": ("formula", "Dasar BPJS Ketenagakerjaan: import = JKK/JKM/JHT/JP memakai data given dari BPJS (diimpor di halaman Konfigurasi), formula = dihitung dari gaji pokok; karyawan tanpa data given tetap memakai rumus"),
+    "GAJI_SUMBER": ("rosy", "Sumber gaji karyawan: rosy = Kontrak Gaji di ROSY, rusa = gaji diinput di menu Karyawan RUSA (identitas karyawan tetap dari ROSY)"),
     "PPH21_BASIS": ("bersih", "Dasar PPh 21: bersih = sesudah Potongan Presensi & Absensi, kotor = sebelum potongan itu"),
     "COMPANY_NAME": ("[NAMA_PERUSAHAAN]", "Cadangan nama pemotong 1721-A1 — dipakai hanya bila nama legal di ROSY (Master Perusahaan) kosong"),
     "COMPANY_ADDRESS": ("[ALAMAT_PERUSAHAAN]", "Cadangan alamat 1721-A1 — dipakai hanya bila alamat di ROSY (Master Perusahaan) kosong"),
@@ -299,7 +300,7 @@ DEFAULT_CONFIGS = {
 
 # configs that only accept a fixed set of values: validated on save and sent to the Config page as `choices`
 CONFIG_CHOICES = {"PPH21_BASIS": ("bersih", "kotor"), "BPJS_KES_BASIS": ("flat_umk", "formula"),
-                  "BPJS_TK_BASIS": ("import", "formula")}
+                  "BPJS_TK_BASIS": ("import", "formula"), "GAJI_SUMBER": ("rosy", "rusa")}
 
 
 async def get_configs() -> dict:

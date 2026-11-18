@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, XCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { Search, XCircle, Pencil, Copy } from "lucide-react";
+import { toast } from "sonner";
+import { api, errMsg } from "@/lib/api";
+import { useAuth, isManager } from "@/context/AuthContext";
 import { rp, PAYROLL_STATUS_LABELS, DATA_ISSUE_LABELS, periodNameFor, formatDateTime, timeAgo } from "@/lib/format";
-import { PageTitle, Panel, Chip, FilterTab } from "@/components/common";
+import { PageTitle, Panel, Chip, FilterTab, Btn } from "@/components/common";
+import GajiDialog from "@/components/GajiDialog";
 
 // kolom "Sinkron" per baris dibuang (user 12 Okt 2026): semua baris tersinkron bersamaan, waktunya cukup di judul.
 // 15 Okt 2026 tampilan diselaraskan dengan halaman periode (rupiah rata kanan, angka 0 pudar, status payroll bertitik warna,
@@ -37,22 +40,46 @@ const RpCell = ({ v, tone, testId }) => (
 // Kartu ringkasan dibuang (user 13 Okt 2026), diganti satu penyaring "data belum lengkap" (NPWP, tgl lahir, rekening, dll —
 // hasil periksa ROSY, sama dengan "Perlu Ditinjau" di Dashboard). Tabel hanya memuat karyawan yang masih ada di ROSY.
 const inRosy = (e) => e.in_rosy !== false;
-const incomplete = (e) => e.data_issues?.length > 0;
+// Sumber gaji RUSA (18 Nov 2026, Konfigurasi GAJI_SUMBER): gaji diisi di sini lewat "Atur Gaji"; yang belum diisi tidak ikut periode
+const tanpaGaji = (e) => e.gaji_ada === false;
+const incomplete = (e) => e.data_issues?.length > 0 && !tanpaGaji(e);
 const STALE_MS = 7 * 86400000;
 
 export default function EmployeesView() {
+  const { user } = useAuth();
   const [list, setList] = useState([]);
   const [status, setStatus] = useState({});
+  const [gaji, setGaji] = useState({ sumber: "rosy" });
+  const [edit, setEdit] = useState(null);
+  const [salin, setSalin] = useState(false);
   const [q, setQ] = useState("");
-  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
-  useEffect(() => {
+  // all | issues | nogaji
+  const [filter, setFilter] = useState("all");
+  const load = () => {
     api.get("/hr/employees").then((r) => setList(r.data));
     api.get("/hr/employees/sync-status").then((r) => setStatus(r.data || {}));
-  }, []);
+    api.get("/hr/gaji-karyawan/info").then((r) => setGaji(r.data || { sumber: "rosy" })).catch(() => {});
+  };
+  useEffect(load, []);
 
+  const modeRusa = gaji.sumber === "rusa";
   const current = list.filter(inRosy);
   const lacking = current.filter(incomplete);
-  const rows = (onlyIncomplete ? lacking : current).filter((e) => `${e.nik} ${e.name} ${e.department}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const noGaji = modeRusa ? current.filter(tanpaGaji) : [];
+  const onlyIncomplete = filter === "issues";
+  const setOnlyIncomplete = (on) => setFilter(on ? "issues" : "all");
+  const base = filter === "issues" ? lacking : filter === "nogaji" ? noGaji : current;
+  const rows = base.filter((e) => `${e.nik} ${e.name} ${e.department}`.toLowerCase().includes(q.trim().toLowerCase()));
+  const cols = modeRusa ? [...COLS, "Aksi"] : COLS;
+
+  const salinDariRosy = async () => {
+    setSalin(true);
+    try {
+      const r = await api.post("/hr/gaji-karyawan/salin-dari-rosy");
+      toast.success(`${r.data.disalin} karyawan diisi dari Kontrak Gaji ROSY. Klik Fetch Data Terbaru di periode draft untuk menghitung ulang.`);
+      load();
+    } catch (e) { toast.error(errMsg(e)); } finally { setSalin(false); }
+  };
   // jumlah per jenis masalah; seorang karyawan bisa punya lebih dari satu, jadi totalnya bisa melebihi jumlah karyawan
   const issueTypes = Object.entries(status.data_issues || {}).sort((a, b) => b[1] - a[1]);
   const issueText = issueTypes.map(([k, n]) => `${DATA_ISSUE_LABELS[k] || k} ${n}`).join(" · ");
@@ -62,7 +89,9 @@ export default function EmployeesView() {
 
   return (
     <div>
-      <PageTitle title="Data Karyawan & Gaji" titleExtra={<Chip tone="slate" title="Diubah di ROSY HRD, bukan di RUSA">Hanya-lihat · dari ROSY</Chip>}
+      <PageTitle title="Data Karyawan & Gaji" titleExtra={modeRusa
+        ? <Chip tone="brand" testId="gaji-sumber-chip" title="Konfigurasi: Sumber Gaji = RUSA. Identitas, PTKP & rekening tetap diubah di ROSY">Gaji diinput di RUSA · identitas dari ROSY</Chip>
+        : <Chip tone="slate" title="Diubah di ROSY HRD, bukan di RUSA">Hanya-lihat · dari ROSY</Chip>}
         subtitle={status.synced_at ? (
           <span data-testid="employee-sync-status">
             {month && <><span className="block sm:inline whitespace-nowrap">Gaji: <span className="text-slate-700">{month}</span></span>{sep}</>}
@@ -76,8 +105,15 @@ export default function EmployeesView() {
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
             <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900">Daftar Karyawan & Komponen Gaji</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Karyawan yang masih ada di ROSY · gaji pokok, tunjangan, tarif lembur, program BPJS, dan rekening dari sinkron terakhir</p>
+              <p className="mt-0.5 text-xs text-slate-500">{modeRusa
+                ? "Karyawan yang masih ada di ROSY · gaji pokok, tunjangan, tarif lembur & program BPJS diisi di RUSA (Atur Gaji); rekening dari ROSY"
+                : "Karyawan yang masih ada di ROSY · gaji pokok, tunjangan, tarif lembur, program BPJS, dan rekening dari sinkron terakhir"}</p>
             </div>
+            {modeRusa && isManager(user) && gaji.bisa_salin > 0 && (
+              <Btn variant="outline" onClick={salinDariRosy} disabled={salin} data-testid="gaji-salin-semua"
+                title="Isi gaji karyawan yang belum diisi di RUSA dengan Kontrak Gaji ROSY terakhir (yang sudah diisi tidak diubah)">
+                <Copy className="h-4 w-4" /> Salin gaji dari ROSY ({gaji.bisa_salin})</Btn>
+            )}
             <label className="flex items-center gap-2 border border-slate-300 rounded-md px-3 py-2 bg-white w-full sm:w-64 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-700/10">
               <Search className="h-4 w-4 text-slate-400" />
               <input data-testid="employee-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / NIK / dept" className="outline-none text-sm w-full bg-transparent" />
@@ -85,7 +121,10 @@ export default function EmployeesView() {
           </div>
           {/* lencana "N karyawan data belum lengkap" (13 Okt 2026) kini tab penyaring seperti di halaman periode */}
           <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="employee-tabs">
-            <FilterTab label="Semua" count={current.length} on={!onlyIncomplete} onClick={() => setOnlyIncomplete(false)} testId="employee-tab-all" />
+            <FilterTab label="Semua" count={current.length} on={filter === "all"} onClick={() => setFilter("all")} testId="employee-tab-all" />
+            {modeRusa && <FilterTab label="Gaji Belum Diisi" count={noGaji.length} on={filter === "nogaji"} alarm="rose" disabled={!noGaji.length}
+              onClick={() => setFilter(filter === "nogaji" ? "all" : "nogaji")} testId="employee-tab-nogaji"
+              title="Belum ikut periode gaji sampai gajinya diisi lewat Atur Gaji" />}
             <FilterTab label="Data Belum Lengkap" count={lacking.length} on={onlyIncomplete} alarm="amber" disabled={!lacking.length} onClick={() => setOnlyIncomplete(!onlyIncomplete)} testId="employee-issues-badge"
               title={`${issueText ? `${issueText} — ` : ""}klik untuk ${onlyIncomplete ? "menampilkan semua karyawan" : "menampilkan hanya yang datanya belum lengkap"}`} />
           </div>
@@ -100,7 +139,7 @@ export default function EmployeesView() {
           <table className="w-full text-[13px]" data-testid="employees-table">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                {COLS.map((h, i) => (
+                {cols.map((h, i) => (
                   <th key={h} className={`px-2.5 py-3 font-semibold align-bottom ${RIGHT.has(h) ? "text-right" : "text-left"} ${i === 0 ? `${STICKY} bg-slate-50` : ""}`}>{h}</th>
                 ))}
               </tr>
@@ -125,7 +164,11 @@ export default function EmployeesView() {
                     <td className="px-2.5 py-2.5 text-xs">
                       <span className={`inline-flex items-start gap-1.5 font-medium ${tone}`}><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />{PAYROLL_STATUS_LABELS[e.payroll_status] || e.payroll_status}</span>
                     </td>
-                    <RpCell v={e.basic_salary} tone="text-slate-900 font-semibold" />
+                    {tanpaGaji(e) ? (
+                      <td className="px-2.5 py-2.5 text-right whitespace-nowrap" data-testid={`employee-nogaji-${e.nik}`}>
+                        <span className="rounded bg-rose-50 px-1.5 py-0.5 text-xs font-semibold text-rose-700" title="Tidak ikut periode gaji sampai gajinya diisi">belum diisi</span>
+                      </td>
+                    ) : <RpCell v={e.basic_salary} tone="text-slate-900 font-semibold" />}
                     <RpCell v={e.position_allowance} tone="text-slate-900" />
                     <RpCell v={e.monthly_attendance_allowance} tone="text-slate-900" />
                     <RpCell v={e.overtime_hourly_rate} tone="text-slate-900" testId={`employee-ot-rate-${e.nik}`} />
@@ -140,14 +183,22 @@ export default function EmployeesView() {
                       <div className="font-medium text-slate-700">{e.bank_name}</div>
                       <div className="num text-slate-500">{e.bank_account_number}</div>
                     </td>
+                    {modeRusa && (
+                      <td className="px-2.5 py-2.5 whitespace-nowrap">
+                        <Btn variant={tanpaGaji(e) ? "primary" : "outline"} className="!min-h-[32px] !px-2.5 !py-1 text-xs" onClick={() => setEdit(e)} data-testid={`employee-gaji-${e.nik}`}>
+                          <Pencil className="h-3.5 w-3.5" /> {tanpaGaji(e) ? "Isi Gaji" : "Atur Gaji"}</Btn>
+                        {e.gaji_diubah_oleh && <div className="mt-0.5 text-[11px] text-slate-400" title={formatDateTime(e.gaji_diubah_at)}>oleh {e.gaji_diubah_oleh}</div>}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
-              {!rows.length && <tr><td colSpan={COLS.length} className="px-4 py-8 text-center text-slate-500">{list.length ? "Tidak ada yang cocok." : "Belum ada data — jalankan \"Fetch Data Terbaru\" di halaman periode (menu Payroll)."}</td></tr>}
+              {!rows.length && <tr><td colSpan={cols.length} className="px-4 py-8 text-center text-slate-500">{list.length ? "Tidak ada yang cocok." : "Belum ada data — jalankan \"Fetch Data Terbaru\" di halaman periode (menu Payroll)."}</td></tr>}
             </tbody>
           </table>
         </div>
       </Panel>
+      <GajiDialog employee={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />
     </div>
   );
 }
