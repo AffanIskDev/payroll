@@ -197,9 +197,15 @@ async def akses_user(user: dict) -> dict:
             if a.get("company_id") in aktif and a.get("role") in HR_ROLES}
 
 
+def pt_bawaan() -> str:
+    """PT yang dibuka lebih dulu saat login bila pengguna punya akses ke sana (user 7 Nov 2026: payroll RUMAT dulu)."""
+    return os.environ.get("PAYROLL_PT_BAWAAN", "CP-001")
+
+
 def pt_awal(user: dict, akses: dict):
-    """PT yang dibuka saat login: PT terakhir dipakai, lalu PT utama, lalu yang pertama menurut urutan id."""
-    for pt in (user.get("pt_terakhir"), user.get("pt_utama")):
+    """PT yang dibuka saat login: RUMAT (pt_bawaan) bila punya akses, lalu PT utama, lalu yang pertama menurut urutan id.
+    PT terakhir dipakai (pt_terakhir) tidak lagi menentukan — user 7 Nov 2026: default RUMAT dulu; pindah PT lewat sidebar."""
+    for pt in (pt_bawaan(), user.get("pt_utama")):
         if pt in akses:
             return pt
     return sorted(akses)[0] if akses else None

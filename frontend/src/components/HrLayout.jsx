@@ -21,6 +21,10 @@ const NAV = [
   ["/hr-manager/config", "Konfigurasi", Settings2, false, true],
 ];
 
+// Menu yang disembunyikan sementara (user 7 Nov 2026: Presensi & Rekap "belum mau dipakai"). Halaman & rutenya TETAP ada;
+// hapus path dari daftar ini untuk menampilkannya lagi.
+const DISEMBUNYIKAN = new Set(["/hr-manager/attendance", "/hr-manager/recap"]);
+
 // Sidebar bisa diciutkan jadi lajur ikon (user 15 Okt 2026: "supaya bisa lebih lebar lihat contentnya"); pilihannya diingat di
 // peramban ini. Lebarnya satu variabel CSS --sidebar-w, dipakai juga oleh elemen fixed di halaman (bilah THP review slip).
 const CIUT_KEY = "rasa.menu.ciut";
@@ -38,7 +42,8 @@ export default function HrLayout() {
     try { await gantiPt(id); } catch { setPindah(false); }
   };
   const admin = isMasterAdmin(user);
-  const nav = NAV.filter((item) => (item.group ? !admin : admin ? !!item[5] : !item[5] && (!item[4] || isManager(user))));
+  const nav = NAV.filter((item) => !DISEMBUNYIKAN.has(item[0]))
+    .filter((item) => (item.group ? !admin : admin ? !!item[5] : !item[5] && (!item[4] || isManager(user))));
   const { pathname } = useLocation();
   // /payroll/:pid (periode gaji) berada di bawah /payroll, tapi /payroll/thr dan /payroll/bonus-tahunan menu sendiri
   const gajiActive = (to) => to === "/hr-manager/payroll" ? /^\/hr-manager\/payroll(\/|$)/.test(pathname) && !/^\/hr-manager\/payroll\/(thr|bonus-tahunan)(\/|$)/.test(pathname) : null;

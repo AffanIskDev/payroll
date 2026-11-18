@@ -159,11 +159,15 @@ def test_master_admin_dan_nonaktif_tanpa_akses_gaji(uji):
     uji(f)
 
 
-def test_pt_awal_terakhir_lalu_utama_lalu_pertama():
+def test_pt_awal_rumat_dulu_lalu_utama_lalu_pertama():
     akses = {"CP-001": "manager_hrd", "CP-003": "manager_hrd"}
-    assert core.pt_awal({"pt_terakhir": "CP-003", "pt_utama": "CP-001"}, akses) == "CP-003"
-    assert core.pt_awal({"pt_terakhir": "CP-777", "pt_utama": "CP-001"}, akses) == "CP-001"
+    # RUMAT dulu walau PT terakhir/utama lain (user 7 Nov 2026)
+    assert core.pt_awal({"pt_terakhir": "CP-003", "pt_utama": "CP-003"}, akses) == "CP-001"
     assert core.pt_awal({}, akses) == "CP-001"
+    # tanpa akses RUMAT: PT utama, lalu yang pertama
+    lain = {"CP-002": "supervisor", "CP-003": "supervisor", "CP-005": "supervisor"}
+    assert core.pt_awal({"pt_terakhir": "CP-005", "pt_utama": "CP-003"}, lain) == "CP-003"
+    assert core.pt_awal({"pt_utama": "CP-777"}, lain) == "CP-002"
     assert core.pt_awal({}, {}) is None
 
 

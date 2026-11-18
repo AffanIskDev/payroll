@@ -86,7 +86,7 @@ async def _pt_info(pt, akses: dict) -> dict:
 @auth.post("/pt")
 async def ganti_pt(body: PtIn, response: Response, user: dict = Depends(get_current_user)):
     """Ganti PT aktif (pilihan PT di sidebar): token baru untuk PT itu bila pengguna punya akses ke sana. PT terakhir
-    diingat supaya login berikutnya membuka PT yang sama."""
+    dicatat (pt_terakhir), tetapi login tetap membuka RUMAT dulu (core.pt_awal, user 7 Nov 2026)."""
     if user.get("role") == MASTER_ADMIN:
         raise HTTPException(403, "Master Admin tidak membuka data gaji perusahaan")
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
