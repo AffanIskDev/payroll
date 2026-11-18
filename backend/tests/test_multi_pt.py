@@ -250,3 +250,47 @@ def test_ganti_pt_menerbitkan_token_baru_dan_mengingat_pt(uji):
             await server.ganti_pt(server.PtIn(company_id="CP-001"), _Resp(), me)
         assert e.value.status_code == 403
     uji(f)
+
+
+# ------------------------------------------------------------------ cabut akses & hapus pengguna (18 Nov 2026)
+
+def test_cabut_akses_per_pt_dan_hapus_pengguna(uji):
+    async def f(db, raw):
+        admin = {"id": "adm", "username": "itadmin", "role": core.MASTER_ADMIN}
+        await db.users.insert_one({"id": "adm", "username": "itadmin", "username_lower": "itadmin", "role": core.MASTER_ADMIN,
+                                   "is_active": True, "akses": []})
+        nur, _ = await accounts.create_user("syafitri", "Nur", "supervisor", "local", "uji", password="Sandi#Uji2026x",
+                                            akses=[{"company_id": c, "role": "supervisor"} for c in PT_UJI], pt_utama="CP-901")
+        # cabut PT utama → PT utama pindah ke yang tersisa
+        r = await accounts.cabut_akses(nur["id"], "CP-901", me=admin)
+        assert [a["company_id"] for a in r["user"]["akses"]] == ["CP-902"] and r["user"]["pt_utama"] == "CP-902"
+        assert await core.akses_user(await db.users.find_one({"id": nur["id"]})) == {"CP-902": "supervisor"}
+        for pt, kode in (("CP-901", 404), ("CP-902", 409)):   # sudah dicabut / akses terakhir
+            with pytest.raises(HTTPException) as e:
+                await accounts.cabut_akses(nur["id"], pt, me=admin)
+            assert e.value.status_code == kode
+        semua, _ = await accounts.create_user("Melia", "Melia", "manager_hrd", "local", "uji", password="Sandi#Uji2026x",
+                                              semua=True, pt_utama="CP-901")
+        with pytest.raises(HTTPException) as e:
+            await accounts.cabut_akses(semua["id"], "CP-901", me=admin)
+        assert e.value.status_code == 409 and "Semua PT" in e.value.detail
+
+        # hapus: bukan diri sendiri, bukan Master Admin aktif terakhir; tercatat di access_log
+        for uid in ("adm",):
+            with pytest.raises(HTTPException) as e:
+                await accounts.hapus_pengguna(uid, me={"id": "lain", "username": "x"})
+            assert e.value.status_code == 409 and "Master Admin" in e.value.detail
+        with pytest.raises(HTTPException) as e:
+            await accounts.hapus_pengguna("adm", me=admin)
+        assert e.value.status_code == 409 and "sendiri" in e.value.detail
+        assert (await accounts.hapus_pengguna(nur["id"], me=admin)) == {"deleted": "syafitri"}
+        assert await db.users.find_one({"id": nur["id"]}) is None
+        log = await db.access_log.find_one({"action": "hapus"}, {"_id": 0})
+        assert log["target_username"] == "syafitri" and log["by"] == "itadmin" and log["detail"]["akses"][0]["company_id"] == "CP-902"
+        with pytest.raises(HTTPException) as e:
+            await accounts.hapus_pengguna(nur["id"], me=admin)
+        assert e.value.status_code == 404
+        # username bebas dipakai lagi
+        await accounts.create_user("syafitri", "Nur", "supervisor", "local", "uji", password="Sandi#Uji2026x",
+                                   akses=[{"company_id": "CP-901", "role": "supervisor"}], pt_utama="CP-901")
+    uji(f)

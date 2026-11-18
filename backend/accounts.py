@@ -269,6 +269,45 @@ async def edit_user(uid: str, body: dict = Body(...), me: dict = Depends(require
     return {"user": public(new), "temp_password": temp}
 
 
+@router.delete("/users/{uid}/akses/{pt}")
+async def cabut_akses(uid: str, pt: str, me: dict = Depends(require_master_admin)):
+    """Cabut akses satu PT (user 18 Nov 2026: "harusnya ada fitur hapus akses"). Berlaku di request berikutnya —
+    get_current_user membaca akses tiap request. PT utama pindah ke PT tersisa bila yang dicabut PT utama."""
+    u = await db.users.find_one({"id": uid}, {"_id": 0})
+    if not u:
+        raise HTTPException(404, "Pengguna tidak ditemukan")
+    if u.get("semua_pt"):
+        raise HTTPException(409, "Pengguna ini punya akses Semua PT — ubah lewat Atur akses")
+    akses = [a for a in u.get("akses") or [] if a.get("company_id") != pt]
+    if len(akses) == len(u.get("akses") or []):
+        raise HTTPException(404, "Pengguna ini tidak punya akses ke perusahaan itu")
+    if not akses:
+        raise HTTPException(409, "Ini akses terakhirnya — nonaktifkan atau hapus penggunanya bila tidak boleh masuk RUSA lagi")
+    utama = u.get("pt_utama") if u.get("pt_utama") != pt else akses[0]["company_id"]
+    await db.users.update_one({"id": uid}, {"$set": {"akses": akses, "pt_utama": utama, "updated_at": now_iso(),
+                                                    "updated_by": actor(me)}})
+    await _log(actor(me), "cabut-akses", u, {"company_id": pt})
+    return {"user": public(await db.users.find_one({"id": uid}, {"_id": 0}))}
+
+
+@router.delete("/users/{uid}")
+async def hapus_pengguna(uid: str, me: dict = Depends(require_master_admin)):
+    """Hapus pengguna RUSA (user 18 Nov 2026). Yang hilang hanya akunnya: slip & riwayat menyimpan username sebagai teks,
+    jadi jejak "diajukan/di-approve oleh" tetap. Isi akun dicatat di access_log. Tidak bisa menghapus diri sendiri atau
+    Master Admin aktif terakhir. Untuk menghentikan sementara, pakai Nonaktifkan."""
+    if uid == me["id"]:
+        raise HTTPException(409, "Anda tidak bisa menghapus akun Anda sendiri")
+    u = await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    if not u:
+        raise HTTPException(404, "Pengguna tidak ditemukan")
+    if u.get("role") == MASTER_ADMIN and u.get("is_active") and await _admins_left(uid) == 0:
+        raise HTTPException(409, "Harus ada minimal satu Master Admin aktif")
+    await db.users.delete_one({"id": uid})
+    await _log(actor(me), "hapus", u, {k: u.get(k) for k in ("name", "role", "auth_mode", "akses", "semua_pt", "pt_utama",
+                                                            "rosy_user_id", "is_active")})
+    return {"deleted": u["username"]}
+
+
 @router.post("/users/{uid}/reset-password")
 async def reset_password(uid: str, me: dict = Depends(require_master_admin)):
     # Reset akun sendiri = mengunci diri sendiri: sandi sementara membuat SEMUA rute (termasuk layar ini) 403 sampai diganti (5 Nov 2026).

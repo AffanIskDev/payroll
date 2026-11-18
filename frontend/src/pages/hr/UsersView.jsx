@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, KeyRound, Copy, Building2 } from "lucide-react";
+import { Plus, KeyRound, Copy, Building2, Trash2, X } from "lucide-react";
 import { api, errMsg } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { PageTitle, Panel, Btn } from "@/components/common";
@@ -16,7 +16,9 @@ const AUTH = { local: "Kata sandi RUSA", rosy: "Kata sandi ROSY" };
 const HR_ROLE_LABELS = { manager_hrd: "Manager HRD", supervisor: "Supervisor HRD" };
 
 /** Ringkasan akses untuk tabel: "Semua PT · Manager HRD" atau daftar "RUMI · Supervisor HRD". */
-function AksesBadges({ u, companies }) {
+// × di tiap PT = cabut akses PT itu (user 18 Nov 2026); tidak untuk "Semua PT" dan tidak untuk akses terakhir
+// (yang terakhir: nonaktifkan atau hapus penggunanya)
+function AksesBadges({ u, companies, onCabut }) {
   if (u.role === "master_admin") return <span className="text-xs text-slate-500">Mengatur pengguna (tanpa data gaji)</span>;
   const nama = Object.fromEntries(companies.map((c) => [c.id, c.nama]));
   const items = u.semua_pt ? [{ label: "Semua PT", role: u.role }] : (u.akses || []).map((a) => ({ label: nama[a.company_id] || a.company_id, role: a.role, id: a.company_id }));
@@ -26,6 +28,11 @@ function AksesBadges({ u, companies }) {
       {items.map((it) => (
         <span key={it.label} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${it.role === "manager_hrd" ? "bg-brand-50 text-brand-800" : "bg-slate-100 text-slate-700"}`}>
           {it.label} · {HR_ROLE_LABELS[it.role] || it.role}{it.id && it.id === u.pt_utama && <span title="PT utama">★</span>}
+          {onCabut && it.id && items.length > 1 && (
+            <button type="button" onClick={() => onCabut(u, it)} title={`Cabut akses ${it.label}`} aria-label={`Cabut akses ${it.label}`}
+              className="tap -mr-1 rounded-full p-0.5 text-slate-400 hover:bg-rose-100 hover:text-rose-600" data-testid={`user-cabut-${u.username}-${it.id}`}>
+              <X className="h-3 w-3" /></button>
+          )}
         </span>
       ))}
     </div>
@@ -88,6 +95,17 @@ export default function UsersView() {
     try { const { data: r } = await api.post(`/hr/users/${u.id}/reset-password`); setTemp({ username: u.username, password: r.temp_password }); load(); }
     catch (e) { toast.error(errMsg(e)); }
   };
+  const [hapus, setHapus] = useState(null);     // pengguna yang akan dihapus (dialog konfirmasi)
+  const cabut = async (u, it) => {
+    if (!window.confirm(`Cabut akses ${u.name} ke ${it.label}? Berlaku langsung; bisa diberikan lagi lewat Atur akses.`)) return;
+    try { await api.delete(`/hr/users/${u.id}/akses/${it.id}`); toast.success(`Akses ${it.label} dicabut`); load(); }
+    catch (e) { toast.error(errMsg(e)); }
+  };
+  const hapusYa = async () => {
+    setBusy(true);
+    try { await api.delete(`/hr/users/${hapus.id}`); toast.success(`${hapus.name} dihapus`); setHapus(null); load(); }
+    catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
   const copy = () => navigator.clipboard?.writeText(temp.password).then(() => toast.success("Disalin"));
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const setAkses = (id, role) => setForm((f) => ({ ...f, akses: { ...f.akses, [id]: role } }));
@@ -112,7 +130,7 @@ export default function UsersView() {
                   <tr key={u.id} className={u.is_active === false ? "opacity-60" : ""} data-testid={`user-row-${u.username}`}>
                     <td className="px-3 py-2.5"><div className="font-semibold text-slate-900">{u.name}{diri && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-600">Anda</span>}</div>
                       <div className="text-xs text-slate-500">{u.username}{u.role === "master_admin" && " · Master Admin"}</div></td>
-                    <td className="px-3 py-2.5" data-testid={`user-akses-${u.username}`}><AksesBadges u={u} companies={companies} /></td>
+                    <td className="px-3 py-2.5" data-testid={`user-akses-${u.username}`}><AksesBadges u={u} companies={companies} onCabut={cabut} /></td>
                     <td className="px-3 py-2.5 text-xs text-slate-600">{AUTH[u.auth_mode]}{u.must_change_password && <div className="text-amber-700 font-semibold">Belum diganti</div>}</td>
                     <td className="px-3 py-2.5 text-xs"><span className={`inline-flex items-center gap-1.5 font-medium ${u.is_active === false ? "text-slate-500" : "text-emerald-700"}`}><span className={`h-2 w-2 rounded-full ${u.is_active === false ? "bg-slate-400" : "bg-emerald-500"}`} />{u.is_active === false ? "Nonaktif" : "Aktif"}</span></td>
                     <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{u.last_login_at ? formatDateTime(u.last_login_at) : "Belum pernah"}</td>
@@ -121,6 +139,7 @@ export default function UsersView() {
                       {u.auth_mode === "local" && !diri && <Btn variant="ghost" onClick={() => reset(u)} data-testid={`user-reset-${u.username}`}><KeyRound className="h-4 w-4" /> Reset sandi</Btn>}
                       {!diri && <Btn variant="ghost" className={u.is_active === false ? "" : "!text-rose-600 hover:!bg-rose-50"} data-testid={`user-toggle-${u.username}`}
                         onClick={() => patch(u, { is_active: u.is_active === false }, u.is_active === false ? "Pengguna diaktifkan" : "Pengguna dinonaktifkan")}>{u.is_active === false ? "Aktifkan" : "Nonaktifkan"}</Btn>}
+                      {!diri && <Btn variant="ghost" className="!text-rose-600 hover:!bg-rose-50" onClick={() => setHapus(u)} data-testid={`user-hapus-${u.username}`} title="Hapus pengguna"><Trash2 className="h-4 w-4" /> Hapus</Btn>}
                     </td>
                   </tr>
                 );
@@ -181,6 +200,17 @@ export default function UsersView() {
               <div className="flex justify-end gap-2"><Btn variant="outline" disabled={busy} onClick={() => setForm(null)}>Batal</Btn><Btn disabled={busy} onClick={save} data-testid="user-form-save">{busy ? "Menyimpan..." : form.mode === "add" ? "Tambah" : "Simpan"}</Btn></div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!hapus} onOpenChange={(o) => !busy && !o && setHapus(null)}>
+        <DialogContent data-testid="user-hapus-dialog">
+          <DialogHeader><DialogTitle>Hapus pengguna {hapus?.name}?</DialogTitle>
+            <DialogDescription>Akun <b>{hapus?.username}</b> dihapus permanen dan tidak bisa masuk RUSA lagi. Data gaji, slip, dan catatan "diajukan / di-approve oleh" tidak berubah. Kalau hanya ingin menghentikan sementara, pakai <b>Nonaktifkan</b>.</DialogDescription></DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Btn variant="outline" disabled={busy} onClick={() => setHapus(null)}>Batal</Btn>
+            <Btn disabled={busy} onClick={hapusYa} className="!bg-rose-600 hover:!bg-rose-700" data-testid="user-hapus-ya"><Trash2 className="h-4 w-4" /> {busy ? "Menghapus…" : "Ya, Hapus"}</Btn>
+          </div>
         </DialogContent>
       </Dialog>
 
